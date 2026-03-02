@@ -102,6 +102,24 @@ export default function App() {
     }
   };
 
+  const handleGenerateTitle = () => {
+    if (!store.activeConvId || !store.activeConversation) return;
+    const { provider, model } = store.getProviderAndModel(store.activeConversation.modelId || store.settings.defaultProviderModelId);
+    if (provider && model) {
+      store.generateConversationTitle(store.activeConvId, provider, model);
+    }
+  };
+
+  const handleGenerateFollowUps = () => {
+    if (!store.activeConvId || !store.activeConversation) return;
+    const lastAssistantMsg = [...store.activeConversation.messages].reverse().find(m => m.role === 'assistant');
+    if (!lastAssistantMsg) return;
+    const { provider, model } = store.getProviderAndModel(store.activeConversation.modelId || store.settings.defaultProviderModelId);
+    if (provider && model) {
+      store.generateFollowUps(store.activeConvId, lastAssistantMsg.id, provider, model);
+    }
+  };
+
   const handleModelChange = (modelId: string) => {
     if (store.activeConvId) store.setConversationModel(store.activeConvId, modelId);
     store.updateSettings({ defaultProviderModelId: modelId });
@@ -167,6 +185,8 @@ export default function App() {
           onDeleteMessage={handleDeleteMessage}
           onModeChange={handleModeChange}
           onAttachmentsChange={handleAttachmentsChange}
+          onGenerateTitle={handleGenerateTitle}
+          onGenerateFollowUps={handleGenerateFollowUps}
           homeMode={homeMode}
           homeAttachments={homeAttachments}
           prettifyModelNames={store.settings.prettifyModelNames}

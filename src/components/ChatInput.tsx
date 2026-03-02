@@ -3,7 +3,7 @@ import {
   Send, Paperclip, X, Loader2,
   Smile, Image as ImageIcon, Table, LayoutGrid,
   Type, List, Eraser, MoreHorizontal, ChevronDown,
-  Check, Search, Eye, Zap, Settings2, RotateCcw
+  Check, Search, Eye, Zap, Settings2, RotateCcw, Sparkles, MessageSquarePlus
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
 
@@ -26,10 +26,12 @@ interface ChatInputProps {
   onModelChange: (modelId: string) => void;
   onOpenProviders?: () => void;
   onRetry?: () => void;
+  onGenerateTitle?: () => void;
+  onGenerateFollowUps?: () => void;
   mode?: 'chat' | 'image';
   onModeChange?: (mode: 'chat' | 'image') => void;
   attachments?: string[];
-  onAttachmentsChange?: (attachments: string[]) => void;
+  onAttachmentsChange?: (attachments: string[])=> void;
   prettifyModelNames?: boolean;
 }
 
@@ -82,6 +84,8 @@ export default function ChatInput({
   onModelChange,
   onOpenProviders,
   onRetry,
+  onGenerateTitle,
+  onGenerateFollowUps,
   mode = 'chat',
   onModeChange,
   attachments = [],
@@ -320,18 +324,11 @@ export default function ChatInput({
 
         {/* Toolbar */}
         <div className="flex items-center gap-0.5 px-3 pb-2.5 pt-0.5">
-          <button title="Emoji" className="toolbar-btn"><Smile size={15} /></button>
-          <button title="Image" className="toolbar-btn" onClick={canAttachImages ? () => fileRef.current?.click() : undefined}>
-            <ImageIcon size={15} />
-          </button>
-          <button title="Attach" className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
-          <button title="Table" className="toolbar-btn"><Table size={15} /></button>
-          <button title="Plugins" className="toolbar-btn"><LayoutGrid size={15} /></button>
+          <button title="Generate Title" className="toolbar-btn" onClick={onGenerateTitle}><Type size={15} /></button>
+          <button title="Generate Follow-ups" className="toolbar-btn" onClick={onGenerateFollowUps}><MessageSquarePlus size={15} /></button>
           <div className="w-px h-4 bg-[rgb(var(--border))] mx-1" />
-          <button title="Format" className="toolbar-btn"><Type size={15} /></button>
-          <button title="List" className="toolbar-btn"><List size={15} /></button>
+          <button title="Attach" className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
           <button title="Clear" className="toolbar-btn" onClick={() => setText('')}><Eraser size={15} /></button>
-          <button title="More" className="toolbar-btn"><MoreHorizontal size={15} /></button>
           {onRetry && <button title="Retry" className="toolbar-btn" onClick={onRetry}><RotateCcw size={15} /></button>}
 
           <button

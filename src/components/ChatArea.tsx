@@ -29,6 +29,8 @@ interface ChatAreaProps {
   onDeleteMessage?: (msgId: string) => void;
   onModeChange?: (mode: 'chat' | 'image') => void;
   onAttachmentsChange?: (attachments: string[]) => void;
+  onGenerateTitle?: () => void;
+  onGenerateFollowUps?: () => void;
   homeMode?: 'chat' | 'image';
   homeAttachments?: string[];
   prettifyModelNames?: boolean;
@@ -57,6 +59,8 @@ export default function ChatArea({
   onDeleteMessage,
   onModeChange,
   onAttachmentsChange,
+  onGenerateTitle,
+  onGenerateFollowUps,
   homeMode = 'chat',
   homeAttachments = [],
   prettifyModelNames = true,
@@ -151,6 +155,7 @@ export default function ChatArea({
             onRetry={msg.role === 'assistant' && idx === conversation.messages.length - 1 ? onRetry : undefined}
             onEdit={msg.role === 'user' && onEditMessage ? (newContent) => onEditMessage(msg.id, newContent) : undefined}
             onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
+            onFollowUpClick={onSend ? (followUp) => onSend(followUp, []) : undefined}
           />
         ))}
 
@@ -192,6 +197,8 @@ export default function ChatArea({
         onModelChange={onModelChange}
         onOpenProviders={onOpenProviders}
         onRetry={onRetry}
+        onGenerateTitle={onGenerateTitle}
+        onGenerateFollowUps={onGenerateFollowUps}
         mode={conversation.mode || 'chat'}
         onModeChange={onModeChange}
         attachments={conversation.attachments || []}

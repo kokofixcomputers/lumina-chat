@@ -249,6 +249,31 @@ export default function SettingsPanel({
                     </div>
                     <p className="form-help">Show formatted model names instead of IDs</p>
                   </div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">QoL Features</h3>
+                  <div className="form-group">
+                    <div className="flex items-center justify-between">
+                      <label className="form-label mb-0">Generate Title</label>
+                      <button
+                        onClick={() => onUpdateSettings({ generateTitle: !settings.generateTitle })}
+                        className={`toggle ${settings.generateTitle !== false ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+                      >
+                        <span className={`toggle-thumb ${settings.generateTitle !== false ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    <p className="form-help">Auto-generate conversation title after first message</p>
+                  </div>
+                  <div className="form-group">
+                    <div className="flex items-center justify-between">
+                      <label className="form-label mb-0">Generate Follow-Up Messages</label>
+                      <button
+                        onClick={() => onUpdateSettings({ generateFollowUps: !settings.generateFollowUps })}
+                        className={`toggle ${settings.generateFollowUps !== false ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+                      >
+                        <span className={`toggle-thumb ${settings.generateFollowUps !== false ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    <p className="form-help">Show suggested follow-up questions after each response</p>
+                  </div>
                   <div className="form-group">
                     <label className="form-label">Max History</label>
                     <div className="flex items-center gap-3">

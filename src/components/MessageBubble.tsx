@@ -39,7 +39,9 @@ function renderContent(content: string) {
     const line = lines[i];
 
     if (line.startsWith('```')) {
-      const lang = line.slice(3).trim();
+      let lang = line.slice(3).trim();
+      // Map common language aliases
+      if (lang === 'bash' || lang === 'sh') lang = 'shell';
       const codeLines: string[] = [];
       i++;
       while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
@@ -47,11 +49,11 @@ function renderContent(content: string) {
       out.push(
         <div key={k++} className="code-block">
           <div className="code-block-header">
-            <span>{lang || 'code'}</span>
+            <span>{line.slice(3).trim() || 'code'}</span>
             <CopyBtn text={code} />
           </div>
           <div className="code-block-body">
-            <SyntaxHighlighter language={lang || 'text'} style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }}>
+            <SyntaxHighlighter language={lang || 'text'} style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
               {code}
             </SyntaxHighlighter>
           </div>
@@ -119,9 +121,10 @@ interface MessageBubbleProps {
   onRetry?: () => void;
   onEdit?: (newContent: string) => void;
   onDelete?: () => void;
+  onFollowUpClick?: (followUp: string) => void;
 }
 
-export default function MessageBubble({ message, modelName, modelId, onRetry, onEdit, onDelete }: MessageBubbleProps) {
+export default function MessageBubble({ message, modelName, modelId, onRetry, onEdit, onDelete, onFollowUpClick }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const [isEditing, setIsEditing] = useState(false);
@@ -245,9 +248,21 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
             {renderContent(message.content)}
             {/* Model tag below */}
             {modelName && (
-              <p className="mt-2 text-[11px] text-[rgb(var(--muted))] flex items-center gap-1">
+              <p className="mt-2 text-[11px] text-[rgb(var(--muted))] flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
                 {modelName}
+                {message.tokensPerSecond && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
+                    {message.tokensPerSecond} t/s
+                  </>
+                )}
+                {message.tokens && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
+                    {message.tokens} tokens
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -260,6 +275,21 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
             {!isUser && onRetry && <button className="toolbar-btn" title="Retry" onClick={onRetry}><RotateCcw size={15} /></button>}
             {isUser && onEdit && <button className="toolbar-btn" title="Edit" onClick={() => setIsEditing(true)}><Edit2 size={15} /></button>}
             {onDelete && <button className="toolbar-btn" title="Delete" onClick={onDelete}><Trash2 size={15} /></button>}
+          </div>
+        )}
+
+        {/* Follow-ups */}
+        {!isUser && message.followUps && message.followUps.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {message.followUps.map((followUp, idx) => (
+              <button
+                key={idx}
+                onClick={() => onFollowUpClick?.(followUp)}
+                className="btn-secondary text-xs py-1.5 px-3"
+              >
+                {followUp}
+              </button>
+            ))}
           </div>
         )}
       </div>

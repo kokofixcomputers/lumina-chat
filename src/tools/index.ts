@@ -1,12 +1,10 @@
 import { Tool } from '../types/tools';
 import getCurrentTime from './getCurrentTime';
 import calculate from './calculate';
-import googleSearch from './googleSearch';
 
 const tools: Tool[] = [
   getCurrentTime,
   calculate,
-  googleSearch,
 ];
 
 export function getAllTools(): Tool[] {

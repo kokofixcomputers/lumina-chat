@@ -14,6 +14,9 @@ export interface Message {
   tool_call_id?: string;
   tool_name?: string;
   tool_status?: 'loading' | 'success' | 'error';
+  followUps?: string[];
+  tokens?: number;
+  tokensPerSecond?: number;
 }
 
 export interface Conversation {
@@ -65,6 +68,8 @@ export interface AppSettings {
   modelSettings: ModelSettings;
   prettifyModelNames?: boolean;
   maxHistory?: number;
+  generateTitle?: boolean;
+  generateFollowUps?: boolean;
 }
 
 export type Panel = 'chat' | 'settings' | 'providers';

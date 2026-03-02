@@ -169,6 +169,9 @@ export function useAppStore() {
 
     const controller = new AbortController();
     setAbortController(controller);
+    
+    const startTime = Date.now();
+    let tokenCount = 0;
 
     // Build messages for API
     const apiMessages: Array<{ role: string; content: unknown }> = [];
@@ -266,6 +269,7 @@ export function useAppStore() {
               const delta = parsed.choices?.[0]?.delta?.content || '';
               assistantContent += delta;
               setStreamingContent(assistantContent);
+              if (delta) tokenCount++;
               
               // Handle streaming tool calls
               if (parsed.choices?.[0]?.delta?.tool_calls) {
@@ -296,7 +300,12 @@ export function useAppStore() {
         const data = await response.json();
         assistantContent = data.choices?.[0]?.message?.content || '';
         toolCalls = data.choices?.[0]?.message?.tool_calls || [];
+        tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
       }
+
+      const endTime = Date.now();
+      const duration = (endTime - startTime) / 1000;
+      const tokensPerSecond = tokenCount > 0 ? Math.round(tokenCount / duration) : undefined;
 
       const assistantMsg: Message = {
         id: uuidv4(),
@@ -305,8 +314,32 @@ export function useAppStore() {
         timestamp: Date.now(),
         model: model?.id,
         tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+        tokens: tokenCount > 0 ? tokenCount : undefined,
+        tokensPerSecond,
       };
       addMessage(convId, assistantMsg);
+
+      // Auto-generate title and follow-ups after state updates
+      const shouldGenerateTitle = settings.generateTitle !== false;
+      const shouldGenerateFollowUps = settings.generateFollowUps !== false && !toolCalls.length;
+      
+      if (shouldGenerateTitle || shouldGenerateFollowUps) {
+        setTimeout(() => {
+          const conv = conversations.find(c => c.id === convId);
+          if (!conv) return;
+          
+          if (shouldGenerateTitle) {
+            const assistantMessages = conv.messages.filter(m => m.role === 'assistant' && !m.tool_calls);
+            if (assistantMessages.length === 1) {
+              generateConversationTitle(convId, provider, model);
+            }
+          }
+          
+          if (shouldGenerateFollowUps) {
+            generateFollowUps(convId, assistantMsg.id, provider, model);
+          }
+        }, 500);
+      }
 
       // Execute tool calls if present
       if (toolCalls.length > 0) {
@@ -561,6 +594,103 @@ export function useAppStore() {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, attachments } : c));
   }, []);
 
+  const generateConversationTitle = useCallback(async (convId: string, provider: ModelProvider, model: ModelConfig | undefined) => {
+    const conv = conversations.find(c => c.id === convId);
+    if (!conv || !provider || !model) return;
+
+    try {
+      const chatUrl = provider.baseUrl.includes('/chat/completions') 
+        ? provider.baseUrl 
+        : `${provider.baseUrl}/chat/completions`;
+      
+      const messages = conv.messages.filter(m => m.role !== 'tool').map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+      messages.push({
+        role: 'user',
+        content: 'Based on the conversation history, generate a Chat Title for this conversation. Reply only with the chat title and nothing else.'
+      });
+
+      const response = await fetch(chatUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model.id,
+          messages,
+          temperature: 0.7,
+          max_tokens: 50,
+          stream: false,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const title = data.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') || 'New conversation';
+        updateConversationTitle(convId, title);
+      }
+    } catch (err) {
+      console.error('Failed to generate title:', err);
+    }
+  }, [conversations, updateConversationTitle]);
+
+  const generateFollowUps = useCallback(async (convId: string, msgId: string, provider: ModelProvider, model: ModelConfig | undefined) => {
+    const conv = conversations.find(c => c.id === convId);
+    if (!conv || !provider || !model) return;
+
+    try {
+      const chatUrl = provider.baseUrl.includes('/chat/completions') 
+        ? provider.baseUrl 
+        : `${provider.baseUrl}/chat/completions`;
+      
+      const messages = conv.messages.filter(m => m.role !== 'tool').map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+      messages.push({
+        role: 'user',
+        content: 'Based on the conversation history, generate atmost 3 follow up questions. I want questions that the user would ask, not the assistant ai. in a JSON list like this ["followup1", "followup2", "followup3"]. Under 3 is fine. but do not include over 3. Don\'t include anything else in your message other than the json list'
+      });
+
+      const response = await fetch(chatUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model.id,
+          messages,
+          temperature: 0.8,
+          max_tokens: 150,
+          stream: false,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content?.trim() || '';
+        try {
+          const followUps = JSON.parse(content).slice(0, 3);
+          setConversations(prev => prev.map(c => {
+            if (c.id !== convId) return c;
+            return {
+              ...c,
+              messages: c.messages.map(m => 
+                m.id === msgId ? { ...m, followUps } : m
+              )
+            };
+          }));
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Failed to generate follow-ups:', err);
+    }
+  }, [conversations]);
+
   const generateImage = useCallback(async (prompt: string, convId: string) => {
     const conv = conversations.find(c => c.id === convId);
     if (!conv) return;
@@ -641,5 +771,8 @@ export function useAppStore() {
     setConversationAttachments,
     generateImage,
     stopGeneration,
+    generateConversationTitle,
+    generateFollowUps,
+    getProviderAndModel,
   };
 }

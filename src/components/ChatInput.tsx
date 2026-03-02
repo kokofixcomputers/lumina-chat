@@ -98,6 +98,7 @@ export default function ChatInput({
   const [modelSearch, setModelSearch] = useState('');
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
@@ -415,16 +416,26 @@ export default function ChatInput({
           ) : (
             Object.entries(grouped).map(([providerName, models]) => {
               const firstModel = models[0];
+              const isCollapsed = collapsedProviders.has(providerName);
               return (
                 <div key={providerName} className="mb-1">
                   {/* Provider header */}
-                  <div className="flex items-center gap-2 px-3 py-1.5 mt-1">
+                  <button
+                    onClick={() => {
+                      const newSet = new Set(collapsedProviders);
+                      if (isCollapsed) newSet.delete(providerName);
+                      else newSet.add(providerName);
+                      setCollapsedProviders(newSet);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 mt-1 w-full hover:bg-black/[0.03] dark:hover:bg-white/[0.03] rounded-lg transition-colors"
+                  >
                     <ProviderDot providerId={firstModel.providerId} providerName={providerName} />
-                    <span className="text-[11px] font-semibold text-[rgb(var(--muted))] uppercase tracking-wider">{providerName}</span>
-                  </div>
+                    <span className="text-[11px] font-semibold text-[rgb(var(--muted))] uppercase tracking-wider flex-1 text-left">{providerName}</span>
+                    <ChevronDown size={12} className={`text-[rgb(var(--muted))] transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                  </button>
 
                   {/* Models */}
-                  {models.map(m => {
+                  {!isCollapsed && models.map(m => {
                     const ctx = formatCtx(m.contextLength);
                     const isSelected = selectedModelId === m.fullId;
                     const mId = m.fullId.split('/')[1];

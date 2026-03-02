@@ -1,5 +1,5 @@
 import { X, Database, Settings as SettingsIcon, Plus, Trash2, ChevronDown, ChevronRight, Eye, EyeOff, Download, Upload, FileDown, Menu, Info } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { AppSettings, ModelSettings, ModelProvider, ModelConfig } from '../types';
 import { getModelInfo } from '../utils/models';
 import { integratedProviders, type IntegratedProviderTemplate } from '../data/integratedProviders';
@@ -17,6 +17,24 @@ interface SettingsPanelProps {
   onImportData: (data: any) => void;
   onClose: () => void;
 }
+
+const TAGLINES = [
+  'Light up every conversation.',
+  'Where curiosity finds its answers.',
+  'Think brighter. Chat smarter.',
+  'Your ideas, illuminated.',
+  'AI that gets you.',
+  'Clarity in every conversation.',
+  'The future of chat, brilliantly simple.',
+  'Smarter conversations start here.',
+  'Powered by intelligence. Built for you.',
+  'Chat beyond limits.',
+  'Brilliant answers, instantly.',
+  'Where every question finds its light.',
+  'Where Knowledge meets Intelligence.',
+  'Where Knowledge begins.',
+];
+
 
 
 function SliderField({
@@ -75,6 +93,20 @@ export default function SettingsPanel({
   const ms = settings.modelSettings;
   const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'data' | 'about'>('general');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [taglineIndex, setTaglineIndex] = useState(0);
+  const [fade, setFade] = useState(true);
+
+  useEffect(() => {
+    if (activeTab !== 'about') return;
+    const interval = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setTaglineIndex((prev) => (prev + 1) % TAGLINES.length);
+        setFade(true);
+      }, 300);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
 
 
   const exportData = () => {
@@ -120,13 +152,13 @@ export default function SettingsPanel({
     <>
       {/* Backdrop with blur */}
       <div
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 hidden md:block"
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 hidden md:block animate-fade-in"
         onClick={onClose}
       />
 
       {/* Settings panel - centered and 80% width */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4">
-        <div className="side-panel flex-row w-full h-full md:max-w-[80vw] md:h-[80vh] md:rounded-2xl shadow-2xl relative overflow-hidden">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 animate-fade-in">
+        <div className="side-panel flex-row w-full h-full md:max-w-[80vw] md:h-[80vh] md:rounded-2xl shadow-2xl relative overflow-hidden animate-scale-in">
 
           {/* Sidebar */}
           <div className={`w-56 border-r border-[rgb(var(--border))] flex flex-col shrink-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:bg-[rgb(var(--panel))] max-md:shadow-2xl max-md:transition-transform ${
@@ -464,9 +496,9 @@ export default function SettingsPanel({
               </div>
 
             ) : (
-              <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-3xl mx-auto">
+              <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-4xl mx-auto">
                 <div className="text-center space-y-6">
-                  <div className="w-full aspect-[1456/720] bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 rounded-2xl shadow-lg overflow-hidden">
+                  <div className="w-full aspect-[1456/720] bg-gradient-to-br from-gray-100 via-blue-50/40 to-purple-50/30 dark:from-gray-800 dark:via-blue-950/20 dark:to-purple-950/10 rounded-2xl shadow-lg overflow-hidden border border-[rgb(var(--border))]">
                     <img
                       src="/banner.png"
                       alt="Lumina Chat Banner"
@@ -477,16 +509,66 @@ export default function SettingsPanel({
                     />
                   </div>
                   <div className="space-y-3">
-                    <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                    <h1 className="text-4xl font-bold text-[rgb(var(--text))]">
                       Lumina Chat
                     </h1>
-                    <p className="text-lg text-[rgb(var(--muted))] max-w-2xl mx-auto leading-relaxed">
-                      A powerful, elegant AI chat interface that brings together multiple AI providers in one seamless experience.
-                      Connect to OpenAI, Anthropic, or any OpenAI-compatible API to unlock intelligent conversations with
-                      customizable models and advanced settings.
-                    </p>
+                    <div className="h-7 flex items-center justify-center">
+                      <p className={`text-lg text-[rgb(var(--muted))] transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}>
+                        {TAGLINES[taglineIndex]}
+                      </p>
+                    </div>
                   </div>
-                  <div className="pt-4 text-sm">
+                  
+                  {/* Features */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+                    <div className="bg-[rgb(var(--bg))] rounded-xl p-4 border border-[rgb(var(--border))]">
+                      <Database size={20} className="text-[rgb(var(--text))] mb-2 mx-auto" />
+                      <p className="text-sm text-[rgb(var(--text))] font-medium">Multi-Provider</p>
+                      <p className="text-xs text-[rgb(var(--muted))] mt-1">OpenAI, Anthropic, Ollama & more</p>
+                    </div>
+                    <div className="bg-[rgb(var(--bg))] rounded-xl p-4 border border-[rgb(var(--border))]">
+                      <SettingsIcon size={20} className="text-[rgb(var(--text))] mb-2 mx-auto" />
+                      <p className="text-sm text-[rgb(var(--text))] font-medium">Customizable</p>
+                      <p className="text-xs text-[rgb(var(--muted))] mt-1">Fine-tune models & parameters</p>
+                    </div>
+                    <div className="bg-[rgb(var(--bg))] rounded-xl p-4 border border-[rgb(var(--border))]">
+                      <Eye size={20} className="text-[rgb(var(--text))] mb-2 mx-auto" />
+                      <p className="text-sm text-[rgb(var(--text))] font-medium">Privacy First</p>
+                      <p className="text-xs text-[rgb(var(--muted))] mt-1">All data stored locally</p>
+                    </div>
+                  </div>
+
+                  {/* Links */}
+                  <div className="flex items-center justify-center gap-3 pt-4">
+                    <a
+                      href="https://github.com/kokofixcomputers/lumina-chat"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs py-2 px-4 gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+                      </svg>
+                      GitHub
+                    </a>
+                    <a
+                      href="https://github.com/kokofixcomputers/lumina-chat/issues"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs py-2 px-4 gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Report Issue
+                    </a>
+                  </div>
+
+                  <div className="pt-2 text-xs text-[rgb(var(--muted))]">
+                    <p>Created by kokofixcomputers</p>
+                  </div>
+
+                  <div className="text-sm text-[rgb(var(--muted))]">
                     <p>Version 1.0.0</p>
                   </div>
                 </div>

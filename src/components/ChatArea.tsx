@@ -79,7 +79,7 @@ export default function ChatArea({
   // ── Home / empty state ──────────────────────────────
   if (!conversation) {
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))]">
+      <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
         {/* Top bar */}
         <div className="flex items-center justify-end px-5 py-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
           <button className="btn-icon" onClick={onTogglePanel}><Settings size={16} /></button>
@@ -129,7 +129,7 @@ export default function ChatArea({
 
   // ── Chat view ───────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))]">
+    <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
       {/* Header */}
       <div className="flex items-center px-5 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
         <div className="flex items-center gap-2 min-w-0">

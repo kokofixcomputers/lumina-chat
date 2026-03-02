@@ -211,7 +211,7 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
   }
 
   return (
-    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 max-w-4xl mx-auto w-full mb-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 max-w-4xl mx-auto w-full mb-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-in-up`}>
       {/* Avatar */}
       {!isUser && (
         <div className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center text-white dark:text-black text-[11px] font-bold mt-0.5">

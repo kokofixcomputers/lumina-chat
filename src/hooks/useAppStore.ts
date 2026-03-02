@@ -1,0 +1,645 @@
+import { useState, useCallback, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import type { Conversation, Message, AppSettings, ModelProvider, ModelSettings } from '../types';
+import type { IntegratedProviderTemplate } from '../data/integratedProviders';
+import { getToolDefinitions, getToolByName } from '../tools';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'system',
+  providers: [
+  ],
+  defaultModelId: 'gpt-4o',
+  defaultProviderModelId: 'openai/gpt-4o',
+  modelSettings: {
+    temperature: 0.7,
+    maxTokens: 2048,
+    topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    systemPrompt: 'You are a helpful, creative, and intelligent AI assistant.',
+    stream: true,
+  },
+};
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw) as T;
+  } catch {}
+  return fallback;
+}
+
+function saveToStorage(key: string, value: unknown) {
+  try {
+    const serialized = JSON.stringify(value);
+    localStorage.setItem(key, serialized);
+  } catch (err) {
+    console.error('Failed to save to localStorage:', err);
+    if (err instanceof Error && err.name === 'QuotaExceededError') {
+      console.warn('localStorage quota exceeded. Consider clearing old conversations.');
+    }
+  }
+}
+
+export function useAppStore() {
+  const [conversations, setConversations] = useState<Conversation[]>(() =>
+    loadFromStorage('lumina_conversations', [])
+  );
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(() =>
+    loadFromStorage('lumina_settings', DEFAULT_SETTINGS)
+  );
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  useEffect(() => {
+    saveToStorage('lumina_conversations', conversations);
+  }, [conversations]);
+
+  useEffect(() => {
+    saveToStorage('lumina_settings', settings);
+  }, [settings]);
+
+  // Theme
+  useEffect(() => {
+    const theme = settings.theme;
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else if (theme === 'light') {
+      root.classList.remove('dark');
+    } else {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.classList.toggle('dark', prefersDark);
+    }
+  }, [settings.theme]);
+
+  const activeConversation = conversations.find(c => c.id === activeConvId) ?? null;
+
+  const newConversation = useCallback((mode: 'chat' | 'image' = 'chat', attachments: string[] = []) => {
+    const id = uuidv4();
+    const conv: Conversation = {
+      id,
+      title: 'New conversation',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      modelId: settings.defaultProviderModelId,
+      mode,
+      attachments,
+    };
+    setConversations(prev => [conv, ...prev]);
+    setActiveConvId(id);
+    return id;
+  }, [settings.defaultProviderModelId]);
+
+  const deleteConversation = useCallback((id: string) => {
+    setConversations(prev => {
+      const next = prev.filter(c => c.id !== id);
+      if (activeConvId === id) {
+        setActiveConvId(next[0]?.id ?? null);
+      }
+      return next;
+    });
+  }, [activeConvId]);
+
+  const updateConversationTitle = useCallback((id: string, title: string) => {
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c));
+  }, []);
+
+  const addMessage = useCallback((convId: string, msg: Message) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id !== convId) return c;
+      const messages = [...c.messages, msg];
+      // Auto-title from first user message
+      const title = c.messages.length === 0 && msg.role === 'user'
+        ? msg.content.slice(0, 50) + (msg.content.length > 50 ? '...' : '')
+        : c.title;
+      return { ...c, messages, title, updatedAt: Date.now() };
+    }));
+  }, []);
+
+  const getProviderAndModel = useCallback((providerModelId: string) => {
+    const [providerId, modelId] = providerModelId.split('/');
+    const provider = settings.providers.find(p => p.id === providerId);
+    const model = provider?.models.find(m => m.id === modelId);
+    return { provider, model };
+  }, [settings.providers]);
+
+  const sendMessage = useCallback(async (
+    content: string,
+    images: string[],
+    convId: string,
+  ) => {
+    // Find or create the conversation
+    let conv = conversations.find(c => c.id === convId);
+    if (!conv) {
+      // convId was just created but state hasn't updated — create inline
+      const newConv: Conversation = {
+        id: convId,
+        title: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        modelId: settings.defaultProviderModelId,
+      };
+      setConversations(prev => {
+        // might already exist if state updated
+        if (prev.find(c => c.id === convId)) return prev;
+        return [newConv, ...prev];
+      });
+      conv = newConv;
+    }
+
+    const { provider, model } = getProviderAndModel(conv.modelId || settings.defaultProviderModelId);
+    if (!provider) return;
+
+    const userMsg: Message = {
+      id: uuidv4(),
+      role: 'user',
+      content,
+      images: images.length ? images : undefined,
+      timestamp: Date.now(),
+    };
+
+    addMessage(convId, userMsg);
+    setIsGenerating(true);
+    setStreamingContent('');
+
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    // Build messages for API
+    const apiMessages: Array<{ role: string; content: unknown }> = [];
+
+    if (settings.modelSettings.systemPrompt) {
+      apiMessages.push({ role: 'system', content: settings.modelSettings.systemPrompt });
+    }
+
+    const allMessages = [...(conv.messages), userMsg];
+    
+    // Apply max history limit
+    const maxHistory = settings.maxHistory || 10;
+    const limitedMessages = allMessages.slice(-maxHistory);
+    
+    for (const m of limitedMessages) {
+      // Skip tool messages - they're only for internal tool follow-ups
+      if (m.role === 'tool') continue;
+      
+      if (m.images && m.images.length > 0) {
+        const parts: unknown[] = [];
+        m.images.forEach(img => {
+          if (img.startsWith('data:image/')) {
+            parts.push({ type: 'image_url', image_url: { url: img } });
+          } else {
+            parts.push({ type: 'text', text: `[Attached file content]:\n${img}` });
+          }
+        });
+        parts.push({ type: 'text', text: m.content });
+        apiMessages.push({ role: m.role, content: parts });
+      } else {
+        apiMessages.push({ role: m.role, content: m.content });
+      }
+    }
+
+    const requestBody = {
+      model: model?.id || 'gpt-4o',
+      messages: apiMessages,
+      temperature: settings.modelSettings.temperature,
+      max_tokens: settings.modelSettings.maxTokens,
+      top_p: settings.modelSettings.topP,
+      frequency_penalty: settings.modelSettings.frequencyPenalty,
+      presence_penalty: settings.modelSettings.presencePenalty,
+      stream: settings.modelSettings.stream,
+      tools: getToolDefinitions(),
+    };
+
+    try {
+      const chatUrl = provider.baseUrl.includes('/chat/completions') 
+        ? provider.baseUrl 
+        : `${provider.baseUrl}/chat/completions`;
+      const response = await fetch(chatUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: { message: response.statusText } }));
+        throw new Error(err.error?.message || `API error: ${response.status}`);
+      }
+
+      let assistantContent = '';
+      let toolCalls: any[] = [];
+      const toolCallsMap = new Map<number, any>();
+
+      if (settings.modelSettings.stream) {
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) throw new Error('No response body');
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n').filter(l => l.trim().startsWith('data: '));
+          for (const line of lines) {
+            let data = line.slice(line.indexOf('data: ') + 6).trim();
+            if (data === '[DONE]') continue;
+            
+            // Decode HTML entities
+            data = data.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.error) {
+                throw new Error(parsed.error);
+              }
+              if (parsed.choices?.[0]?.finish_reason === 'error') {
+                throw new Error(parsed.error || 'Stream error');
+              }
+              const delta = parsed.choices?.[0]?.delta?.content || '';
+              assistantContent += delta;
+              setStreamingContent(assistantContent);
+              
+              // Handle streaming tool calls
+              if (parsed.choices?.[0]?.delta?.tool_calls) {
+                for (const tc of parsed.choices[0].delta.tool_calls) {
+                  const existing = toolCallsMap.get(tc.index);
+                  if (!existing) {
+                    toolCallsMap.set(tc.index, {
+                      id: tc.id || '',
+                      type: tc.type || 'function',
+                      function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '' }
+                    });
+                  } else {
+                    if (tc.id) existing.id = tc.id;
+                    if (tc.function?.name) existing.function.name = tc.function.name;
+                    if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+                  }
+                }
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && !parseErr.message.includes('JSON')) {
+                throw parseErr;
+              }
+            }
+          }
+        }
+        toolCalls = Array.from(toolCallsMap.values());
+      } else {
+        const data = await response.json();
+        assistantContent = data.choices?.[0]?.message?.content || '';
+        toolCalls = data.choices?.[0]?.message?.tool_calls || [];
+      }
+
+      const assistantMsg: Message = {
+        id: uuidv4(),
+        role: 'assistant',
+        content: assistantContent,
+        timestamp: Date.now(),
+        model: model?.id,
+        tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+      };
+      addMessage(convId, assistantMsg);
+
+      // Execute tool calls if present
+      if (toolCalls.length > 0) {
+        const toolMessages: any[] = [];
+        
+        for (const toolCall of toolCalls) {
+          const tool = getToolByName(toolCall.function.name);
+          
+          // Add loading message
+          const loadingMsgId = uuidv4();
+          const loadingMsg: Message = {
+            id: loadingMsgId,
+            role: 'tool',
+            content: '',
+            timestamp: Date.now(),
+            tool_call_id: toolCall.id,
+            tool_name: toolCall.function.name,
+            tool_status: 'loading',
+          };
+          addMessage(convId, loadingMsg);
+          
+          if (tool) {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              const result = await tool.execute(args);
+              
+              // Update to success
+              setConversations(prev => prev.map(c => {
+                if (c.id !== convId) return c;
+                return {
+                  ...c,
+                  messages: c.messages.map(m => 
+                    m.id === loadingMsgId 
+                      ? { ...m, content: JSON.stringify(result, null, 2), tool_status: 'success' as const }
+                      : m
+                  )
+                };
+              }));
+              
+              toolMessages.push({
+                role: 'tool',
+                tool_call_id: toolCall.id,
+                content: JSON.stringify(result)
+              });
+            } catch (toolErr) {
+              // Update to error
+              setConversations(prev => prev.map(c => {
+                if (c.id !== convId) return c;
+                return {
+                  ...c,
+                  messages: c.messages.map(m => 
+                    m.id === loadingMsgId 
+                      ? { ...m, content: toolErr instanceof Error ? toolErr.message : String(toolErr), tool_status: 'error' as const }
+                      : m
+                  )
+                };
+              }));
+            }
+          } else {
+            // Tool not found
+            setConversations(prev => prev.map(c => {
+              if (c.id !== convId) return c;
+              return {
+                ...c,
+                messages: c.messages.map(m => 
+                  m.id === loadingMsgId 
+                    ? { ...m, content: `Tool "${toolCall.function.name}" not found`, tool_status: 'error' as const }
+                    : m
+                )
+              };
+            }));
+          }
+        }
+        
+        // Send tool results back to AI
+        if (toolMessages.length > 0) {
+          const followUpMessages = [
+            ...apiMessages,
+            { role: 'assistant', content: assistantContent || null, tool_calls: toolCalls },
+            ...toolMessages,
+          ];
+          
+          try {
+            const followUpResponse = await fetch(chatUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${provider.apiKey}`,
+              },
+              body: JSON.stringify({ ...requestBody, messages: followUpMessages, tools: undefined }),
+              signal: controller.signal,
+            });
+            
+            if (followUpResponse.ok) {
+              let followUpContent = '';
+              
+              if (settings.modelSettings.stream) {
+                const reader = followUpResponse.body?.getReader();
+                const decoder = new TextDecoder();
+                if (reader) {
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n').filter(l => l.trim().startsWith('data: '));
+                    for (const line of lines) {
+                      let data = line.slice(line.indexOf('data: ') + 6).trim();
+                      if (data === '[DONE]') continue;
+                      data = data.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+                      try {
+                        const parsed = JSON.parse(data);
+                        const delta = parsed.choices?.[0]?.delta?.content || '';
+                        followUpContent += delta;
+                        setStreamingContent(followUpContent);
+                      } catch {}
+                    }
+                  }
+                }
+              } else {
+                const followUpData = await followUpResponse.json();
+                followUpContent = followUpData.choices?.[0]?.message?.content || '';
+              }
+              
+              if (followUpContent) {
+                const followUpMsg: Message = {
+                  id: uuidv4(),
+                  role: 'assistant',
+                  content: followUpContent,
+                  timestamp: Date.now(),
+                  model: model?.id,
+                };
+                addMessage(convId, followUpMsg);
+              }
+            }
+          } catch (followUpErr) {
+            console.error('Follow-up request failed:', followUpErr);
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const errorMsg: Message = {
+        id: uuidv4(),
+        role: 'assistant',
+        content: err instanceof Error ? err.message : String(err),
+        timestamp: Date.now(),
+        isError: true,
+      };
+      addMessage(convId, errorMsg);
+    } finally {
+      setIsGenerating(false);
+      setStreamingContent('');
+      setAbortController(null);
+    }
+  }, [conversations, settings, getProviderAndModel, addMessage]);
+
+  const stopGeneration = useCallback(() => {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+      setIsGenerating(false);
+      setStreamingContent('');
+    }
+  }, [abortController]);
+
+  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const updateModelSettings = useCallback((patch: Partial<ModelSettings>) => {
+    setSettings(prev => ({
+      ...prev,
+      modelSettings: { ...prev.modelSettings, ...patch },
+    }));
+  }, []);
+
+  const updateProvider = useCallback((id: string, patch: Partial<ModelProvider>) => {
+    setSettings(prev => ({
+      ...prev,
+      providers: prev.providers.map(p => p.id === id ? { ...p, ...patch } : p),
+    }));
+  }, []);
+
+  const addIntegratedProvider = useCallback((template: IntegratedProviderTemplate) => {
+    const newProvider: ModelProvider = {
+      id: template.id,
+      name: template.name,
+      baseUrl: template.baseUrlTemplate,
+      apiKey: template.requireAuth ? '' : 'none',
+      enabled: false,
+      models: template.defaultModels,
+      isIntegrated: true,
+      customFieldValues: {},
+    };
+    setSettings(prev => ({ ...prev, providers: [...prev.providers, newProvider] }));
+  }, []);
+
+  const addProvider = useCallback(() => {
+    const id = uuidv4();
+    const newProvider: ModelProvider = {
+      id,
+      name: 'New Provider',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: '',
+      enabled: true,
+      models: [{ id: 'model-id', name: 'Model Name', contextLength: 4096, supportsImages: false, supportsStreaming: true }],
+    };
+    setSettings(prev => ({ ...prev, providers: [...prev.providers, newProvider] }));
+  }, []);
+
+  const deleteProvider = useCallback((id: string) => {
+    setSettings(prev => ({
+      ...prev,
+      providers: prev.providers.filter(p => p.id !== id),
+    }));
+  }, []);
+
+  const setConversationModel = useCallback((convId: string, modelId: string) => {
+    setConversations(prev => prev.map(c => c.id === convId ? { ...c, modelId } : c));
+  }, []);
+
+  const deleteLastMessage = useCallback((convId: string) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id !== convId) return c;
+      const messages = c.messages.slice(0, -1);
+      return { ...c, messages, updatedAt: Date.now() };
+    }));
+  }, []);
+
+  const editMessage = useCallback((convId: string, msgId: string, newContent: string) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id !== convId) return c;
+      const messages = c.messages.map(m => m.id === msgId ? { ...m, content: newContent } : m);
+      return { ...c, messages, updatedAt: Date.now() };
+    }));
+  }, []);
+
+  const deleteMessagesFrom = useCallback((convId: string, msgId: string) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id !== convId) return c;
+      const idx = c.messages.findIndex(m => m.id === msgId);
+      if (idx === -1) return c;
+      const messages = c.messages.slice(0, idx);
+      return { ...c, messages, updatedAt: Date.now() };
+    }));
+  }, []);
+
+  const setConversationMode = useCallback((convId: string, mode: 'chat' | 'image') => {
+    setConversations(prev => prev.map(c => c.id === convId ? { ...c, mode } : c));
+  }, []);
+
+  const setConversationAttachments = useCallback((convId: string, attachments: string[]) => {
+    setConversations(prev => prev.map(c => c.id === convId ? { ...c, attachments } : c));
+  }, []);
+
+  const generateImage = useCallback(async (prompt: string, convId: string) => {
+    const conv = conversations.find(c => c.id === convId);
+    if (!conv) return;
+
+    const { provider } = getProviderAndModel(conv.modelId || settings.defaultProviderModelId);
+    if (!provider) return;
+
+    const userMsg: Message = { id: uuidv4(), role: 'user', content: prompt, timestamp: Date.now() };
+    addMessage(convId, userMsg);
+    setIsGenerating(true);
+
+    try {
+      const imageUrl = provider.baseUrl.includes('/images/generations')
+        ? provider.baseUrl
+        : `${provider.baseUrl}/images/generations`;
+      const response = await fetch(imageUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({ prompt, n: 1, size: '1024x1024' }),
+      });
+
+      if (!response.ok) throw new Error('Image generation failed');
+      const data = await response.json();
+      const imageData = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+      
+      const assistantMsg: Message = {
+        id: uuidv4(),
+        role: 'assistant',
+        content: `Generated image for: "${prompt}"`,
+        images: [imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`],
+        timestamp: Date.now(),
+      };
+      addMessage(convId, assistantMsg);
+    } catch (err: unknown) {
+      const errorMsg: Message = {
+        id: uuidv4(),
+        role: 'assistant',
+        content: err instanceof Error ? err.message : String(err),
+        timestamp: Date.now(),
+        isError: true,
+      };
+      addMessage(convId, errorMsg);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [conversations, settings, getProviderAndModel, addMessage]);
+
+  const allProviderModels = settings.providers
+    .filter(p => p.enabled)
+    .flatMap(p => p.models.map(m => ({ ...m, providerId: p.id, providerName: p.name, fullId: `${p.id}/${m.id}` })));
+
+  return {
+    conversations,
+    activeConvId,
+    activeConversation,
+    settings,
+    isGenerating,
+    streamingContent,
+    allProviderModels,
+    setActiveConvId,
+    newConversation,
+    deleteConversation,
+    updateConversationTitle,
+    sendMessage,
+    updateSettings,
+    updateModelSettings,
+    updateProvider,
+    addIntegratedProvider,
+    deleteProvider,
+    setConversationModel,
+    deleteLastMessage,
+    editMessage,
+    deleteMessagesFrom,
+    setConversationMode,
+    setConversationAttachments,
+    generateImage,
+    stopGeneration,
+  };
+}

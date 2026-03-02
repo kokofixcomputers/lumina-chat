@@ -3,6 +3,7 @@ import { Menu } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import SettingsPanel from './components/SettingsPanel';
+import WelcomeScreen from './components/WelcomeScreen';
 import { useAppStore } from './hooks/useAppStore';
 import type { Panel } from './types';
 
@@ -12,6 +13,12 @@ export default function App() {
   const [homeMode, setHomeMode] = useState<'chat' | 'image'>('chat');
   const [homeAttachments, setHomeAttachments] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
+
+  const handleGetStarted = () => {
+    localStorage.setItem('notfirsttime', 'true');
+    setShowWelcome(false);
+  };
 
   const toggleTheme = () => {
     const themes = ['light', 'dark', 'system'] as const;
@@ -144,69 +151,72 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setSidebarOpen(true)}
-        className="fixed top-4 left-4 z-30 md:hidden btn-icon shadow-lg"
-      >
-        <Menu size={20} />
-      </button>
+    <>
+      {showWelcome && <WelcomeScreen onGetStarted={handleGetStarted} />}
+      <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
+        {/* Mobile menu button */}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="fixed top-4 left-4 z-30 md:hidden btn-icon shadow-lg"
+        >
+          <Menu size={20} />
+        </button>
 
-      <Sidebar
-        conversations={store.conversations}
-        activeConvId={store.activeConvId}
-        settings={store.settings}
-        onSelectConv={store.setActiveConvId}
-        onGoHome={() => store.setActiveConvId(null)}
-        onDeleteConv={store.deleteConversation}
-        onUpdateTitle={store.updateConversationTitle}
-        onOpenSettings={() => setPanel(p => p === 'settings' ? 'chat' : 'settings')}
-        onOpenProviders={openProviders}
-        onToggleTheme={toggleTheme}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-
-      <div className="flex-1 flex min-w-0 overflow-hidden">
-        <ChatArea
-          conversation={store.activeConversation}
-          isGenerating={store.isGenerating}
-          streamingContent={store.streamingContent}
-          allModels={store.allProviderModels}
-          onSend={handleSend}
-          onModelChange={handleModelChange}
-          defaultModelId={store.settings.defaultProviderModelId}
-          onTogglePanel={togglePanel}
+        <Sidebar
+          conversations={store.conversations}
+          activeConvId={store.activeConvId}
+          settings={store.settings}
+          onSelectConv={store.setActiveConvId}
+          onGoHome={() => store.setActiveConvId(null)}
+          onDeleteConv={store.deleteConversation}
+          onUpdateTitle={store.updateConversationTitle}
+          onOpenSettings={() => setPanel(p => p === 'settings' ? 'chat' : 'settings')}
           onOpenProviders={openProviders}
-          onRetry={handleRetry}
-          onStopGeneration={store.stopGeneration}
-          onEditMessage={handleEditMessage}
-          onDeleteMessage={handleDeleteMessage}
-          onModeChange={handleModeChange}
-          onAttachmentsChange={handleAttachmentsChange}
-          onGenerateTitle={handleGenerateTitle}
-          onGenerateFollowUps={handleGenerateFollowUps}
-          homeMode={homeMode}
-          homeAttachments={homeAttachments}
-          prettifyModelNames={store.settings.prettifyModelNames}
+          onToggleTheme={toggleTheme}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
 
-        {panel === 'settings' && (
-          <SettingsPanel
-            settings={store.settings}
-            conversations={store.conversations}
-            onUpdateModelSettings={store.updateModelSettings}
-            onUpdateSettings={store.updateSettings}
-            onUpdateProvider={store.updateProvider}
-            onAddProvider={store.addProvider}
-            onAddIntegratedProvider={store.addIntegratedProvider}
-            onDeleteProvider={store.deleteProvider}
-            onImportData={handleImportData}
-            onClose={() => setPanel('chat')}
+        <div className="flex-1 flex min-w-0 overflow-hidden">
+          <ChatArea
+            conversation={store.activeConversation}
+            isGenerating={store.isGenerating}
+            streamingContent={store.streamingContent}
+            allModels={store.allProviderModels}
+            onSend={handleSend}
+            onModelChange={handleModelChange}
+            defaultModelId={store.settings.defaultProviderModelId}
+            onTogglePanel={togglePanel}
+            onOpenProviders={openProviders}
+            onRetry={handleRetry}
+            onStopGeneration={store.stopGeneration}
+            onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
+            onModeChange={handleModeChange}
+            onAttachmentsChange={handleAttachmentsChange}
+            onGenerateTitle={handleGenerateTitle}
+            onGenerateFollowUps={handleGenerateFollowUps}
+            homeMode={homeMode}
+            homeAttachments={homeAttachments}
+            prettifyModelNames={store.settings.prettifyModelNames}
           />
-        )}
+
+          {panel === 'settings' && (
+            <SettingsPanel
+              settings={store.settings}
+              conversations={store.conversations}
+              onUpdateModelSettings={store.updateModelSettings}
+              onUpdateSettings={store.updateSettings}
+              onUpdateProvider={store.updateProvider}
+              onAddProvider={store.addProvider}
+              onAddIntegratedProvider={store.addIntegratedProvider}
+              onDeleteProvider={store.deleteProvider}
+              onImportData={handleImportData}
+              onClose={() => setPanel('chat')}
+            />
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

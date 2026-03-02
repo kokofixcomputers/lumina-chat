@@ -70,6 +70,8 @@ export interface AppSettings {
   maxHistory?: number;
   generateTitle?: boolean;
   generateFollowUps?: boolean;
+  allowImageGeneration?: boolean;
+  imageGenerationModel?: string;
 }
 
 export type Panel = 'chat' | 'settings' | 'providers';

@@ -275,6 +275,31 @@ export default function SettingsPanel({
                     <p className="form-help">Show suggested follow-up questions after each response</p>
                   </div>
                   <div className="form-group">
+                    <div className="flex items-center justify-between">
+                      <label className="form-label mb-0">Allow Image Generation from LLM</label>
+                      <button
+                        onClick={() => onUpdateSettings({ allowImageGeneration: !settings.allowImageGeneration })}
+                        className={`toggle ${settings.allowImageGeneration ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+                      >
+                        <span className={`toggle-thumb ${settings.allowImageGeneration ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    <p className="form-help">Allow AI to generate images via function calling</p>
+                  </div>
+                  {settings.allowImageGeneration && (
+                    <div className="form-group">
+                      <label className="form-label">Image Generation Model</label>
+                      <input
+                        type="text"
+                        value={settings.imageGenerationModel || 'dall-e-3'}
+                        onChange={e => onUpdateSettings({ imageGenerationModel: e.target.value })}
+                        className="input text-sm"
+                        placeholder="dall-e-3"
+                      />
+                      <p className="form-help">Model to use for AI-initiated image generation</p>
+                    </div>
+                  )}
+                  <div className="form-group">
                     <label className="form-label">Max History</label>
                     <div className="flex items-center gap-3">
                       <input
@@ -362,22 +387,6 @@ export default function SettingsPanel({
                 </section>
 
                 {/* API Keys */}
-                <section>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Tool API Keys</h3>
-                  <div className="form-group">
-                    <label className="form-label">SerpAPI Key</label>
-                    <div className="relative">
-                      <input
-                        type="password"
-                        defaultValue={localStorage.getItem('serpapi_key') || ''}
-                        onChange={e => localStorage.setItem('serpapi_key', e.target.value)}
-                        className="input text-sm font-mono"
-                        placeholder="Enter your SerpAPI key for Google search"
-                      />
-                    </div>
-                    <p className="form-help">Required for google_search tool. Get your key at <a href="https://serpapi.com" target="_blank" rel="noopener noreferrer" className="text-[rgb(var(--accent))] hover:underline">serpapi.com</a></p>
-                  </div>
-                </section>
               </div>
 
             ) : activeTab === 'providers' ? (

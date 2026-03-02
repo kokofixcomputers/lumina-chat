@@ -215,7 +215,7 @@ export function useAppStore() {
       frequency_penalty: settings.modelSettings.frequencyPenalty,
       presence_penalty: settings.modelSettings.presencePenalty,
       stream: settings.modelSettings.stream,
-      tools: getToolDefinitions(),
+      tools: getToolDefinitions(settings.allowImageGeneration),
     };
 
     try {
@@ -366,6 +366,62 @@ export function useAppStore() {
               const args = JSON.parse(toolCall.function.arguments);
               const result = await tool.execute(args);
               
+              // Handle image generation specially
+              if (result._requiresImageGeneration && toolCall.function.name === 'generate_image') {
+                try {
+                  const imageUrl = provider.baseUrl.includes('/images/generations')
+                    ? provider.baseUrl
+                    : `${provider.baseUrl}/images/generations`;
+                  const imgResponse = await fetch(imageUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${provider.apiKey}`,
+                    },
+                    body: JSON.stringify({ prompt: result.prompt, n: 1, size: result.size, model: settings.imageGenerationModel || 'dall-e-3' }),
+                  });
+                  
+                  if (imgResponse.ok) {
+                    const imgData = await imgResponse.json();
+                    const imageUrl = imgData.data?.[0]?.url || imgData.data?.[0]?.b64_json;
+                    const imageData = imageUrl.startsWith('data:') ? imageUrl : imageUrl.startsWith('http') ? imageUrl : `data:image/png;base64,${imageUrl}`;
+                    
+                    // Update to success with image
+                    setConversations(prev => prev.map(c => {
+                      if (c.id !== convId) return c;
+                      return {
+                        ...c,
+                        messages: c.messages.map(m => 
+                          m.id === loadingMsgId 
+                            ? { ...m, content: `Generated image: ${result.prompt}`, images: [imageData], tool_status: 'success' as const }
+                            : m
+                        )
+                      };
+                    }));
+                    
+                    toolMessages.push({
+                      role: 'tool',
+                      tool_call_id: toolCall.id,
+                      content: JSON.stringify({ success: true, description: result.prompt })
+                    });
+                  } else {
+                    throw new Error('Image generation failed');
+                  }
+                } catch (imgErr) {
+                  setConversations(prev => prev.map(c => {
+                    if (c.id !== convId) return c;
+                    return {
+                      ...c,
+                      messages: c.messages.map(m => 
+                        m.id === loadingMsgId 
+                          ? { ...m, content: imgErr instanceof Error ? imgErr.message : 'Image generation failed', tool_status: 'error' as const }
+                          : m
+                      )
+                    };
+                  }));
+                }
+              } else {
+              
               // Update to success
               setConversations(prev => prev.map(c => {
                 if (c.id !== convId) return c;
@@ -384,6 +440,7 @@ export function useAppStore() {
                 tool_call_id: toolCall.id,
                 content: JSON.stringify(result)
               });
+              }
             } catch (toolErr) {
               // Update to error
               setConversations(prev => prev.map(c => {

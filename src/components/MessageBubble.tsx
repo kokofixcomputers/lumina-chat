@@ -175,11 +175,22 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
                 <div key={idx} className="relative group">
                   <img src={img} alt="Generated" className="rounded-xl max-w-md max-h-96 object-cover border border-[rgb(var(--border))]" />
                   <button
-                    onClick={() => {
-                      const a = document.createElement('a');
-                      a.href = img;
-                      a.download = `image-${Date.now()}.png`;
-                      a.click();
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(img);
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `image-${Date.now()}.png`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch {
+                        const a = document.createElement('a');
+                        a.href = img;
+                        a.download = `image-${Date.now()}.png`;
+                        a.click();
+                      }
                     }}
                     className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-[rgb(var(--panel))] border border-[rgb(var(--border))] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                   >

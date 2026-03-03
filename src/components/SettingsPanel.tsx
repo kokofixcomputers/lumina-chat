@@ -4,6 +4,7 @@ import type { AppSettings, ModelSettings, ModelProvider, ModelConfig } from '../
 import { getModelInfo } from '../utils/models';
 import { integratedProviders, type IntegratedProviderTemplate } from '../data/integratedProviders';
 import { encryptData, decryptData } from '../utils/encryption';
+import { setSyncStatus } from '../utils/syncStatus';
 
 
 interface SettingsPanelProps {
@@ -117,9 +118,19 @@ export default function SettingsPanel({
     return () => clearInterval(interval);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (!autoSyncEnabled || !syncEmail || !syncPassword) {
+      setSyncStatus('disabled');
+    }
+  }, []);
+
   const syncToCloud = async (silent = false) => {
-    if (!autoSyncEnabled || !syncEmail || !syncPassword || !cloudSyncEnabled) return;
+    if (!autoSyncEnabled || !syncEmail || !syncPassword || !cloudSyncEnabled) {
+      setSyncStatus('disabled');
+      return;
+    }
     if (!silent) setSyncStatus('loading');
+    setSyncStatus('syncing');
     try {
       const encrypted = encryptData({ settings, conversations }, syncPassword);
       const response = await fetch('/api/sync', {
@@ -130,14 +141,18 @@ export default function SettingsPanel({
       const result = await response.json();
       if (result.disabled) {
         setCloudSyncEnabled(false);
+        setSyncStatus('disabled');
       } else if (!result.success) {
         throw new Error(result.error || 'Sync failed');
+      } else {
+        setSyncStatus('synced');
       }
       if (!silent) {
         setSyncMessage('Synced to cloud');
         setSyncStatus('success');
       }
     } catch (err) {
+      setSyncStatus('error');
       if (!silent) {
         setSyncMessage(err instanceof Error ? err.message : 'Sync failed');
         setSyncStatus('error');
@@ -146,11 +161,11 @@ export default function SettingsPanel({
   };
 
   useEffect(() => {
-    if (autoSyncEnabled) {
-      const timer = setTimeout(() => syncToCloud(true), 1000);
+    if (autoSyncEnabled && syncEmail && syncPassword) {
+      const timer = setTimeout(() => syncToCloud(true), 2000);
       return () => clearTimeout(timer);
     }
-  }, [settings, conversations, autoSyncEnabled]);
+  }, [settings, conversations, autoSyncEnabled, syncEmail, syncPassword]);
 
 
   const exportData = () => {

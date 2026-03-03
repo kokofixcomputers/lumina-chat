@@ -210,7 +210,7 @@ export function useAppStore() {
       model: model?.id || 'gpt-4o',
       messages: apiMessages,
       temperature: settings.modelSettings.temperature,
-      max_tokens: settings.modelSettings.maxTokens,
+      //max_tokens: settings.modelSettings.maxTokens,
       top_p: settings.modelSettings.topP,
       frequency_penalty: settings.modelSettings.frequencyPenalty,
       presence_penalty: settings.modelSettings.presencePenalty,

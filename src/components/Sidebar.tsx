@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
-  Trash2, Star, ChevronDown, X, Edit2
+  Trash2, Star, ChevronDown, X, Edit2, Cloud
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
 
@@ -18,6 +18,7 @@ interface SidebarProps {
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
+  syncStatus?: 'synced' | 'syncing' | 'error' | 'disabled';
 }
 
 export default function Sidebar({
@@ -32,6 +33,7 @@ export default function Sidebar({
   onOpenProviders,
   isOpen,
   onClose,
+  syncStatus = 'disabled',
 }: SidebarProps) {
   const [hoverDel, setHoverDel] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -120,6 +122,19 @@ export default function Sidebar({
           {(settings as any).username?.[0]?.toUpperCase() ?? 'k'}
         </div>
         <span className="text-[13px] font-medium truncate flex-1 select-none">You</span>
+        <Cloud 
+          size={16} 
+          className={`shrink-0 ${
+            syncStatus === 'synced' ? 'text-green-500' :
+            syncStatus === 'syncing' ? 'text-blue-500 animate-pulse' :
+            syncStatus === 'error' ? 'text-red-500' :
+            'text-gray-400'
+          }`}
+          title={syncStatus === 'synced' ? 'Synced to cloud' :
+                 syncStatus === 'syncing' ? 'Syncing...' :
+                 syncStatus === 'error' ? 'Sync failed' :
+                 'Cloud sync disabled'}
+        />
         <button onClick={onClose} className="md:hidden btn-icon w-6 h-6">
           <X size={16} />
         </button>

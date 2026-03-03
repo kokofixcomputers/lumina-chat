@@ -5,6 +5,7 @@ import ChatArea from './components/ChatArea';
 import SettingsPanel from './components/SettingsPanel';
 import WelcomeScreen from './components/WelcomeScreen';
 import { useAppStore } from './hooks/useAppStore';
+import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import type { Panel } from './types';
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
   const [homeAttachments, setHomeAttachments] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
 
   const handleGetStarted = () => {
     localStorage.setItem('notfirsttime', 'true');
@@ -151,6 +153,10 @@ export default function App() {
     return () => window.removeEventListener('openProviders', handler as EventListener);
   }, []);
 
+  useEffect(() => {
+    return subscribeSyncStatus(setSyncStatus);
+  }, []);
+
   return (
     <>
       {showWelcome && <WelcomeScreen onGetStarted={handleGetStarted} />}
@@ -176,6 +182,7 @@ export default function App() {
           onToggleTheme={toggleTheme}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          syncStatus={syncStatus}
         />
 
         <div className="flex-1 flex min-w-0 overflow-hidden">

@@ -159,8 +159,12 @@ export default function App() {
 
   useEffect(() => {
     const cloudSync = store.settings.cloudSync;
-    if (!cloudSync?.enabled || !cloudSync?.email || !cloudSync?.password) return;
+    if (!cloudSync?.enabled || !cloudSync?.email || !cloudSync?.password) {
+      setSyncStatus('disabled');
+      return;
+    }
 
+    setSyncStatus('synced');
     let lastConversations = localStorage.getItem('lumina_conversations');
     let lastSettings = localStorage.getItem('lumina_settings');
     let lastServerUpdate = parseInt(localStorage.getItem('lumina_last_server_update') || '0');
@@ -221,6 +225,8 @@ export default function App() {
           } else {
             setSyncStatus('error');
           }
+        } else {
+          setSyncStatus('synced');
         }
       } catch (err) {
         setSyncStatus('error');

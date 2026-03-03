@@ -121,8 +121,31 @@ export default function SettingsPanel({
   useEffect(() => {
     if (!autoSyncEnabled || !syncEmail || !syncPassword) {
       setSyncStatus('disabled');
+    } else {
+      setSyncStatus('synced');
     }
-  }, []);
+  }, [autoSyncEnabled, syncEmail, syncPassword]);
+
+  useEffect(() => {
+    if (!autoSyncEnabled || !syncEmail || !syncPassword) return;
+
+    let lastConversations = localStorage.getItem('lumina_conversations');
+    let lastSettings = localStorage.getItem('lumina_settings');
+
+    const checkAndSync = () => {
+      const currentConversations = localStorage.getItem('lumina_conversations');
+      const currentSettings = localStorage.getItem('lumina_settings');
+
+      if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
+        lastConversations = currentConversations;
+        lastSettings = currentSettings;
+        syncToCloud(true);
+      }
+    };
+
+    const interval = setInterval(checkAndSync, 5000);
+    return () => clearInterval(interval);
+  }, [autoSyncEnabled, syncEmail, syncPassword]);
 
   const syncToCloud = async (silent = false) => {
     if (!autoSyncEnabled || !syncEmail || !syncPassword || !cloudSyncEnabled) {
@@ -159,14 +182,6 @@ export default function SettingsPanel({
       }
     }
   };
-
-  useEffect(() => {
-    if (autoSyncEnabled && syncEmail && syncPassword) {
-      const timer = setTimeout(() => syncToCloud(true), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [settings, conversations, autoSyncEnabled, syncEmail, syncPassword]);
-
 
   const exportData = () => {
     const data = {
@@ -591,6 +606,11 @@ export default function SettingsPanel({
                               const newEnabled = !autoSyncEnabled;
                               setAutoSyncEnabled(newEnabled);
                               onUpdateSettings({ cloudSync: { enabled: newEnabled, email: syncEmail, password: syncPassword } });
+                              if (!newEnabled) {
+                                setSyncStatus('disabled');
+                              } else if (syncEmail && syncPassword) {
+                                setSyncStatus('synced');
+                              }
                             }}
                             className={`toggle ${autoSyncEnabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
                           >

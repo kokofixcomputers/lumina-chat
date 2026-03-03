@@ -163,7 +163,7 @@ export default function App() {
 
     let lastConversations = localStorage.getItem('lumina_conversations');
     let lastSettings = localStorage.getItem('lumina_settings');
-    let lastServerUpdate = 0;
+    let lastServerUpdate = parseInt(localStorage.getItem('lumina_last_server_update') || '0');
 
     const syncWithServer = async () => {
       try {
@@ -182,14 +182,12 @@ export default function App() {
           const serverUpdateTime = new Date(getResult.updatedAt).getTime();
           
           // If server has newer data, apply it
-          if (serverUpdateTime > lastServerUpdate) {
+          if (serverUpdateTime > lastServerUpdate + 5000) {
             const decrypted = decryptData(getResult.data, cloudSync.password);
             if (decrypted) {
               localStorage.setItem('lumina_settings', JSON.stringify(decrypted.settings));
               localStorage.setItem('lumina_conversations', JSON.stringify(decrypted.conversations));
-              lastConversations = JSON.stringify(decrypted.conversations);
-              lastSettings = JSON.stringify(decrypted.settings);
-              lastServerUpdate = serverUpdateTime;
+              localStorage.setItem('lumina_last_server_update', serverUpdateTime.toString());
               window.location.reload();
               return;
             }
@@ -219,6 +217,7 @@ export default function App() {
           if (result.success) {
             setSyncStatus('synced');
             lastServerUpdate = Date.now();
+            localStorage.setItem('lumina_last_server_update', lastServerUpdate.toString());
           } else {
             setSyncStatus('error');
           }

@@ -40,6 +40,11 @@ export default async function handler(req: Request) {
       return new Response(JSON.stringify({ success: true }), { status: 200 });
     }
 
+    if (action === 'delete') {
+      await sql`DELETE FROM user_data WHERE email = ${email}`;
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+
     return new Response(JSON.stringify({ error: 'Invalid action' }), { status: 400 });
   } catch (error) {
     console.error('Sync error:', error);

@@ -72,6 +72,11 @@ export interface AppSettings {
   generateFollowUps?: boolean;
   allowImageGeneration?: boolean;
   imageGenerationModel?: string;
+  cloudSync?: {
+    enabled: boolean;
+    email: string;
+    password: string;
+  };
 }
 
 export type Panel = 'chat' | 'settings' | 'providers';

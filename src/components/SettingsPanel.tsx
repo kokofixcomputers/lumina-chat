@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import type { AppSettings, ModelSettings, ModelProvider, ModelConfig } from '../types';
 import { getModelInfo } from '../utils/models';
 import { integratedProviders, type IntegratedProviderTemplate } from '../data/integratedProviders';
+import { encryptData, decryptData } from '../utils/encryption';
 
 
 interface SettingsPanelProps {
@@ -95,12 +96,14 @@ export default function SettingsPanel({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
   const [fade, setFade] = useState(true);
-  const [syncEmail, setSyncEmail] = useState('');
+  const [syncEmail, setSyncEmail] = useState(settings.cloudSync?.email || '');
+  const [syncPassword, setSyncPassword] = useState(settings.cloudSync?.password || '');
   const [syncStatus, setSyncStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [serverData, setServerData] = useState<any>(null);
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(true);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(settings.cloudSync?.enabled || false);
 
   useEffect(() => {
     if (activeTab !== 'about') return;
@@ -113,6 +116,41 @@ export default function SettingsPanel({
     }, 3000);
     return () => clearInterval(interval);
   }, [activeTab]);
+
+  const syncToCloud = async (silent = false) => {
+    if (!autoSyncEnabled || !syncEmail || !syncPassword || !cloudSyncEnabled) return;
+    if (!silent) setSyncStatus('loading');
+    try {
+      const encrypted = encryptData({ settings, conversations }, syncPassword);
+      const response = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save', email: syncEmail, data: encrypted })
+      });
+      const result = await response.json();
+      if (result.disabled) {
+        setCloudSyncEnabled(false);
+      } else if (!result.success) {
+        throw new Error(result.error || 'Sync failed');
+      }
+      if (!silent) {
+        setSyncMessage('Synced to cloud');
+        setSyncStatus('success');
+      }
+    } catch (err) {
+      if (!silent) {
+        setSyncMessage(err instanceof Error ? err.message : 'Sync failed');
+        setSyncStatus('error');
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (autoSyncEnabled) {
+      const timer = setTimeout(() => syncToCloud(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [settings, conversations, autoSyncEnabled]);
 
 
   const exportData = () => {
@@ -529,40 +567,68 @@ export default function SettingsPanel({
                       </p>
                     </div>
                     <section>
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Sync Your Data</h3>
-                      <p className="text-sm text-[rgb(var(--muted))] mb-4">
-                        Enter your email address to sync your data to the cloud. Your data will be encrypted and stored securely.
-                      </p>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Sync Configuration</h3>
+                      <div className="form-group">
+                        <div className="flex items-center justify-between">
+                          <label className="form-label mb-0">Enable Auto-Sync</label>
+                          <button
+                            onClick={() => {
+                              const newEnabled = !autoSyncEnabled;
+                              setAutoSyncEnabled(newEnabled);
+                              onUpdateSettings({ cloudSync: { enabled: newEnabled, email: syncEmail, password: syncPassword } });
+                            }}
+                            className={`toggle ${autoSyncEnabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+                          >
+                            <span className={`toggle-thumb ${autoSyncEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                          </button>
+                        </div>
+                        <p className="form-help">Automatically sync changes to cloud</p>
+                      </div>
                       <div className="form-group">
                         <label className="form-label">Email Address</label>
                         <input
                           type="email"
                           value={syncEmail}
-                          onChange={e => setSyncEmail(e.target.value)}
+                          onChange={e => {
+                            setSyncEmail(e.target.value);
+                            onUpdateSettings({ cloudSync: { enabled: autoSyncEnabled, email: e.target.value, password: syncPassword } });
+                          }}
                           className="input text-sm"
                           placeholder="your@email.com"
                           disabled={syncStatus === 'loading'}
                         />
                       </div>
-                      <div className="flex gap-2">
+                      <div className="form-group">
+                        <label className="form-label">Password (AES-256 Encryption)</label>
+                        <input
+                          type="password"
+                          value={syncPassword}
+                          onChange={e => {
+                            setSyncPassword(e.target.value);
+                            onUpdateSettings({ cloudSync: { enabled: autoSyncEnabled, email: syncEmail, password: e.target.value } });
+                          }}
+                          className="input text-sm"
+                          placeholder="Enter encryption password"
+                          disabled={syncStatus === 'loading'}
+                        />
+                        <p className="form-help">Your data is encrypted client-side before upload</p>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
                         <button
                           onClick={async () => {
-                            if (!syncEmail) {
-                              setSyncMessage('Please enter an email address');
+                            if (!syncEmail || !syncPassword) {
+                              setSyncMessage('Please enter email and password');
                               setSyncStatus('error');
                               return;
                             }
                             setSyncStatus('loading');
                             setSyncMessage('Uploading data...');
                             try {
+                              const encrypted = encryptData({ settings, conversations }, syncPassword);
                               const response = await fetch('/api/sync', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  action: 'save',
-                                  email: syncEmail,
-                                  data: { settings, conversations }
-                                })
+                                body: JSON.stringify({ action: 'save', email: syncEmail, data: encrypted })
                               });
                               const result = await response.json();
                               if (result.disabled) {
@@ -588,8 +654,8 @@ export default function SettingsPanel({
                         </button>
                         <button
                           onClick={async () => {
-                            if (!syncEmail) {
-                              setSyncMessage('Please enter an email address');
+                            if (!syncEmail || !syncPassword) {
+                              setSyncMessage('Please enter email and password');
                               setSyncStatus('error');
                               return;
                             }
@@ -610,10 +676,16 @@ export default function SettingsPanel({
                                 setSyncMessage('No data found for this email');
                                 setSyncStatus('error');
                               } else {
-                                setServerData(result.data);
-                                setShowConflictModal(true);
-                                setSyncStatus('idle');
-                                setSyncMessage('');
+                                const decrypted = decryptData(result.data, syncPassword);
+                                if (!decrypted) {
+                                  setSyncMessage('Invalid password');
+                                  setSyncStatus('error');
+                                } else {
+                                  setServerData(decrypted);
+                                  setShowConflictModal(true);
+                                  setSyncStatus('idle');
+                                  setSyncMessage('');
+                                }
                               }
                             } catch (err) {
                               setSyncMessage(err instanceof Error ? err.message : 'Download failed');
@@ -625,6 +697,44 @@ export default function SettingsPanel({
                         >
                           <Download size={16} />
                           {syncStatus === 'loading' ? 'Checking...' : 'Download from Cloud'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!syncEmail) {
+                              setSyncMessage('Please enter email address');
+                              setSyncStatus('error');
+                              return;
+                            }
+                            if (!confirm('Are you sure you want to erase all your cloud data? This cannot be undone.')) return;
+                            setSyncStatus('loading');
+                            setSyncMessage('Erasing data...');
+                            try {
+                              const response = await fetch('/api/sync', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'delete', email: syncEmail })
+                              });
+                              const result = await response.json();
+                              if (result.disabled) {
+                                setCloudSyncEnabled(false);
+                                setSyncMessage('Cloud sync is unavailable');
+                                setSyncStatus('error');
+                              } else if (result.success) {
+                                setSyncMessage('Cloud data erased successfully');
+                                setSyncStatus('success');
+                              } else {
+                                throw new Error(result.error || 'Delete failed');
+                              }
+                            } catch (err) {
+                              setSyncMessage(err instanceof Error ? err.message : 'Delete failed');
+                              setSyncStatus('error');
+                            }
+                          }}
+                          disabled={syncStatus === 'loading'}
+                          className="btn-secondary text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 size={16} />
+                          Erase My Data
                         </button>
                       </div>
                       {syncMessage && (
@@ -751,14 +861,11 @@ export default function SettingsPanel({
                   onClick={async () => {
                     setSyncStatus('loading');
                     try {
+                      const encrypted = encryptData({ settings, conversations }, syncPassword);
                       const response = await fetch('/api/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          action: 'save',
-                          email: syncEmail,
-                          data: { settings, conversations }
-                        })
+                        body: JSON.stringify({ action: 'save', email: syncEmail, data: encrypted })
                       });
                       const result = await response.json();
                       if (result.success) {

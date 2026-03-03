@@ -74,6 +74,7 @@ export default function App() {
     
     // Delete from last assistant message onwards (including tool messages)
     store.deleteMessagesFrom(store.activeConvId, messages[lastAssistantIdx].id);
+    store.deleteMessagesFrom(store.activeConvId, messages[userMsgIdx].id);
     
     // Resend user message
     if (store.activeConversation.mode === 'image') {

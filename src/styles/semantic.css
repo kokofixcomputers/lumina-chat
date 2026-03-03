@@ -242,7 +242,7 @@
   /* ── Code blocks ── */
   .code-block {
     @apply my-3 rounded-2xl overflow-hidden border border-[rgb(var(--border))]
-           shadow-[0_2px_12px_rgba(0,0,0,0.06)];
+           shadow-[0_2px_12px_rgba(0,0,0,0.06)] max-w-full;
   }
   .code-block-header {
     @apply flex items-center justify-between px-4 py-2
@@ -251,6 +251,8 @@
   }
   .code-block-body {
     @apply p-4 bg-[rgb(var(--panel))] overflow-x-auto text-[13px];
++   max-width: 0;
++   min-width: 100%;
   }
 
   /* ── Animations ── */
@@ -275,4 +277,19 @@
   .animate-slide-in-right { animation: slideInRight 0.2s ease-out; }
   .animate-slide-in-up { animation: slideInUp 0.15s ease-out; }
   .animate-scale-in { animation: scaleIn 0.15s ease-out; }
+
+  /* ── Word wrapping ── */
+  .overflow-wrap-anywhere { overflow-wrap: anywhere; }
+  
+  /* Force word wrapping on all text elements within messages */
+  p, li, h1, h2, h3, code:not(pre code) {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  /* Ensure pre and code blocks scroll horizontally instead of breaking layout */
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }

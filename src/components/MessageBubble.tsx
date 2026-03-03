@@ -47,12 +47,12 @@ function renderContent(content: string) {
       while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
       const code = codeLines.join('\n');
       out.push(
-        <div key={k++} className="code-block">
+        <div key={k++} className="code-block max-w-full">
           <div className="code-block-header">
             <span>{line.slice(3).trim() || 'code'}</span>
             <CopyBtn text={code} />
           </div>
-          <div className="code-block-body">
+          <div className="code-block-body overflow-x-auto">
             <SyntaxHighlighter language={lang || 'text'} style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
               {code}
             </SyntaxHighlighter>
@@ -211,7 +211,7 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
   }
 
   return (
-    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 max-w-4xl mx-auto w-full mb-3 ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-in-up`}>
+    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 max-w-4xl mx-auto w-full mb-3 overflow-x-hidden ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-in-up`}>
       {/* Avatar */}
       {!isUser && (
         <div className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center text-white dark:text-black text-[11px] font-bold mt-0.5">
@@ -225,7 +225,7 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
         </div>
       )}
 
-      <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[70%]' : 'flex-1 min-w-0'}`}>
+      <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} ${isUser ? 'max-w-[70%]' : 'flex-1'} min-w-0`}>
         {!isUser && modelName && (
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[13px] font-medium text-[rgb(var(--text))]">{displayName}</span>
@@ -271,12 +271,12 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
               </div>
             </div>
           ) : (
-            <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[18px_18px_4px_18px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_1px_4px_rgba(0,0,0,0.15)] group">
-              <p className="whitespace-pre-wrap">{message.content}</p>
+            <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[18px_18px_4px_18px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_1px_4px_rgba(0,0,0,0.15)] group max-w-full">
+              <p className="whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.content}</p>
             </div>
           )
         ) : (
-          <div className={`text-[rgb(var(--text))] w-full ${message.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}>
+          <div className={`text-[rgb(var(--text))] w-full min-w-0 break-words overflow-wrap-anywhere ${message.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}>
             {renderContent(message.content)}
             {/* Model tag below */}
             {modelName && (

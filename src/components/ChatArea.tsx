@@ -146,44 +146,46 @@ export default function ChatArea({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto py-6">
-        {conversation.messages.map((msg, idx) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            modelName={msg.role === 'assistant' ? modelDisplayName : undefined}
-            modelId={msg.role === 'assistant' ? modelId : undefined}
-            onRetry={msg.role === 'assistant' && idx === conversation.messages.length - 1 ? onRetry : undefined}
-            onEdit={msg.role === 'user' && onEditMessage ? (newContent) => onEditMessage(msg.id, newContent) : undefined}
-            onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
-            onFollowUpClick={onSend ? (followUp) => onSend(followUp, []) : undefined}
-          />
-        ))}
+        <div className="overflow-x-hidden">
+          {conversation.messages.map((msg, idx) => (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              modelName={msg.role === 'assistant' ? modelDisplayName : undefined}
+              modelId={msg.role === 'assistant' ? modelId : undefined}
+              onRetry={msg.role === 'assistant' && idx === conversation.messages.length - 1 ? onRetry : undefined}
+              onEdit={msg.role === 'user' && onEditMessage ? (newContent) => onEditMessage(msg.id, newContent) : undefined}
+              onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
+              onFollowUpClick={onSend ? (followUp) => onSend(followUp, []) : undefined}
+            />
+          ))}
 
-        {/* Streaming */}
-        {isGenerating && streamingContent && (
-          <MessageBubble
-            message={{ id: 'streaming', role: 'assistant', content: streamingContent, timestamp: Date.now() }}
-            modelName={modelDisplayName}
-            modelId={modelId}
-          />
-        )}
+          {/* Streaming */}
+          {isGenerating && streamingContent && (
+            <MessageBubble
+              message={{ id: 'streaming', role: 'assistant', content: streamingContent, timestamp: Date.now() }}
+              modelName={modelDisplayName}
+              modelId={modelId}
+            />
+          )}
 
-        {/* Thinking */}
-        {isGenerating && !streamingContent && (
-          <div className="flex gap-3 px-8 py-2 max-w-4xl mx-auto w-full">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0">
-              <Bot size={13} className="text-white dark:text-black" />
+          {/* Thinking */}
+          {isGenerating && !streamingContent && (
+            <div className="flex gap-3 px-8 py-2 max-w-4xl mx-auto w-full">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0">
+                <Bot size={13} className="text-white dark:text-black" />
+              </div>
+              <div className="flex items-center gap-1 pt-2">
+                {[0,1,2].map(i => (
+                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--muted))] animate-bounce"
+                    style={{ animationDelay: `${i * 0.15}s` }} />
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-1 pt-2">
-              {[0,1,2].map(i => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--muted))] animate-bounce"
-                  style={{ animationDelay: `${i * 0.15}s` }} />
-              ))}
-            </div>
-          </div>
-        )}
+          )}
 
-        <div ref={bottomRef} />
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* Input */}

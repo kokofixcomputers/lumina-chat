@@ -666,7 +666,7 @@ export function useAppStore() {
       }));
       messages.push({
         role: 'user',
-        content: 'Based on the conversation history, generate a Chat Title for this conversation. Reply only with the chat title and nothing else.'
+        content: 'Based on the conversation history, generate a Chat Title for this conversation. Reply only with the chat title and nothing else. markdown is not supported'
       });
 
       const response = await fetch(chatUrl, {
@@ -709,7 +709,7 @@ export function useAppStore() {
       }));
       messages.push({
         role: 'user',
-        content: 'Based on the conversation history, generate atmost 3 follow up questions. I want questions that the user would ask, not the assistant ai. in a JSON list like this ["followup1", "followup2", "followup3"]. Under 3 is fine. but do not include over 3. Don\'t include anything else in your message other than the json list'
+        content: 'Based on the conversation history, generate atmost 3 follow up questions. Markdown is not supported. dont warp in ```json I want questions that the user would ask, not the assistant ai. in a JSON list like this ["followup1", "followup2", "followup3"]. Under 3 is fine. but do not include over 3. Don\'t include anything else in your message other than the json list'
       });
 
       const response = await fetch(chatUrl, {
@@ -819,6 +819,7 @@ export function useAppStore() {
     updateModelSettings,
     updateProvider,
     addIntegratedProvider,
+    addProvider,
     deleteProvider,
     setConversationModel,
     deleteLastMessage,

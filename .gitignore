@@ -1,1 +1,5 @@
 node_modules
+html-builder-cli
+dist
+.vercel
+.DS_Store

@@ -163,18 +163,48 @@ export default function App() {
 
     let lastConversations = localStorage.getItem('lumina_conversations');
     let lastSettings = localStorage.getItem('lumina_settings');
+    let lastServerUpdate = 0;
 
-    const checkAndSync = async () => {
-      const currentConversations = localStorage.getItem('lumina_conversations');
-      const currentSettings = localStorage.getItem('lumina_settings');
-
-      if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
-        lastConversations = currentConversations;
-        lastSettings = currentSettings;
+    const syncWithServer = async () => {
+      try {
+        const { encryptData, decryptData } = await import('./utils/encryption');
         
-        setSyncStatus('syncing');
-        try {
-          const { encryptData } = await import('./utils/encryption');
+        // Check server for updates
+        const getResponse = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get', email: cloudSync.email })
+        });
+        
+        const getResult = await getResponse.json();
+        
+        if (getResult.exists && getResult.updatedAt) {
+          const serverUpdateTime = new Date(getResult.updatedAt).getTime();
+          
+          // If server has newer data, apply it
+          if (serverUpdateTime > lastServerUpdate) {
+            const decrypted = decryptData(getResult.data, cloudSync.password);
+            if (decrypted) {
+              localStorage.setItem('lumina_settings', JSON.stringify(decrypted.settings));
+              localStorage.setItem('lumina_conversations', JSON.stringify(decrypted.conversations));
+              lastConversations = JSON.stringify(decrypted.conversations);
+              lastSettings = JSON.stringify(decrypted.settings);
+              lastServerUpdate = serverUpdateTime;
+              window.location.reload();
+              return;
+            }
+          }
+        }
+        
+        // Check for local changes and push to server
+        const currentConversations = localStorage.getItem('lumina_conversations');
+        const currentSettings = localStorage.getItem('lumina_settings');
+
+        if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
+          lastConversations = currentConversations;
+          lastSettings = currentSettings;
+          
+          setSyncStatus('syncing');
           const settings = JSON.parse(currentSettings || '{}');
           const conversations = JSON.parse(currentConversations || '[]');
           const encrypted = encryptData({ settings, conversations }, cloudSync.password);
@@ -188,16 +218,18 @@ export default function App() {
           const result = await response.json();
           if (result.success) {
             setSyncStatus('synced');
+            lastServerUpdate = Date.now();
           } else {
             setSyncStatus('error');
           }
-        } catch (err) {
-          setSyncStatus('error');
         }
+      } catch (err) {
+        setSyncStatus('error');
       }
     };
 
-    const interval = setInterval(checkAndSync, 5000);
+    const interval = setInterval(syncWithServer, 10000);
+    syncWithServer(); // Initial sync
     return () => clearInterval(interval);
   }, [store.settings.cloudSync]);
 

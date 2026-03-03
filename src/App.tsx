@@ -157,6 +157,50 @@ export default function App() {
     return subscribeSyncStatus(setSyncStatus);
   }, []);
 
+  useEffect(() => {
+    const cloudSync = store.settings.cloudSync;
+    if (!cloudSync?.enabled || !cloudSync?.email || !cloudSync?.password) return;
+
+    let lastConversations = localStorage.getItem('lumina_conversations');
+    let lastSettings = localStorage.getItem('lumina_settings');
+
+    const checkAndSync = async () => {
+      const currentConversations = localStorage.getItem('lumina_conversations');
+      const currentSettings = localStorage.getItem('lumina_settings');
+
+      if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
+        lastConversations = currentConversations;
+        lastSettings = currentSettings;
+        
+        setSyncStatus('syncing');
+        try {
+          const { encryptData } = await import('./utils/encryption');
+          const settings = JSON.parse(currentSettings || '{}');
+          const conversations = JSON.parse(currentConversations || '[]');
+          const encrypted = encryptData({ settings, conversations }, cloudSync.password);
+          
+          const response = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save', email: cloudSync.email, data: encrypted })
+          });
+          
+          const result = await response.json();
+          if (result.success) {
+            setSyncStatus('synced');
+          } else {
+            setSyncStatus('error');
+          }
+        } catch (err) {
+          setSyncStatus('error');
+        }
+      }
+    };
+
+    const interval = setInterval(checkAndSync, 5000);
+    return () => clearInterval(interval);
+  }, [store.settings.cloudSync]);
+
   return (
     <>
       {showWelcome && <WelcomeScreen onGetStarted={handleGetStarted} />}

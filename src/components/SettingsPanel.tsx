@@ -126,27 +126,6 @@ export default function SettingsPanel({
     }
   }, [autoSyncEnabled, syncEmail, syncPassword]);
 
-  useEffect(() => {
-    if (!autoSyncEnabled || !syncEmail || !syncPassword) return;
-
-    let lastConversations = localStorage.getItem('lumina_conversations');
-    let lastSettings = localStorage.getItem('lumina_settings');
-
-    const checkAndSync = () => {
-      const currentConversations = localStorage.getItem('lumina_conversations');
-      const currentSettings = localStorage.getItem('lumina_settings');
-
-      if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
-        lastConversations = currentConversations;
-        lastSettings = currentSettings;
-        syncToCloud(true);
-      }
-    };
-
-    const interval = setInterval(checkAndSync, 5000);
-    return () => clearInterval(interval);
-  }, [autoSyncEnabled, syncEmail, syncPassword]);
-
   const syncToCloud = async (silent = false) => {
     if (!autoSyncEnabled || !syncEmail || !syncPassword || !cloudSyncEnabled) {
       setSyncStatus('disabled');
@@ -155,7 +134,9 @@ export default function SettingsPanel({
     if (!silent) setSyncStatus('loading');
     setSyncStatus('syncing');
     try {
-      const encrypted = encryptData({ settings, conversations }, syncPassword);
+      const currentSettings = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
+      const currentConversations = JSON.parse(localStorage.getItem('lumina_conversations') || '[]');
+      const encrypted = encryptData({ settings: currentSettings, conversations: currentConversations }, syncPassword);
       const response = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

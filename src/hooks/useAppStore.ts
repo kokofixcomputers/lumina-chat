@@ -512,30 +512,46 @@ export function useAppStore() {
               });
             }
           } catch (toolErr) {
+            const errorMessage = toolErr instanceof Error ? toolErr.message : String(toolErr);
             setConversations(prev => prev.map(c => {
               if (c.id !== convId) return c;
               return {
                 ...c,
                 messages: c.messages.map(m => 
                   m.id === loadingMsgId 
-                    ? { ...m, content: toolErr instanceof Error ? toolErr.message : String(toolErr), tool_status: 'error' as const }
+                    ? { ...m, content: errorMessage, tool_status: 'error' as const }
                     : m
                 )
               };
             }));
+            
+            // Send error back to AI
+            toolMessages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({ error: errorMessage, success: false })
+            });
           }
         } else {
+          const errorMessage = `Tool "${toolCall.function.name}" not found`;
           setConversations(prev => prev.map(c => {
             if (c.id !== convId) return c;
             return {
               ...c,
               messages: c.messages.map(m => 
                 m.id === loadingMsgId 
-                  ? { ...m, content: `Tool "${toolCall.function.name}" not found`, tool_status: 'error' as const }
+                  ? { ...m, content: errorMessage, tool_status: 'error' as const }
                   : m
               )
             };
           }));
+          
+          // Send error back to AI
+          toolMessages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ error: errorMessage, success: false })
+          });
         }
       }
       

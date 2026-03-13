@@ -809,6 +809,21 @@ export default function SettingsPanel({
                 </section>
 
                 <section>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Web Scraping</h3>
+                  <div className="form-group">
+                    <label className="form-label">ScrapingBee API Key</label>
+                    <input
+                      type="password"
+                      value={settings.scrapingBeeApiKey || ''}
+                      onChange={e => onUpdateSettings({ scrapingBeeApiKey: e.target.value })}
+                      className="input text-sm font-mono"
+                      placeholder="Enter your ScrapingBee API key"
+                    />
+                    <p className="form-help">Required for web scraping tool functionality. Get your key at <a href="https://www.scrapingbee.com" target="_blank" rel="noopener noreferrer" className="text-[rgb(var(--accent))] hover:underline">scrapingbee.com</a></p>
+                  </div>
+                </section>
+
+                <section>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Dev Env</h3>
                   <p className="text-sm text-[rgb(var(--muted))] mb-4">
                     Configure the development environment tool that allows AI to create and execute commands in isolated Alpine Linux containers.

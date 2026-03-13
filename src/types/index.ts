@@ -89,6 +89,7 @@ export interface AppSettings {
   allowImageGeneration?: boolean;
   imageGenerationModel?: string;
   serperApiKey?: string;
+  scrapingBeeApiKey?: string;
   workflows?: Workflow[];
   cloudSync?: {
     enabled: boolean;

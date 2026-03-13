@@ -3,6 +3,7 @@ import getCurrentTime from './getCurrentTime';
 import calculate from './calculate';
 import generateImage from './generateImage';
 import googleSearch from './googleSearch';
+import webRequest from './webRequest';
 import devEnvTools from './devEnv';
 import qanda from './qanda';
 
@@ -10,6 +11,7 @@ const tools: Tool[] = [
   getCurrentTime,
   calculate,
   googleSearch,
+  webRequest,
   qanda,
   ...devEnvTools,
 ];

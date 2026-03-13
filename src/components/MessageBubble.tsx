@@ -18,16 +18,53 @@ function CopyBtn({ text }: { text: string }) {
 }
 
 function parseInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+  // Match **bold**, *italic*, `code`, and [label](url)
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|\[[^\]]+\]\([^()]+\))/g);
+
   return parts.map((p, i) => {
-    if (p.startsWith('**') && p.endsWith('**')) return <strong key={i}>{p.slice(2,-2)}</strong>;
-    if (p.startsWith('*') && p.endsWith('*')) return <em key={i}>{p.slice(1,-1)}</em>;
-    if (p.startsWith('`') && p.endsWith('`')) return (
-      <code key={i} className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.08] text-[12px] font-mono">{p.slice(1,-1)}</code>
-    );
+    if (!p) return null;
+
+    // [label](url)
+    if (p.startsWith('[') && p.includes('](') && p.endsWith(')')) {
+      const match = p.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (match) {
+        const [, label, url] = match;
+        return (
+          <a
+            key={i}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 dark:text-blue-400 underline underline-offset-2"
+          >
+            {label}
+          </a>
+        );
+      }
+    }
+
+    if (p.startsWith('**') && p.endsWith('**')) {
+      return <strong key={i}>{p.slice(2, -2)}</strong>;
+    }
+    if (p.startsWith('*') && p.endsWith('*')) {
+      return <em key={i}>{p.slice(1, -1)}</em>;
+    }
+    if (p.startsWith('`') && p.endsWith('`')) {
+      return (
+        <code
+          key={i}
+          className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.08] text-[12px] font-mono"
+        >
+          {p.slice(1, -1)}
+        </code>
+      );
+    }
+
+
     return p;
   });
 }
+
 
 function getVisibleStepText(raw: string | undefined | null): string {
   if (!raw) return '';

@@ -16,7 +16,16 @@ const DEFAULT_SETTINGS: AppSettings = {
     topP: 1,
     frequencyPenalty: 0,
     presencePenalty: 0,
-    systemPrompt: 'You are a helpful assistant with access to tools. To execute another tool after you just completed one tool, include {"status": "request_another_tool"} at the bottom of your message. Do not say i will complete this in the next message or anything that requires another user input, instead, just leave {"status": "request_another_tool"} at the bottom of your message to have the client give you another tool call.',
+systemPrompt: `You are a helpful assistant with tool access.
+After completing a tool’s execution, if another tool is needed, add this line exactly at the end of your message:
+{"status": "request_another_tool"}
+
+Do not say things like “I will do this in the next message” or ask the user for input. Just include the status line so the client can automatically trigger the next tool.
+
+You may need to use the apk package manager to install tools.
+
+When including {"status": "request_another_tool"}, the text above it will appear in a “task” display.
+Keep these messages short and action-focused (e.g., say “Retrying React project setup” instead of “It seems there was a timeout...”).`,
     stream: true,
   },
 };

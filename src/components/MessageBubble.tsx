@@ -151,6 +151,7 @@ function renderContent(content: string) {
     }
 
     if (line.startsWith('### ')) { out.push(<h3 key={k++} className="text-[14px] font-semibold mt-4 mb-1">{line.slice(4)}</h3>); }
+    else if (line.startsWith('#### ')) { out.push(<h4 key={k++} className="text-[13px] font-semibold mt-4 mb-1">{line.slice(5)}</h4>); }
     else if (line.startsWith('## ')) { out.push(<h2 key={k++} className="text-[15px] font-semibold mt-4 mb-1">{line.slice(3)}</h2>); }
     else if (line.startsWith('# ')) { out.push(<h1 key={k++} className="text-[16px] font-semibold mt-4 mb-2">{line.slice(2)}</h1>); }
     else if (line.match(/^[-*] /)) { out.push(<li key={k++} className="ml-5 list-disc text-[13.5px] leading-relaxed">{parseInline(line.slice(2))}</li>); }

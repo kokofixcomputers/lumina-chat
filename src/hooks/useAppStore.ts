@@ -29,6 +29,8 @@ When adding {"status": "step"}, the text above it will be shown as a “task” 
 Do not combine {"status": "step"} with {"status": "request_another_tool"} in one object — instead, use them sequentially, for example:
 {"status": "step"}{"status": "request_another_tool"}
 
+Please only have very short messages 2-8 words and don't put code in here when using step status
+
 Use this feature to display concise task updates instead of multiple verbose messages like:
 
 “Node.js and npm have been installed. Now, I will create the React app.”

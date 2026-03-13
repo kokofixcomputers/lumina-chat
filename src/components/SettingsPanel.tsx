@@ -93,7 +93,7 @@ export default function SettingsPanel({
   onClose,
 }: SettingsPanelProps) {
   const ms = settings.modelSettings;
-  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'data' | 'cloudsync' | 'tools' | 'workflows' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'data' | 'cloudsync' | 'tools' | 'workflows' | 'localagent' | 'about'>('general');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
   const [fade, setFade] = useState(true);
@@ -105,6 +105,45 @@ export default function SettingsPanel({
   const [serverData, setServerData] = useState<any>(null);
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(settings.cloudSync?.enabled || false);
+  const [agentPort, setAgentPort] = useState(settings.localAgent?.port || '14345');
+  const [agentProtocol, setAgentProtocol] = useState<'ws' | 'wss'>(settings.localAgent?.protocol || 'ws');
+  const [agentEnabled, setAgentEnabled] = useState(settings.localAgent?.enabled || false);
+  const [agentStatus, setAgentStatus] = useState<'disabled' | 'error' | 'connected'>('disabled');
+
+  useEffect(() => {
+    if (!agentEnabled) {
+      setAgentStatus('disabled');
+      return;
+    }
+    const checkConnection = () => {
+      const wsUrl = `${agentProtocol}://localhost:${agentPort}`;
+      try {
+        const ws = new WebSocket(wsUrl);
+        const timeout = setTimeout(() => {
+          ws.close();
+          setAgentStatus('error');
+        }, 2000);
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          setAgentStatus('connected');
+          ws.close();
+        };
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          setAgentStatus('error');
+        };
+      } catch {
+        setAgentStatus('error');
+      }
+    };
+    checkConnection();
+    const interval = setInterval(() => {
+      if (agentStatus !== 'connected') {
+        checkConnection();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [agentEnabled, agentPort, agentProtocol, agentStatus]);
 
   useEffect(() => {
     if (activeTab !== 'about') return;
@@ -293,6 +332,22 @@ export default function SettingsPanel({
                 Tools
               </button>
               <button
+                onClick={() => { setActiveTab('localagent'); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all mt-1 ${
+                  activeTab === 'localagent'
+                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] shadow-sm'
+                    : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] hover:text-[rgb(var(--text))]'
+                }`}
+              >
+                <Database size={16} />
+                Local Agent
+                <div className={`ml-auto w-2 h-2 rounded-full ${
+                  agentStatus === 'disabled' ? 'bg-gray-400' :
+                  agentStatus === 'error' ? 'bg-red-500' :
+                  'bg-green-500'
+                }`} />
+              </button>
+              <button
                 onClick={() => { setActiveTab('about'); setSidebarOpen(false); }}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all mt-1 ${
                   activeTab === 'about'
@@ -329,6 +384,7 @@ export default function SettingsPanel({
                     : activeTab === 'cloudsync' ? 'Cloud Sync'
                     : activeTab === 'workflows' ? 'Workflows'
                     : activeTab === 'tools' ? 'Tools'
+                    : activeTab === 'localagent' ? 'Local Agent'
                     : 'About'}
                 </h2>
               </div>
@@ -791,139 +847,85 @@ export default function SettingsPanel({
                 )}
               </div>
 
-            ) : activeTab === 'tools' ? (
+            ) : activeTab === 'localagent' ? (
               <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-2xl">
                 <section>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Google Search</h3>
-                  <div className="form-group">
-                    <label className="form-label">Serper API Key</label>
-                    <input
-                      type="password"
-                      value={settings.serperApiKey || ''}
-                      onChange={e => onUpdateSettings({ serperApiKey: e.target.value })}
-                      className="input text-sm font-mono"
-                      placeholder="Enter your Serper API key"
-                    />
-                    <p className="form-help">Required for Google search tool functionality. Get your key at <a href="https://serper.dev" target="_blank" rel="noopener noreferrer" className="text-[rgb(var(--accent))] hover:underline">serper.dev</a></p>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Web Scraping</h3>
-                  <div className="form-group">
-                    <label className="form-label">ScrapingBee API Key</label>
-                    <input
-                      type="password"
-                      value={settings.scrapingBeeApiKey || ''}
-                      onChange={e => onUpdateSettings({ scrapingBeeApiKey: e.target.value })}
-                      className="input text-sm font-mono"
-                      placeholder="Enter your ScrapingBee API key"
-                    />
-                    <p className="form-help">Required for web scraping tool functionality. Get your key at <a href="https://www.scrapingbee.com" target="_blank" rel="noopener noreferrer" className="text-[rgb(var(--accent))] hover:underline">scrapingbee.com</a></p>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Dev Env</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Local Agent Connection</h3>
                   <p className="text-sm text-[rgb(var(--muted))] mb-4">
-                    Configure the development environment tool that allows AI to create and execute commands in isolated Alpine Linux containers.
+                    Connect Lumina Chat to a agent running locally on your computer for AI to create/edit files.
                   </p>
-                  
                   <div className="form-group">
-                    <label className="form-label">WebSocket Address</label>
+                    <div className="flex items-center justify-between">
+                      <label className="form-label mb-0">Enable Local Agent</label>
+                      <button
+                        onClick={() => {
+                          const newEnabled = !agentEnabled;
+                          setAgentEnabled(newEnabled);
+                          onUpdateSettings({ localAgent: { enabled: newEnabled, port: agentPort, protocol: agentProtocol } });
+                        }}
+                        className={`toggle ${agentEnabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+                      >
+                        <span className={`toggle-thumb ${agentEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    <p className="form-help">Enable connection to local agent</p>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Protocol</label>
+                    <div className="flex gap-2">
+                      {(['ws', 'wss'] as const).map(proto => (
+                        <button
+                          key={proto}
+                          onClick={() => {
+                            setAgentProtocol(proto);
+                            onUpdateSettings({ localAgent: { enabled: agentEnabled, port: agentPort, protocol: proto } });
+                          }}
+                          disabled={!agentEnabled}
+                          className={`flex-1 rounded-xl px-3.5 py-2 text-xs uppercase font-medium transition-all ${
+                            agentProtocol === proto
+                              ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] shadow-[0_2px_8px_rgba(0,0,0,0.12)]'
+                              : 'border border-[rgb(var(--border))] text-[rgb(var(--text))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          {proto}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Port</label>
                     <input
                       type="text"
-                      value={settings.devEnv?.address || 'ws://localhost:8765'}
-                      onChange={e => onUpdateSettings({ devEnv: { ...settings.devEnv, address: e.target.value } })}
-                      className="input text-sm font-mono"
-                      placeholder="ws://localhost:8765"
+                      value={agentPort}
+                      onChange={e => {
+                        setAgentPort(e.target.value);
+                        onUpdateSettings({ localAgent: { enabled: agentEnabled, port: e.target.value, protocol: agentProtocol } });
+                      }}
+                      className="input text-sm"
+                      placeholder="14345"
                     />
-                    <p className="form-help">WebSocket server address for dev environment</p>
+                    <p className="form-help">Port number where your local agent is running</p>
                   </div>
-
-                  <div className="form-group">
-                    <label className="form-label">API Key</label>
-                    <input
-                      type="password"
-                      value={settings.devEnv?.apiKey || 'kk_your_api_key_here'}
-                      onChange={e => onUpdateSettings({ devEnv: { ...settings.devEnv, apiKey: e.target.value } })}
-                      className="input text-sm font-mono"
-                      placeholder="kk_your_api_key_here"
-                    />
-                    <p className="form-help">API key for authenticating with the dev environment server</p>
-                  </div>
-
-                  <div className="space-y-3 mt-6">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">Tool Availability</h4>
-                    
-                    <div className="form-group">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <label className="form-label mb-0">create_dev_env</label>
-                          <p className="text-xs text-[rgb(var(--muted))]">Create Alpine Linux environment</p>
-                        </div>
-                        <button
-                          onClick={() => onUpdateSettings({ 
-                            devEnv: { 
-                              ...settings.devEnv, 
-                              tools: { 
-                                ...settings.devEnv?.tools, 
-                                createDevEnv: !(settings.devEnv?.tools?.createDevEnv ?? true) 
-                              } 
-                            } 
-                          })}
-                          className={`toggle ${(settings.devEnv?.tools?.createDevEnv ?? true) ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
-                        >
-                          <span className={`toggle-thumb ${(settings.devEnv?.tools?.createDevEnv ?? true) ? 'translate-x-5' : 'translate-x-1'}`} />
-                        </button>
-                      </div>
+                  <div className="flex items-center gap-3">
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm ${
+                      agentStatus === 'disabled' ? 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400' :
+                      agentStatus === 'error' ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' :
+                      'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                    }`}>
+                      <div className={`w-2 h-2 rounded-full ${
+                        agentStatus === 'disabled' ? 'bg-gray-400' :
+                        agentStatus === 'error' ? 'bg-red-500' :
+                        'bg-green-500'
+                      }`} />
+                      {agentStatus === 'disabled' ? 'Disabled' :
+                       agentStatus === 'error' ? 'Cannot Connect' :
+                       'Connected'}
                     </div>
-
-                    <div className="form-group">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <label className="form-label mb-0">command_dev_env</label>
-                          <p className="text-xs text-[rgb(var(--muted))]">Execute commands in dev environment</p>
-                        </div>
-                        <button
-                          onClick={() => onUpdateSettings({ 
-                            devEnv: { 
-                              ...settings.devEnv, 
-                              tools: { 
-                                ...settings.devEnv?.tools, 
-                                commandDevEnv: !(settings.devEnv?.tools?.commandDevEnv ?? true) 
-                              } 
-                            } 
-                          })}
-                          className={`toggle ${(settings.devEnv?.tools?.commandDevEnv ?? true) ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
-                        >
-                          <span className={`toggle-thumb ${(settings.devEnv?.tools?.commandDevEnv ?? true) ? 'translate-x-5' : 'translate-x-1'}`} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <label className="form-label mb-0">artifact_dev_env</label>
-                          <p className="text-xs text-[rgb(var(--muted))]">Download files from dev environment</p>
-                        </div>
-                        <button
-                          onClick={() => onUpdateSettings({ 
-                            devEnv: { 
-                              ...settings.devEnv, 
-                              tools: { 
-                                ...settings.devEnv?.tools, 
-                                artifactDevEnv: !(settings.devEnv?.tools?.artifactDevEnv ?? true) 
-                              } 
-                            } 
-                          })}
-                          className={`toggle ${(settings.devEnv?.tools?.artifactDevEnv ?? true) ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
-                        >
-                          <span className={`toggle-thumb ${(settings.devEnv?.tools?.artifactDevEnv ?? true) ? 'translate-x-5' : 'translate-x-1'}`} />
-                        </button>
-                      </div>
-                    </div>
+                    {agentStatus === 'connected' && (
+                      <span className="text-xs text-[rgb(var(--muted))]">
+                        {agentProtocol}://localhost:{agentPort}
+                      </span>
+                    )}
                   </div>
                 </section>
               </div>

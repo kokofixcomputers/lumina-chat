@@ -63,4 +63,15 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
       { id: 'gpt-4o', name: 'GPT-4o', contextLength: 128000, supportsImages: true, supportsStreaming: true },
     ],
   },
+  {
+    id: 'mistral',
+    name: 'Mistral',
+    description: 'Official Mistral API',
+    baseUrlTemplate: 'https://api.mistral.com/v1',
+    requireAuth: true,
+    defaultModels: [
+      { id: 'mistral-7b', name: 'Mistral 7B', contextLength: 8192, supportsImages: false, supportsStreaming: true },
+      { id: 'mistral-7b-chat', name: 'Mistral 7B Chat', contextLength: 8192, supportsImages: false, supportsStreaming: true },
+    ],
+  },
 ];

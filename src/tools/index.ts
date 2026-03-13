@@ -2,10 +2,14 @@ import { Tool } from '../types/tools';
 import getCurrentTime from './getCurrentTime';
 import calculate from './calculate';
 import generateImage from './generateImage';
+import googleSearch from './googleSearch';
+import devEnvTools from './devEnv';
 
 const tools: Tool[] = [
   getCurrentTime,
   calculate,
+  googleSearch,
+  ...devEnvTools,
 ];
 
 export function getAllTools(includeImageGen = false): Tool[] {

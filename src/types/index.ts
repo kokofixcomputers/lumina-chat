@@ -3,6 +3,13 @@ export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   images?: string[]; // base64
+  artifacts?: Array<{
+    url: string;
+    direct_download: string;
+    original_path: string;
+    file_hash: string;
+    message: string;
+  }>;
   timestamp: number;
   model?: string;
   isError?: boolean;
@@ -17,6 +24,8 @@ export interface Message {
   followUps?: string[];
   tokens?: number;
   tokensPerSecond?: number;
+  isStep?: boolean;
+  requestsAnotherTool?: boolean;
 }
 
 export interface Conversation {
@@ -29,6 +38,7 @@ export interface Conversation {
   systemPrompt?: string;
   mode?: 'chat' | 'image';
   attachments?: string[];
+  devEnvSession?: string;
 }
 
 export interface ModelProvider {
@@ -72,10 +82,20 @@ export interface AppSettings {
   generateFollowUps?: boolean;
   allowImageGeneration?: boolean;
   imageGenerationModel?: string;
+  serpApiKey?: string;
   cloudSync?: {
     enabled: boolean;
     email: string;
     password: string;
+  };
+  devEnv?: {
+    address?: string;
+    apiKey?: string;
+    tools?: {
+      createDevEnv?: boolean;
+      commandDevEnv?: boolean;
+      artifactDevEnv?: boolean;
+    };
   };
 }
 

@@ -29,6 +29,18 @@ function parseInline(text: string): React.ReactNode {
   });
 }
 
+function getVisibleStepText(raw: string | undefined | null): string {
+  if (!raw) return '';
+
+  // Find start of trailing JSON like {"status": "request_another_tool"}
+  const jsonStart = raw.lastIndexOf('{"status":');
+  if (jsonStart !== -1) {
+    raw = raw.slice(0, jsonStart);
+  }
+
+  return raw.trim();
+}
+
 function renderContent(content: string) {
   const isDark = document.documentElement.classList.contains('dark');
   const lines = content.split('\n');
@@ -142,12 +154,27 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
     return () => observer.disconnect();
   }, []);
 
+  const stepText = !isUser && message.isStep
+  ? getVisibleStepText(message.content)
+  : '';
+
+  const isEmptyStep =
+    !isUser &&
+    message.isStep &&
+    (message.content == null || message.content.trim().length === 0);
+
+  if (isEmptyStep) {
+    // Completely hide this message, nothing gets rendered
+    return null;
+  }
+
   // Tool execution message
   if (isTool) {
     const [expanded, setExpanded] = useState(false);
     const contentLength = message.content?.length || 0;
     const isLong = contentLength > 100;
     const hasImages = message.images && message.images.length > 0;
+    const hasArtifacts = message.artifacts && message.artifacts.length > 0;
     
     return (
       <div className="flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 max-w-4xl mx-auto w-full mb-3">
@@ -158,10 +185,10 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
         </div>
         <div className="flex-1 min-w-0">
           <div 
-            className={`text-[13px] text-[rgb(var(--muted))] flex items-center gap-1.5 ${isLong && message.tool_status !== 'loading' && !hasImages ? 'cursor-pointer hover:text-[rgb(var(--text))]' : ''}`}
-            onClick={() => isLong && message.tool_status !== 'loading' && !hasImages && setExpanded(p => !p)}
+            className={`text-[13px] text-[rgb(var(--muted))] flex items-center gap-1.5 ${isLong && message.tool_status !== 'loading' && !hasImages && !hasArtifacts ? 'cursor-pointer hover:text-[rgb(var(--text))]' : ''}`}
+            onClick={() => isLong && message.tool_status !== 'loading' && !hasImages && !hasArtifacts && setExpanded(p => !p)}
           >
-            {isLong && message.tool_status !== 'loading' && !hasImages && (
+            {isLong && message.tool_status !== 'loading' && !hasImages && !hasArtifacts && (
               expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
             )}
             <span className="font-medium">{message.tool_name}</span>
@@ -200,7 +227,31 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
               ))}
             </div>
           )}
-          {message.tool_status !== 'loading' && message.content && (!isLong || expanded) && !hasImages && (
+          {hasArtifacts && (
+            <div className="flex flex-col gap-2 mt-2">
+              {message.artifacts.map((artifact, idx) => (
+                <div key={idx} className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl p-3 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-[rgb(var(--text))] truncate">{artifact.original_path}</p>
+                      <p className="text-[11px] text-[rgb(var(--muted))] mt-0.5">{artifact.message}</p>
+                    </div>
+                    <a
+                      href={artifact.direct_download}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs py-1.5 px-3 gap-1.5 shrink-0"
+                    >
+                      <Download size={12} />
+                      Download
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {message.tool_status !== 'loading' && message.content && (!isLong || expanded) && !hasImages && !hasArtifacts && (
             <pre className="text-[11px] text-[rgb(var(--muted))] mt-1 font-mono bg-black/[0.03] dark:bg-white/[0.05] p-2 rounded overflow-x-auto max-h-[300px] overflow-y-auto">
               {message.content}
             </pre>
@@ -277,25 +328,46 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
           )
         ) : (
           <div className={`text-[rgb(var(--text))] w-full min-w-0 break-words overflow-wrap-anywhere ${message.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}>
-            {renderContent(message.content)}
-            {/* Model tag below */}
-            {modelName && (
-              <p className="mt-2 text-[11px] text-[rgb(var(--muted))] flex items-center gap-1.5">
-                <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
-                {modelName}
-                {message.tokensPerSecond && (
-                  <>
+            {message.isStep && (
+              <div className="mb-2">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-[rgb(var(--panel))] border border-[rgb(var(--border))] px-3 py-1.5 text-[11px] text-[rgb(var(--muted))]">
+                  <div className="flex items-center justify-center w-4 h-4 rounded-full bg-[rgb(var(--accent))]/10">
+                    <div className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
+                  </div>
+                  <span className="font-medium uppercase tracking-wide">
+                    Step
+                  </span>
+                  <span className="text-[rgb(var(--border))]">•</span>
+                  <span className="text-[rgb(var(--text))] text-[11px]">
+                    {stepText}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {!isUser && !message.isStep && (
+              <>
+                {renderContent(message.content)}
+                {/* Model tag below */}
+                {modelName && (
+                  <p className="mt-2 text-[11px] text-[rgb(var(--muted))] flex items-center gap-1.5">
                     <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
-                    {message.tokensPerSecond} t/s
-                  </>
+                    {modelName}
+                    {message.tokensPerSecond && (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
+                        {message.tokensPerSecond} t/s
+                      </>
+                    )}
+                    {message.tokens && (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
+                        {message.tokens} tokens
+                      </>
+                    )}
+                  </p>
                 )}
-                {message.tokens && (
-                  <>
-                    <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
-                    {message.tokens} tokens
-                  </>
-                )}
-              </p>
+              </>
             )}
           </div>
         )}

@@ -35,6 +35,10 @@ interface ChatAreaProps {
   homeAttachments?: string[];
   prettifyModelNames?: boolean;
   workflows?: Array<{ id: string; slug: string; prompt: string }>;
+  useResponsesApi?: boolean;
+  reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
+  onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
+  onVersionChange?: (msgId: string, versionIndex: number) => void;
 }
 
 const QUICK_ACTIONS = [
@@ -66,6 +70,10 @@ export default function ChatArea({
   homeAttachments = [],
   prettifyModelNames = true,
   workflows = [],
+  useResponsesApi = false,
+  reasoningEffort = 'off',
+  onReasoningEffortChange,
+  onVersionChange,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +118,9 @@ export default function ChatArea({
               onAttachmentsChange={onAttachmentsChange}
               prettifyModelNames={prettifyModelNames}
               workflows={workflows}
+              useResponsesApi={useResponsesApi}
+              reasoningEffort={reasoningEffort}
+              onReasoningEffortChange={onReasoningEffortChange}
             />
           </div>
 
@@ -160,6 +171,7 @@ export default function ChatArea({
               onEdit={msg.role === 'user' && onEditMessage ? (newContent) => onEditMessage(msg.id, newContent) : undefined}
               onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
               onFollowUpClick={onSend ? (followUp) => onSend(followUp, []) : undefined}
+              onVersionChange={onVersionChange ? (versionIndex) => onVersionChange(msg.id, versionIndex) : undefined}
             />
           ))}
 
@@ -210,6 +222,9 @@ export default function ChatArea({
         onAttachmentsChange={onAttachmentsChange}
         prettifyModelNames={prettifyModelNames}
         workflows={workflows}
+        useResponsesApi={useResponsesApi}
+        reasoningEffort={reasoningEffort}
+        onReasoningEffortChange={onReasoningEffortChange}
       />
     </div>
   );

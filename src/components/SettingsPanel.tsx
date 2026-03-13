@@ -547,6 +547,18 @@ export default function SettingsPanel({
                     </div>
                     <p className="form-help">Stream responses as they're generated</p>
                   </div>
+                  <div className="form-group">
+                    <div className="flex items-center justify-between">
+                      <label className="form-label mb-0">Use new responses API (beta)</label>
+                      <button
+                        onClick={() => onUpdateModelSettings({ useResponsesApi: !ms.useResponsesApi })}
+                        className={`toggle ${ms.useResponsesApi ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+                      >
+                        <span className={`toggle-thumb ${ms.useResponsesApi ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                    <p className="form-help">Use /v1/responses endpoint instead of /v1/chat/completions (supports reasoning models)</p>
+                  </div>
                 </section>
 
                 {/* System Prompt */}
@@ -1568,6 +1580,13 @@ function ProviderCard({
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-[rgb(var(--border))] pt-4 space-y-4">
+          {provider.responsesApiUnsupported && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3">
+              <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                <strong>Note:</strong> This provider does not support the /v1/responses API. Using chat completions instead.
+              </p>
+            </div>
+          )}
           <div className="grid gap-3 max-w-full">
             <div className="form-group mb-0">
               <label className="form-label text-xs">Provider Name</label>

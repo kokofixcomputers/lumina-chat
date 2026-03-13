@@ -34,6 +34,9 @@ interface ChatInputProps {
   onAttachmentsChange?: (attachments: string[])=> void;
   prettifyModelNames?: boolean;
   workflows?: Array<{ id: string; slug: string; prompt: string }>;
+  useResponsesApi?: boolean;
+  reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
+  onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
 }
 
 // Color per provider
@@ -98,6 +101,9 @@ export default function ChatInput({
   onAttachmentsChange,
   prettifyModelNames = true,
   workflows = [],
+  useResponsesApi = false,
+  reasoningEffort = 'off',
+  onReasoningEffortChange,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -114,12 +120,16 @@ export default function ChatInput({
   const [showWorkflowMenu, setShowWorkflowMenu] = useState(false);
   const [workflowMenuPos, setWorkflowMenuPos] = useState({ top: 0, left: 0 });
   const [workflowSearch, setWorkflowSearch] = useState('');
+  const [showReasoningMenu, setShowReasoningMenu] = useState(false);
+  const [reasoningMenuPos, setReasoningMenuPos] = useState({ top: 0, left: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
   const workflowMenuRef = useRef<HTMLDivElement>(null);
+  const reasoningBtnRef = useRef<HTMLButtonElement>(null);
+  const reasoningMenuRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
 
   const openModelPicker = () => {
@@ -387,6 +397,20 @@ export default function ChatInput({
     return () => document.removeEventListener('mousedown', handler);
   }, [showWorkflowMenu]);
 
+  useEffect(() => {
+    if (!showReasoningMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        reasoningMenuRef.current && !reasoningMenuRef.current.contains(e.target as Node) &&
+        reasoningBtnRef.current && !reasoningBtnRef.current.contains(e.target as Node)
+      ) {
+        setShowReasoningMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showReasoningMenu]);
+
   const filteredWorkflows = workflows.filter(w => 
     w.slug.toLowerCase().includes(workflowSearch.toLowerCase())
   );
@@ -560,9 +584,9 @@ export default function ChatInput({
           </button>
         </div>
 
-        {/* Bottom: mode + model picker */}
+        {/* Bottom: mode + model picker + reasoning effort */}
         <div className="flex items-center px-3 pb-2.5 gap-2">
-          {onModeChange && (
+          {!useResponsesApi && onModeChange && (
             <div className="flex gap-1">
               <button
                 onClick={() => onModeChange('chat')}
@@ -585,6 +609,30 @@ export default function ChatInput({
                 Image
               </button>
             </div>
+          )}
+          {useResponsesApi && onReasoningEffortChange && (
+            <button
+              ref={reasoningBtnRef}
+              onClick={() => {
+                if (!reasoningBtnRef.current) return;
+                const rect = reasoningBtnRef.current.getBoundingClientRect();
+                setReasoningMenuPos({ top: rect.top, left: rect.left });
+                setShowReasoningMenu(!showReasoningMenu);
+              }}
+              className={`flex items-center gap-1.5 text-[12px] transition-colors rounded-md px-2 py-0.5 ${
+                reasoningEffort === 'off' 
+                  ? 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                  : reasoningEffort === 'low'
+                  ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
+                  : reasoningEffort === 'medium'
+                  ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
+                  : 'bg-red-500/20 text-red-600 dark:text-red-400'
+              }`}
+            >
+              <Sparkles size={13} />
+              <span className="font-medium capitalize">{reasoningEffort}</span>
+              <ChevronDown size={11} />
+            </button>
           )}
           <button
             ref={modelBtnRef}
@@ -729,6 +777,43 @@ export default function ChatInput({
             >
               <div className="text-sm font-medium text-[rgb(var(--text))]">/{workflow.slug}</div>
               <div className="text-xs text-[rgb(var(--muted))] truncate">{workflow.prompt}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Reasoning effort menu */}
+      {showReasoningMenu && onReasoningEffortChange && (
+        <div
+          ref={reasoningMenuRef}
+          className="fixed z-50 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl shadow-2xl p-2 min-w-[140px]"
+          style={{
+            top: reasoningMenuPos.top,
+            left: reasoningMenuPos.left,
+            transform: 'translateY(calc(-100% - 8px))',
+          }}
+        >
+          {(['off', 'low', 'medium', 'high'] as const).map(effort => (
+            <button
+              key={effort}
+              onClick={() => {
+                onReasoningEffortChange(effort);
+                setShowReasoningMenu(false);
+              }}
+              className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                reasoningEffort === effort
+                  ? 'bg-black/[0.06] dark:bg-white/[0.08]'
+                  : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full ${
+                effort === 'off' ? 'bg-gray-400' :
+                effort === 'low' ? 'bg-blue-500' :
+                effort === 'medium' ? 'bg-yellow-500' :
+                'bg-red-500'
+              }`} />
+              <span className="text-sm capitalize text-[rgb(var(--text))]">{effort}</span>
+              {reasoningEffort === effort && <Check size={13} className="ml-auto text-[rgb(var(--accent))]" />}
             </button>
           ))}
         </div>

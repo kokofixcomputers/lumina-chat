@@ -49,6 +49,7 @@ export default function App() {
   const handleRetry = () => {
     if (!store.activeConvId || !store.activeConversation) return;
     const messages = store.activeConversation.messages;
+    const convMode = store.activeConversation.mode;
     
     // Find last assistant message and its preceding user message
     let lastAssistantIdx = -1;
@@ -72,18 +73,38 @@ export default function App() {
     
     if (userMsgIdx === -1) return;
     
-    const userMsg = messages[userMsgIdx];
+    // Capture user message and assistant message data before deletion
+    const userMsg = { ...messages[userMsgIdx] };
+    const assistantMsg = { ...messages[lastAssistantIdx] };
+    const convId = store.activeConvId;
     
-    // Delete from last assistant message onwards (including tool messages)
-    store.deleteMessagesFrom(store.activeConvId, messages[lastAssistantIdx].id);
-    store.deleteMessagesFrom(store.activeConvId, messages[userMsgIdx].id);
+    // Store the current assistant message as a version
+    const versions = assistantMsg.versions || [];
+    const currentVersionIndex = assistantMsg.currentVersionIndex ?? 0;
     
-    // Resend user message
-    if (store.activeConversation.mode === 'image') {
-      store.generateImage(userMsg.content, store.activeConvId);
-    } else {
-      store.sendMessage(userMsg.content, userMsg.images || [], store.activeConvId);
+    // Add current message to versions if not already there
+    if (versions.length === 0 || versions[currentVersionIndex]?.id !== assistantMsg.id) {
+      versions.push({
+        ...assistantMsg,
+        versions: undefined,
+        currentVersionIndex: undefined
+      });
     }
+    
+    // Update the assistant message with version info before deleting
+    store.updateMessageVersions(convId, messages[lastAssistantIdx].id, versions, versions.length);
+    
+    // Delete from user message onwards (removes user + assistant + any tool messages)
+    store.deleteMessagesFrom(convId, messages[userMsgIdx].id);
+    
+    // Resend user message after a brief delay to ensure state update
+    setTimeout(() => {
+      if (convMode === 'image') {
+        store.generateImage(userMsg.content, convId);
+      } else {
+        store.sendMessage(userMsg.content, userMsg.images || [], convId);
+      }
+    }, 50);
   };
 
   const handleEditMessage = (msgId: string, newContent: string) => {
@@ -128,6 +149,11 @@ export default function App() {
     if (provider && model) {
       store.generateFollowUps(store.activeConvId, lastAssistantMsg.id, provider, model);
     }
+  };
+
+  const handleVersionChange = (msgId: string, versionIndex: number) => {
+    if (!store.activeConvId) return;
+    store.updateMessageVersions(store.activeConvId, msgId, [], versionIndex);
   };
 
   const handleModelChange = (modelId: string) => {
@@ -289,6 +315,10 @@ export default function App() {
             homeAttachments={homeAttachments}
             prettifyModelNames={store.settings.prettifyModelNames}
             workflows={store.settings.workflows || []}
+            useResponsesApi={store.settings.modelSettings.useResponsesApi}
+            reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
+            onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
+            onVersionChange={handleVersionChange}
           />
 
           {panel === 'settings' && (

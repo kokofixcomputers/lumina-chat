@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Conversation, Message, AppSettings, ModelProvider, ModelSettings } from '../types';
 import type { IntegratedProviderTemplate } from '../data/integratedProviders';
-import { getToolDefinitions, getToolByName } from '../tools';
+import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../tools';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
@@ -29,7 +29,7 @@ When adding {"status": "step"}, the text above it will be shown as a “task” 
 Do not combine {"status": "step"} with {"status": "request_another_tool"} in one object — instead, use them sequentially, for example:
 {"status": "step"}{"status": "request_another_tool"}
 
-Please only have very short messages 2-8 words and don't put code in here when using step status
+Please only have very short messages 2-8 words and don't put code in step status
 
 Use this feature to display concise task updates instead of multiple verbose messages like:
 
@@ -69,6 +69,7 @@ export function useAppStore() {
   const [conversations, setConversations] = useState<Conversation[]>(() =>
     loadFromStorage('lumina_conversations', [])
   );
+  const conversationsRef = useRef<Conversation[]>(conversations);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   
   // Store active conversation ID in sessionStorage for tools to access
@@ -87,6 +88,7 @@ export function useAppStore() {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   useEffect(() => {
+    conversationsRef.current = conversations;
     saveToStorage('lumina_conversations', conversations);
   }, [conversations]);
 
@@ -262,7 +264,8 @@ export function useAppStore() {
       chatUrl: string,
       headers: Record<string, string>,
       requestBody: any,
-      previousMessages: any[]
+      previousMessages: any[],
+      useResponsesApi: boolean = false
     ) => {
       let assistantContent = '';
       let toolCalls: any[] = [];
@@ -270,7 +273,137 @@ export function useAppStore() {
       let tokenCount = 0;
       const startTime = Date.now();
 
-      if (settings.modelSettings.stream) {
+      if (useResponsesApi) {
+        // Responses API streaming
+        if (settings.modelSettings.stream) {
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+          if (!reader) throw new Error('No response body');
+
+          let buffer = '';
+          const functionCallsMap = new Map<string, any>();
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              if (line.startsWith('event:')) continue;
+              if (!line.startsWith('data: ')) continue;
+              
+              let data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+              
+              // Decode HTML entities comprehensively
+              data = data
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&#39;/g, "'")
+                .replace(/&apos;/g, "'");
+              
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.error) throw new Error(parsed.error);
+                
+                if (parsed.type === 'response.output_text.delta' && parsed.delta) {
+                  assistantContent += parsed.delta;
+                  setStreamingContent(assistantContent);
+                  tokenCount++;
+                }
+                
+                if (parsed.type === 'response.output_text.done' && parsed.text) {
+                  assistantContent = parsed.text;
+                  setStreamingContent(assistantContent);
+                }
+                
+                if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'function_call') {
+                  functionCallsMap.set(parsed.item.id, {
+                    id: parsed.item.call_id,
+                    type: 'function',
+                    function: { name: parsed.item.name, arguments: '' },
+                    fc_id: parsed.item.id
+                  });
+                }
+                
+                if (parsed.type === 'response.function_call_arguments.delta' && parsed.delta) {
+                  const call = functionCallsMap.get(parsed.item_id);
+                  if (call) call.function.arguments += parsed.delta;
+                }
+                
+                if (parsed.type === 'response.completed' && parsed.response) {
+                  if (parsed.response.usage) {
+                    tokenCount = parsed.response.usage.output_tokens || tokenCount;
+                  }
+                  
+                  // Extract assistant message from completed response output
+                  if (parsed.response.output) {
+                    for (const item of parsed.response.output) {
+                      if (item.type === 'message' && item.content) {
+                        let messageText = '';
+                        for (const contentItem of item.content) {
+                          if (contentItem.type === 'output_text' && contentItem.text) {
+                            messageText += contentItem.text;
+                          }
+                        }
+                        if (messageText && !assistantContent) {
+                          assistantContent = messageText;
+                          setStreamingContent(assistantContent);
+                        }
+                      }
+                    }
+                  }
+                  
+                  // Note: Don't store reasoning in previousMessages as it shouldn't be sent back
+                }
+              } catch (parseErr) {
+                if (parseErr instanceof Error && !parseErr.message.includes('JSON')) throw parseErr;
+              }
+            }
+          }
+          
+          toolCalls = Array.from(functionCallsMap.values());
+        } else {
+          // Non-streaming responses API
+          const data = await response.json();
+          
+          // Extract text from output array
+          if (data.output) {
+            for (const item of data.output) {
+              if (item.type === 'message' && item.content) {
+                for (const contentItem of item.content) {
+                  if (contentItem.type === 'output_text') {
+                    assistantContent += contentItem.text || '';
+                  }
+                }
+              }
+              if (item.type === 'function_call') {
+                toolCalls.push({
+                  id: item.call_id,
+                  type: 'function',
+                  function: { name: item.name, arguments: item.arguments },
+                  fc_id: item.id
+                });
+              }
+            }
+          }
+          
+          // Fallback to output_text
+          if (!assistantContent && data.output_text) {
+            assistantContent = data.output_text;
+          }
+          
+          tokenCount = data.usage?.output_tokens || assistantContent.split(/\s+/).length;
+          
+          // Note: Don't store reasoning in previousMessages as it shouldn't be sent back
+        }
+      } else if (settings.modelSettings.stream) {
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         if (!reader) throw new Error('No response body');
@@ -284,7 +417,14 @@ export function useAppStore() {
             let data = line.slice(line.indexOf('data: ') + 6).trim();
             if (data === '[DONE]') continue;
             
-            data = data.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            // Decode HTML entities comprehensively
+            data = data
+              .replace(/&quot;/g, '"')
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&#39;/g, "'")
+              .replace(/&apos;/g, "'");
             
             try {
               const parsed = JSON.parse(data);
@@ -332,23 +472,41 @@ export function useAppStore() {
                                    assistantContent.includes('"status":"request_another_tool"');
       const isStep = assistantContent.includes('"status":"step"') || assistantContent.includes('"status": "step"');
 
-      const assistantMsg: Message = {
-        id: uuidv4(),
-        role: 'assistant',
-        content: assistantContent,
-        timestamp: Date.now(),
-        model: model?.id,
-        tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-        tokens: tokenCount > 0 ? tokenCount : undefined,
-        tokensPerSecond,
-        isStep,
-        requestsAnotherTool,
-      };
-      addMessage(convId, assistantMsg);
+      // Only add message if there's content or no tool calls
+      if (assistantContent || toolCalls.length === 0) {
+        const assistantMsg: Message = {
+          id: uuidv4(),
+          role: 'assistant',
+          content: assistantContent,
+          timestamp: Date.now(),
+          model: model?.id,
+          tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+          tokens: tokenCount > 0 ? tokenCount : undefined,
+          tokensPerSecond,
+          isStep,
+          requestsAnotherTool,
+        };
+        addMessage(convId, assistantMsg);
+        
+        // Clear streaming state if no more tool calls
+        if (toolCalls.length === 0) {
+          setStreamingContent('');
+          setIsGenerating(false);
+        }
+      }
 
       // Execute tool calls if present
       if (toolCalls.length > 0) {
-        await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, [...previousMessages, { role: 'assistant', content: assistantContent || null, tool_calls: toolCalls }]);
+        const functionCallItems = toolCalls.map(tc => ({
+          type: 'function_call',
+          id: tc.fc_id || tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+          call_id: tc.id,
+          status: 'completed'
+        }));
+        const messagesToPass = useResponsesApi ? [...previousMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...functionCallItems] : previousMessages;
+        await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, messagesToPass);
       } else if (requestsAnotherTool) {
         // Request another tool call
         setTimeout(async () => {
@@ -359,14 +517,30 @@ export function useAppStore() {
               { role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }
             ];
             
+            const continuationBody = useResponsesApi ? {
+              model: model?.id || 'gpt-4o',
+              input: continuationMessages,
+              store: false,
+              stream: settings.modelSettings.stream,
+              //temperature: settings.modelSettings.temperature,
+              top_p: settings.modelSettings.topP,
+              frequency_penalty: settings.modelSettings.frequencyPenalty,
+              presence_penalty: settings.modelSettings.presencePenalty,
+              tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+              tool_choice: 'auto',
+              ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
+                reasoning: { effort: settings.modelSettings.reasoningEffort }
+              } : {}),
+            } : { ...requestBody, messages: continuationMessages, stream: settings.modelSettings.stream };
+            
             const continuationResponse = await fetchWithRetry(chatUrl, {
               method: 'POST',
               headers,
-              body: JSON.stringify({ ...requestBody, messages: continuationMessages }),
+              body: JSON.stringify(continuationBody),
             });
             
             if (continuationResponse.ok) {
-              await handleContinuationResponse(continuationResponse, convId, provider, model, chatUrl, headers, requestBody, continuationMessages);
+              await handleContinuationResponse(continuationResponse, convId, provider, model, chatUrl, headers, requestBody, continuationMessages, useResponsesApi);
             }
           } catch (err) {
             console.error('Continuation request failed:', err);
@@ -384,7 +558,8 @@ export function useAppStore() {
       chatUrl: string,
       headers: Record<string, string>,
       requestBody: any,
-      previousMessages: any[]
+      previousMessages: any[],
+      useResponsesApi: boolean = false
     ) => {
       const toolMessages: any[] = [];
       
@@ -411,42 +586,132 @@ export function useAppStore() {
             // Handle image generation
             if (result._requiresImageGeneration && toolCall.function.name === 'generate_image') {
               try {
-                const imageUrl = provider.baseUrl.includes('/images/generations')
-                  ? provider.baseUrl
-                  : `${provider.baseUrl}/images/generations`;
-                const imgResponse = await fetch(imageUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${provider.apiKey}`,
-                  },
-                  body: JSON.stringify({ prompt: result.prompt, n: 1, size: result.size, model: settings.imageGenerationModel || 'dall-e-3' }),
-                });
+                const useResponsesApi = settings.modelSettings.useResponsesApi;
                 
-                if (imgResponse.ok) {
-                  const imgData = await imgResponse.json();
-                  const imageUrl = imgData.data?.[0]?.url || imgData.data?.[0]?.b64_json;
-                  const imageData = imageUrl.startsWith('data:') ? imageUrl : imageUrl.startsWith('http') ? imageUrl : `data:image/png;base64,${imageUrl}`;
+                if (useResponsesApi) {
+                  // Use responses API for image generation
+                  const responsesUrl = provider.baseUrl.includes('/responses')
+                    ? provider.baseUrl
+                    : `${provider.baseUrl}/responses`;
                   
-                  setConversations(prev => prev.map(c => {
-                    if (c.id !== convId) return c;
-                    return {
-                      ...c,
-                      messages: c.messages.map(m => 
-                        m.id === loadingMsgId 
-                          ? { ...m, content: `Generated image: ${result.prompt}`, images: [imageData], tool_status: 'success' as const }
-                          : m
-                      )
-                    };
-                  }));
+                  // Build input array - include previous image call if exists
+                  const input: any[] = [];
                   
-                  toolMessages.push({
-                    role: 'tool',
-                    tool_call_id: toolCall.id,
-                    content: JSON.stringify({ success: true, description: result.prompt })
+                  // Find the most recent image generation call for follow-up edits
+                  const conv = conversations.find(c => c.id === convId);
+                  const recentMessages = conv?.messages.slice().reverse() || [];
+                  const lastImageMsg = recentMessages.find(m => m.imageGenerationCall);
+                  
+                  // Build user message content with image attachment if editing
+                  const userContent: any[] = [{ type: 'input_text', text: result.prompt }];
+                  
+                  if (lastImageMsg?.imageGenerationCall?.result?.image_data) {
+                    const imageData = lastImageMsg.imageGenerationCall.result.image_data;
+                    userContent.push({ 
+                      type: 'input_image', 
+                      image_url: imageData.startsWith('data:') || imageData.startsWith('http') ? imageData : `data:image/png;base64,${imageData}`
+                    });
+                  }
+                  
+                  input.push({ type: 'message', role: 'user', content: userContent });
+                  
+                  const imgResponse = await fetch(responsesUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${provider.apiKey}`,
+                    },
+                    body: JSON.stringify({
+                      model: settings.imageGenerationModel || 'gpt-image-1.5',
+                      input,
+                      tools: [{ 
+                        type: 'image_generation',
+                        action: 'auto',
+                        quality: 'high'
+                      }],
+                      tool_choice: 'auto',
+                      store: false
+                    }),
                   });
+                  
+                  if (imgResponse.ok) {
+                    const imgData = await imgResponse.json();
+                    const imageCall = imgData.output?.find((item: any) => item.image_generation_call);
+                    
+                    if (imageCall?.image_generation_call?.result?.image_data) {
+                      const imageData = imageCall.image_generation_call.result.image_data;
+                      const imageUrl = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`;
+                      
+                      setConversations(prev => prev.map(c => {
+                        if (c.id !== convId) return c;
+                        return {
+                          ...c,
+                          messages: c.messages.map(m => 
+                            m.id === loadingMsgId 
+                              ? { 
+                                  ...m, 
+                                  content: lastImageMsg?.imageGenerationCall 
+                                    ? `Edited image: ${result.prompt}` 
+                                    : `Generated image: ${result.prompt}`, 
+                                  images: [imageUrl], 
+                                  tool_status: 'success' as const,
+                                  imageGenerationCall: imageCall // Store for future edits
+                                }
+                              : m
+                          )
+                        };
+                      }));
+                      
+                      toolMessages.push({
+                        type: 'function_call_output',
+                        call_id: toolCall.id,
+                        output: JSON.stringify({ success: true, description: result.prompt })
+                      });
+                    } else {
+                      throw new Error('No image data in response');
+                    }
+                  } else {
+                    throw new Error('Image generation failed');
+                  }
                 } else {
-                  throw new Error('Image generation failed');
+                  // Use legacy images/generations endpoint
+                  const imageUrl = provider.baseUrl.includes('/images/generations')
+                    ? provider.baseUrl
+                    : `${provider.baseUrl}/images/generations`;
+                  const imgResponse = await fetch(imageUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${provider.apiKey}`,
+                    },
+                    body: JSON.stringify({ prompt: result.prompt, n: 1, size: result.size, model: settings.imageGenerationModel || 'dall-e-3' }),
+                  });
+                  
+                  if (imgResponse.ok) {
+                    const imgData = await imgResponse.json();
+                    const imageUrl = imgData.data?.[0]?.url || imgData.data?.[0]?.b64_json;
+                    const imageData = imageUrl.startsWith('data:') ? imageUrl : imageUrl.startsWith('http') ? imageUrl : `data:image/png;base64,${imageUrl}`;
+                    
+                    setConversations(prev => prev.map(c => {
+                      if (c.id !== convId) return c;
+                      return {
+                        ...c,
+                        messages: c.messages.map(m => 
+                          m.id === loadingMsgId 
+                            ? { ...m, content: `Generated image: ${result.prompt}`, images: [imageData], tool_status: 'success' as const }
+                            : m
+                        )
+                      };
+                    }));
+                    
+                    toolMessages.push({
+                      type: 'function_call_output',
+                      call_id: toolCall.id,
+                      output: JSON.stringify({ success: true, description: result.prompt })
+                    });
+                  } else {
+                    throw new Error('Image generation failed');
+                  }
                 }
               } catch (imgErr) {
                 setConversations(prev => prev.map(c => {
@@ -486,9 +751,9 @@ export function useAppStore() {
               }));
               
               toolMessages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify({ success: true, file: result.original_path, url: result.url })
+                type: 'function_call_output',
+                call_id: toolCall.id,
+                output: JSON.stringify({ success: true, file: result.original_path, url: result.url })
               });
             } else {
               setConversations(prev => prev.map(c => {
@@ -508,9 +773,9 @@ export function useAppStore() {
               }));
               
               toolMessages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify(result)
+                type: 'function_call_output',
+                call_id: toolCall.id,
+                output: JSON.stringify(result)
               });
             }
           } catch (toolErr) {
@@ -529,9 +794,9 @@ export function useAppStore() {
             
             // Send error back to AI
             toolMessages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify({ error: errorMessage, success: false })
+              type: 'function_call_output',
+              call_id: toolCall.id,
+              output: JSON.stringify({ error: errorMessage, success: false })
             });
           }
         } else {
@@ -550,9 +815,9 @@ export function useAppStore() {
           
           // Send error back to AI
           toolMessages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: errorMessage, success: false })
+            type: 'function_call_output',
+            call_id: toolCall.id,
+            output: JSON.stringify({ error: errorMessage, success: false })
           });
         }
       }
@@ -560,14 +825,39 @@ export function useAppStore() {
       // Send tool results back to AI
       if (toolMessages.length > 0) {
         try {
+          const followUpBody = useResponsesApi ? {
+            model: model?.id || 'gpt-4o',
+            input: [...previousMessages.filter((m: any) => m.type !== 'reasoning'), ...toolMessages],
+            store: false,
+            stream: settings.modelSettings.stream,
+            //temperature: settings.modelSettings.temperature,
+            top_p: settings.modelSettings.topP,
+            frequency_penalty: settings.modelSettings.frequencyPenalty,
+            presence_penalty: settings.modelSettings.presencePenalty,
+            tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+            tool_choice: 'auto',
+            ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
+              reasoning: { effort: settings.modelSettings.reasoningEffort }
+            } : {}),
+          } : {
+            ...requestBody,
+            messages: [...previousMessages, ...toolMessages.map(tm => ({
+              role: 'tool',
+              tool_call_id: tm.call_id,
+              content: tm.output
+            }))],
+            stream: settings.modelSettings.stream,
+            tools: getToolDefinitions(settings.allowImageGeneration)
+          };
+          
           const followUpResponse = await fetchWithRetry(chatUrl, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ ...requestBody, messages: [...previousMessages, ...toolMessages], tools: undefined }),
+            body: JSON.stringify(followUpBody),
           });
           
           if (followUpResponse.ok) {
-            await handleContinuationResponse(followUpResponse, convId, provider, model, chatUrl, headers, requestBody, [...previousMessages, ...toolMessages]);
+            await handleContinuationResponse(followUpResponse, convId, provider, model, chatUrl, headers, requestBody, [...previousMessages.filter((m: any) => m.type !== 'reasoning'), ...toolMessages], useResponsesApi);
           }
         } catch (followUpErr) {
           console.error('Follow-up request failed:', followUpErr);
@@ -617,13 +907,17 @@ export function useAppStore() {
     let tokenCount = 0;
 
     // Build messages for API
-    const apiMessages: Array<{ role: string; content: unknown }> = [];
+    const apiMessages: Array<{ type?: string; role: string; content: unknown; tool_call_id?: string; tool_calls?: any[] }> = [];
+    const responsesApiMessages: Array<{ type?: string; role: string; content: unknown; tool_call_id?: string }> = [];
 
     if (settings.modelSettings.systemPrompt) {
       apiMessages.push({ role: 'system', content: settings.modelSettings.systemPrompt });
+      responsesApiMessages.push({ type: 'message', role: 'system', content: settings.modelSettings.systemPrompt });
     }
 
-    const allMessages = [...(conv.messages), userMsg];
+    // Get fresh conversation state from ref (updated by useEffect)
+    const currentConv = conversationsRef.current.find(c => c.id === convId);
+    const allMessages = [...(currentConv?.messages || []), userMsg];
     
     // Apply max history limit
     const maxHistory = settings.maxHistory || 10;
@@ -637,22 +931,32 @@ export function useAppStore() {
         const parts: unknown[] = [];
         m.images.forEach(img => {
           if (img.startsWith('data:image/')) {
-            parts.push({ type: 'image_url', image_url: { url: img } });
+            parts.push({ type: 'input_image', image_url: img });
           } else {
-            parts.push({ type: 'text', text: `[Attached file content]:\n${img}` });
+            parts.push({ type: 'input_text', text: `[Attached file content]:\n${img}` });
           }
         });
-        parts.push({ type: 'text', text: m.content });
+        parts.push({ type: 'input_text', text: m.content });
         apiMessages.push({ role: m.role, content: parts });
+        // For responses API, only include images in user messages
+        if (m.role === 'user') {
+          responsesApiMessages.push({ type: 'message', role: m.role, content: parts });
+        } else {
+          // Assistant messages with images: just include text content
+          responsesApiMessages.push({ type: 'message', role: m.role, content: m.content });
+        }
       } else {
-        apiMessages.push({ role: m.role, content: m.content });
+        const msg: any = { role: m.role, content: m.content };
+        if (m.tool_calls) msg.tool_calls = m.tool_calls;
+        apiMessages.push(msg);
+        responsesApiMessages.push({ type: 'message', role: m.role, content: m.content });
       }
     }
 
     const requestBody = {
       model: model?.id || 'gpt-4o',
       messages: apiMessages,
-      temperature: settings.modelSettings.temperature,
+      //temperature: settings.modelSettings.temperature,
       //max_tokens: settings.modelSettings.maxTokens,
       top_p: settings.modelSettings.topP,
       frequency_penalty: settings.modelSettings.frequencyPenalty,
@@ -661,10 +965,28 @@ export function useAppStore() {
       tools: getToolDefinitions(settings.allowImageGeneration),
     };
 
+    // Build request for responses API if enabled
+    const useResponsesApi = settings.modelSettings.useResponsesApi;
+    const responsesApiBody = useResponsesApi ? {
+      model: model?.id || 'gpt-4o',
+      input: responsesApiMessages,
+      store: false,
+      stream: settings.modelSettings.stream,
+      //temperature: settings.modelSettings.temperature,
+      top_p: settings.modelSettings.topP,
+      frequency_penalty: settings.modelSettings.frequencyPenalty,
+      presence_penalty: settings.modelSettings.presencePenalty,
+      tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+      tool_choice: 'auto',
+      ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
+        reasoning: { effort: settings.modelSettings.reasoningEffort }
+      } : {}),
+    } : null;
+
     try {
-      const chatUrl = provider.baseUrl.includes('/chat/completions') 
-        ? provider.baseUrl 
-        : `${provider.baseUrl}/chat/completions`;
+      const chatUrl = useResponsesApi
+        ? (provider.baseUrl.includes('/responses') ? provider.baseUrl : `${provider.baseUrl}/responses`)
+        : (provider.baseUrl.includes('/chat/completions') ? provider.baseUrl : `${provider.baseUrl}/chat/completions`);
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${provider.apiKey}`,
@@ -675,20 +997,195 @@ export function useAppStore() {
       const response = await fetchWithRetry(chatUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(useResponsesApi ? responsesApiBody : requestBody),
         signal: controller.signal,
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: { message: response.statusText } }));
-        throw new Error(err.error?.message || `API error: ${response.status}`);
+        // If responses API returns 404, fallback to chat completions
+        if (useResponsesApi && response.status === 404) {
+          const fallbackUrl = provider.baseUrl.includes('/chat/completions') 
+            ? provider.baseUrl 
+            : `${provider.baseUrl}/chat/completions`;
+          
+          const fallbackResponse = await fetchWithRetry(fallbackUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          });
+          
+          if (fallbackResponse.ok) {
+            // Update provider settings to show warning
+            updateProvider(provider.id, { responsesApiUnsupported: true });
+            
+            // Continue with chat completions API
+            const data = await fallbackResponse.json();
+            let assistantContent = data.choices?.[0]?.message?.content || '';
+            let toolCalls = data.choices?.[0]?.message?.tool_calls || [];
+            tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
+          } else {
+            const err = await fallbackResponse.json().catch(() => ({ error: { message: fallbackResponse.statusText } }));
+            throw new Error(err.error?.message || `API error: ${fallbackResponse.status}`);
+          }
+        } else {
+          const err = await response.json().catch(() => ({ error: { message: response.statusText } }));
+          throw new Error(err.error?.message || `API error: ${response.status}`);
+        }
       }
 
       let assistantContent = '';
       let toolCalls: any[] = [];
       const toolCallsMap = new Map<number, any>();
 
-      if (settings.modelSettings.stream) {
+      if (useResponsesApi && response.ok) {
+        // Responses API streaming
+        if (settings.modelSettings.stream) {
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+          if (!reader) throw new Error('No response body');
+
+          let buffer = '';
+          const functionCallsMap = new Map<string, any>();
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              if (line.startsWith('event:')) continue;
+              if (!line.startsWith('data: ')) continue;
+              
+              let data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+              
+              // Decode HTML entities comprehensively
+              data = data
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&#39;/g, "'")
+                .replace(/&apos;/g, "'");
+              
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.error) throw new Error(parsed.error);
+                
+                if (parsed.type === 'response.output_text.delta' && parsed.delta) {
+                  assistantContent += parsed.delta;
+                  setStreamingContent(assistantContent);
+                  tokenCount++;
+                }
+                
+                if (parsed.type === 'response.output_text.done' && parsed.text) {
+                  assistantContent = parsed.text;
+                  setStreamingContent(assistantContent);
+                }
+                
+                if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'function_call') {
+                  functionCallsMap.set(parsed.item.id, {
+                    id: parsed.item.call_id,
+                    type: 'function',
+                    function: { name: parsed.item.name, arguments: '' },
+                    fc_id: parsed.item.id
+                  });
+                }
+                
+                if (parsed.type === 'response.function_call_arguments.delta' && parsed.delta) {
+                  const call = functionCallsMap.get(parsed.item_id);
+                  if (call) call.function.arguments += parsed.delta;
+                }
+                
+                if (parsed.type === 'response.completed' && parsed.response?.usage) {
+                  tokenCount = parsed.response.usage.output_tokens || tokenCount;
+                  // Note: Don't store reasoning in responsesApiMessages as it shouldn't be sent back
+                  
+                  // Handle built-in image generation
+                  const imageGenCall = parsed.response.output?.find((i: any) => i.type === 'image_generation_call');
+                  if (imageGenCall?.result) {
+                    const imageData = imageGenCall.result.startsWith('data:') ? imageGenCall.result : `data:image/png;base64,${imageGenCall.result}`;
+                    const imageMsg: Message = {
+                      id: uuidv4(),
+                      role: 'assistant',
+                      content: imageGenCall.revised_prompt || 'Generated image',
+                      images: [imageData],
+                      timestamp: Date.now(),
+                      model: model?.id,
+                    };
+                    addMessage(convId, imageMsg);
+                    setStreamingContent('');
+                    setIsGenerating(false);
+                    return; // Exit early since image was generated
+                  }
+                }
+              } catch (parseErr) {
+                if (parseErr instanceof Error && !parseErr.message.includes('JSON')) throw parseErr;
+              }
+            }
+          }
+          
+          toolCalls = Array.from(functionCallsMap.values());
+        } else {
+          // Non-streaming responses API
+          const data = await response.json();
+          
+          // Extract text from output array
+          if (data.output) {
+            for (const item of data.output) {
+              if (item.type === 'message' && item.content) {
+                for (const contentItem of item.content) {
+                  if (contentItem.type === 'output_text') {
+                    assistantContent += contentItem.text || '';
+                  }
+                }
+              }
+              if (item.type === 'function_call') {
+                toolCalls.push({
+                  id: item.call_id,
+                  type: 'function',
+                  function: { name: item.name, arguments: item.arguments },
+                  fc_id: item.id
+                });
+              }
+            }
+          }
+          
+          // Fallback to output_text
+          if (!assistantContent && data.output_text) {
+            assistantContent = data.output_text;
+          }
+          
+          tokenCount = data.usage?.output_tokens || assistantContent.split(/\s+/).length;
+          
+          // Note: Don't store reasoning in responsesApiMessages as it shouldn't be sent back
+          
+          // Handle built-in image generation in non-streaming
+          const imageGenCall = data.output?.find((i: any) => i.type === 'image_generation_call');
+          if (imageGenCall?.result) {
+            const imageData = imageGenCall.result.startsWith('data:') ? imageGenCall.result : `data:image/png;base64,${imageGenCall.result}`;
+            assistantContent = imageGenCall.revised_prompt || 'Generated image';
+            
+            const imageMsg: Message = {
+              id: uuidv4(),
+              role: 'assistant',
+              content: assistantContent,
+              images: [imageData],
+              timestamp: Date.now(),
+              model: model?.id,
+              tokens: tokenCount,
+            };
+            addMessage(convId, imageMsg);
+            setIsGenerating(false);
+            return; // Exit early
+          }
+        }
+      } else if (settings.modelSettings.stream) {
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         if (!reader) throw new Error('No response body');
@@ -702,8 +1199,14 @@ export function useAppStore() {
             let data = line.slice(line.indexOf('data: ') + 6).trim();
             if (data === '[DONE]') continue;
             
-            // Decode HTML entities
-            data = data.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            // Decode HTML entities comprehensively
+            data = data
+              .replace(/&quot;/g, '"')
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&#39;/g, "'")
+              .replace(/&apos;/g, "'");
             
             try {
               const parsed = JSON.parse(data);
@@ -771,7 +1274,11 @@ export function useAppStore() {
         isStep,
         requestsAnotherTool,
       };
-      addMessage(convId, assistantMsg);
+      
+      // Only add message if there's content or if there are no tool calls
+      if (assistantContent || toolCalls.length === 0) {
+        addMessage(convId, assistantMsg);
+      }
 
       // Auto-generate title and follow-ups after state updates
       const shouldGenerateTitle = settings.generateTitle !== false;
@@ -797,25 +1304,54 @@ export function useAppStore() {
 
       // Execute tool calls if present
       if (toolCalls.length > 0) {
-        await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, [...apiMessages, { role: 'assistant', content: assistantContent || null, tool_calls: toolCalls }]);
+        const functionCallItems = toolCalls.map(tc => ({
+          type: 'function_call',
+          id: tc.fc_id || tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+          call_id: tc.id,
+          status: 'completed'
+        }));
+        const messagesToPass = useResponsesApi ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...functionCallItems] : [...apiMessages, { role: 'assistant', content: assistantContent || '', tool_calls: toolCalls }];
+        await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, messagesToPass, useResponsesApi);
       } else if (requestsAnotherTool) {
         // Request another tool call
         setTimeout(async () => {
           try {
-            const continuationMessages = [
+            const continuationMessages = useResponsesApi ? [
+              ...responsesApiMessages,
+              { type: 'message', role: 'assistant', content: assistantContent },
+              { type: 'message', role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }
+            ] : [
               ...apiMessages,
               { role: 'assistant', content: assistantContent },
               { role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }
             ];
             
+            const continuationBody = useResponsesApi ? {
+              model: model?.id || 'gpt-4o',
+              input: continuationMessages,
+              store: false,
+              stream: settings.modelSettings.stream,
+              //temperature: settings.modelSettings.temperature,
+              top_p: settings.modelSettings.topP,
+              frequency_penalty: settings.modelSettings.frequencyPenalty,
+              presence_penalty: settings.modelSettings.presencePenalty,
+              tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+              tool_choice: 'auto',
+              ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
+                reasoning: { effort: settings.modelSettings.reasoningEffort }
+              } : {}),
+            } : { ...requestBody, messages: continuationMessages, stream: settings.modelSettings.stream };
+            
             const continuationResponse = await fetchWithRetry(chatUrl, {
               method: 'POST',
               headers,
-              body: JSON.stringify({ ...requestBody, messages: continuationMessages }),
+              body: JSON.stringify(continuationBody),
             });
             
             if (continuationResponse.ok) {
-              await handleContinuationResponse(continuationResponse, convId, provider, model, chatUrl, headers, requestBody, continuationMessages);
+              await handleContinuationResponse(continuationResponse, convId, provider, model, chatUrl, headers, requestBody, continuationMessages, useResponsesApi);
             }
           } catch (err) {
             console.error('Continuation request failed:', err);
@@ -929,6 +1465,24 @@ export function useAppStore() {
     }));
   }, []);
 
+  const updateMessageVersions = useCallback((convId: string, msgId: string, versions: Message[], currentVersionIndex: number) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id !== convId) return c;
+      const messages = c.messages.map(m => {
+        if (m.id === msgId) {
+          // If versions array is provided, update it; otherwise just update the index
+          if (versions.length > 0) {
+            return { ...m, versions, currentVersionIndex };
+          } else {
+            return { ...m, currentVersionIndex };
+          }
+        }
+        return m;
+      });
+      return { ...c, messages, updatedAt: Date.now() };
+    }));
+  }, []);
+
   const setConversationMode = useCallback((convId: string, mode: 'chat' | 'image') => {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, mode } : c));
   }, []);
@@ -964,8 +1518,8 @@ export function useAppStore() {
         body: JSON.stringify({
           model: model.id,
           messages,
-          temperature: 0.7,
-          max_tokens: 50,
+          //temperature: 0.7,
+          //max_tokens: 50,
           stream: false,
         }),
       });
@@ -1007,8 +1561,8 @@ export function useAppStore() {
         body: JSON.stringify({
           model: model.id,
           messages,
-          temperature: 0.8,
-          max_tokens: 150,
+          //temperature: 0.8,
+          //max_tokens: 150,
           stream: false,
         }),
       });
@@ -1046,30 +1600,103 @@ export function useAppStore() {
     setIsGenerating(true);
 
     try {
-      const imageUrl = provider.baseUrl.includes('/images/generations')
-        ? provider.baseUrl
-        : `${provider.baseUrl}/images/generations`;
-      const response = await fetch(imageUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${provider.apiKey}`,
-        },
-        body: JSON.stringify({ prompt, n: 1, size: '1024x1024' }),
-      });
-
-      if (!response.ok) throw new Error('Image generation failed');
-      const data = await response.json();
-      const imageData = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+      const useResponsesApi = settings.modelSettings.useResponsesApi;
       
-      const assistantMsg: Message = {
-        id: uuidv4(),
-        role: 'assistant',
-        content: `Generated image for: "${prompt}"`,
-        images: [imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`],
-        timestamp: Date.now(),
-      };
-      addMessage(convId, assistantMsg);
+      if (useResponsesApi) {
+        // Use responses API for image generation
+        const responsesUrl = provider.baseUrl.includes('/responses')
+          ? provider.baseUrl
+          : `${provider.baseUrl}/responses`;
+        
+        // Build input array - include previous image call if exists
+        const input: any[] = [];
+        
+        // Find the most recent image generation call for follow-up edits
+        const recentMessages = conv.messages.slice().reverse();
+        const lastImageMsg = recentMessages.find(m => m.imageGenerationCall);
+        
+        // Build user message content with image attachment if editing
+        const userContent: any[] = [{ type: 'input_text', text: prompt }];
+        
+        if (lastImageMsg?.imageGenerationCall?.result?.image_data) {
+          const imageData = lastImageMsg.imageGenerationCall.result.image_data;
+          userContent.push({ 
+            type: 'input_image', 
+            image_url: imageData.startsWith('data:') || imageData.startsWith('http') ? imageData : `data:image/png;base64,${imageData}`
+          });
+        }
+        
+        input.push({ type: 'message', role: 'user', content: userContent });
+        
+        const response = await fetch(responsesUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${provider.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: settings.imageGenerationModel || 'gpt-image-1.5',
+            input,
+            tools: [{ 
+              type: 'image_generation',
+              action: lastImageMsg?.imageGenerationCall ? 'auto' : 'auto', // auto decides between generate/edit
+              quality: 'high'
+            }],
+            tool_choice: 'auto',
+            store: false
+          }),
+        });
+
+        if (!response.ok) throw new Error('Image generation failed');
+        const data = await response.json();
+        
+        // Find image generation call in output
+        const imageCall = data.output?.find((item: any) => item.image_generation_call);
+        if (!imageCall?.image_generation_call?.result?.image_data) {
+          throw new Error('No image data in response');
+        }
+        
+        const imageData = imageCall.image_generation_call.result.image_data;
+        const imageUrl = imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`;
+        
+        const assistantMsg: Message = {
+          id: uuidv4(),
+          role: 'assistant',
+          content: lastImageMsg?.imageGenerationCall 
+            ? `Edited image: "${prompt}"`
+            : `Generated image for: "${prompt}"`,
+          images: [imageUrl],
+          timestamp: Date.now(),
+          imageGenerationCall: imageCall, // Store for future edits
+        };
+        addMessage(convId, assistantMsg);
+      } else {
+        // Use legacy images/generations endpoint
+        const imageUrl = provider.baseUrl.includes('/images/generations')
+          ? provider.baseUrl
+          : `${provider.baseUrl}/images/generations`;
+        const response = await fetch(imageUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${provider.apiKey}`,
+          },
+          body: JSON.stringify({ prompt, n: 1, size: '1024x1024' }),
+        });
+
+        if (!response.ok) throw new Error('Image generation failed');
+        const data = await response.json();
+        const imageData = data.data?.[0]?.url || data.data?.[0]?.b64_json;
+        
+        const assistantMsg: Message = {
+          id: uuidv4(),
+          role: 'assistant',
+          content: `Generated image for: "${prompt}"`,
+          images: [imageData.startsWith('data:') ? imageData : `data:image/png;base64,${imageData}`],
+          timestamp: Date.now(),
+        };
+        addMessage(convId, assistantMsg);
+      }
     } catch (err: unknown) {
       const errorMsg: Message = {
         id: uuidv4(),
@@ -1115,6 +1742,7 @@ export function useAppStore() {
     deleteLastMessage,
     editMessage,
     deleteMessagesFrom,
+    updateMessageVersions,
     setConversationMode,
     setConversationAttachments,
     generateImage,

@@ -26,6 +26,9 @@ export interface Message {
   tokensPerSecond?: number;
   isStep?: boolean;
   requestsAnotherTool?: boolean;
+  imageGenerationCall?: any; // Store image_generation_call for follow-up edits
+  versions?: Message[]; // Store previous versions when retrying
+  currentVersionIndex?: number; // Track which version is currently displayed
 }
 
 export interface Conversation {
@@ -50,6 +53,7 @@ export interface ModelProvider {
   enabled: boolean;
   isIntegrated?: boolean;
   customFieldValues?: Record<string, string>;
+  responsesApiUnsupported?: boolean;
 }
 
 export interface ModelConfig {
@@ -68,6 +72,8 @@ export interface ModelSettings {
   presencePenalty: number;
   systemPrompt: string;
   stream: boolean;
+  useResponsesApi?: boolean;
+  reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
 }
 
 export interface Workflow {

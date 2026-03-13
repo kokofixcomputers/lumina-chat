@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Copy, Check, RotateCcw, Edit2, Trash2, X, Bot, Download, Loader2, CheckCircle, XCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Copy, Check, RotateCcw, Edit2, Trash2, X, Bot, Download, Loader2, CheckCircle, XCircle, ChevronDown, ChevronRight, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '../types';
@@ -171,9 +171,10 @@ interface MessageBubbleProps {
   onEdit?: (newContent: string) => void;
   onDelete?: () => void;
   onFollowUpClick?: (followUp: string) => void;
+  onVersionChange?: (versionIndex: number) => void;
 }
 
-export default function MessageBubble({ message, modelName, modelId, onRetry, onEdit, onDelete, onFollowUpClick }: MessageBubbleProps) {
+export default function MessageBubble({ message, modelName, modelId, onRetry, onEdit, onDelete, onFollowUpClick, onVersionChange }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const [isEditing, setIsEditing] = useState(false);
@@ -181,10 +182,22 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
   const [, setTheme] = useState(0);
   const [imgError, setImgError] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [currentVersionIndex, setCurrentVersionIndex] = useState(message.currentVersionIndex ?? 0);
 
   const modelInfo = modelId ? getModelInfo(modelId) : null;
   const ModelIcon = modelInfo && typeof modelInfo.icon !== 'string' ? modelInfo.icon : null;
   const displayName = modelInfo?.displayName || modelName || 'Assistant';
+
+  const versions = message.versions || [];
+  const hasVersions = versions.length > 0;
+  const displayMessage = hasVersions && currentVersionIndex < versions.length 
+    ? versions[currentVersionIndex] 
+    : message;
+
+  const handleVersionChange = (newIndex: number) => {
+    setCurrentVersionIndex(newIndex);
+    onVersionChange?.(newIndex);
+  };
 
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(t => t + 1));
@@ -192,13 +205,13 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
     return () => observer.disconnect();
   }, []);
 
-  const stepText = !isUser && message.isStep
-  ? getVisibleStepText(message.content)
+  const stepText = !isUser && displayMessage.isStep
+  ? getVisibleStepText(displayMessage.content)
   : '';
 
   const isEmpty =
     !isUser &&
-    (message.content == null || message.content.trim().length === 0);
+    (displayMessage.content == null || displayMessage.content.trim().length === 0);
 
   if (isEmpty) {
     // Completely hide this message, nothing gets rendered
@@ -363,8 +376,8 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
             </div>
           )
         ) : (
-          <div className={`text-[rgb(var(--text))] w-full min-w-0 break-words overflow-wrap-anywhere ${message.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}>
-            {message.isStep && (
+          <div className={`text-[rgb(var(--text))] w-full min-w-0 break-words overflow-wrap-anywhere ${displayMessage.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}>
+            {displayMessage.isStep && (
               <div className="mb-2">
                 <div className="inline-flex items-center gap-1.5 rounded-full bg-[rgb(var(--panel))] border border-[rgb(var(--border))] px-3 py-1.5 text-[11px] text-[rgb(var(--muted))]">
                   <div className="flex items-center justify-center w-4 h-4 rounded-full bg-[rgb(var(--accent))]/10">
@@ -381,24 +394,48 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
               </div>
             )}
 
-            {!isUser && !message.isStep && (
+            {!isUser && !displayMessage.isStep && (
               <>
-                {renderContent(message.content)}
+                {renderContent(displayMessage.content)}
+                {/* Version navigation */}
+                {hasVersions && (
+                  <div className="flex items-center gap-2 mt-3 mb-1">
+                    <button
+                      onClick={() => handleVersionChange(Math.max(0, currentVersionIndex - 1))}
+                      disabled={currentVersionIndex === 0}
+                      className="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Previous version"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <span className="text-[11px] text-[rgb(var(--muted))] font-medium px-2">
+                      {currentVersionIndex + 1} / {versions.length + 1}
+                    </span>
+                    <button
+                      onClick={() => handleVersionChange(Math.min(versions.length, currentVersionIndex + 1))}
+                      disabled={currentVersionIndex === versions.length}
+                      className="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Next version"
+                    >
+                      <ChevronRightIcon size={14} />
+                    </button>
+                  </div>
+                )}
                 {/* Model tag below */}
                 {modelName && (
                   <p className="mt-2 text-[11px] text-[rgb(var(--muted))] flex items-center gap-1.5">
                     <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
                     {modelName}
-                    {message.tokensPerSecond && (
+                    {displayMessage.tokensPerSecond && (
                       <>
                         <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
-                        {message.tokensPerSecond} t/s
+                        {displayMessage.tokensPerSecond} t/s
                       </>
                     )}
-                    {message.tokens && (
+                    {displayMessage.tokens && (
                       <>
                         <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
-                        {message.tokens} tokens
+                        {displayMessage.tokens} tokens
                       </>
                     )}
                   </p>

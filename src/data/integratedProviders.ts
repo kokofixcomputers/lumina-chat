@@ -67,7 +67,7 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
     id: 'mistral',
     name: 'Mistral',
     description: 'Official Mistral API',
-    baseUrlTemplate: 'https://api.mistral.com/v1',
+    baseUrlTemplate: 'https://api.mistral.ai/v1',
     requireAuth: true,
     defaultModels: [
       { id: 'mistral-7b', name: 'Mistral 7B', contextLength: 8192, supportsImages: false, supportsStreaming: true },

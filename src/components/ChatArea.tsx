@@ -34,6 +34,7 @@ interface ChatAreaProps {
   homeMode?: 'chat' | 'image';
   homeAttachments?: string[];
   prettifyModelNames?: boolean;
+  workflows?: Array<{ id: string; slug: string; prompt: string }>;
 }
 
 const QUICK_ACTIONS = [
@@ -64,6 +65,7 @@ export default function ChatArea({
   homeMode = 'chat',
   homeAttachments = [],
   prettifyModelNames = true,
+  workflows = [],
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -107,6 +109,7 @@ export default function ChatArea({
               attachments={homeAttachments}
               onAttachmentsChange={onAttachmentsChange}
               prettifyModelNames={prettifyModelNames}
+              workflows={workflows}
             />
           </div>
 
@@ -206,6 +209,7 @@ export default function ChatArea({
         attachments={conversation.attachments || []}
         onAttachmentsChange={onAttachmentsChange}
         prettifyModelNames={prettifyModelNames}
+        workflows={workflows}
       />
     </div>
   );

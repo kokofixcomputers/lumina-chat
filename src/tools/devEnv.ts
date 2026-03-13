@@ -63,7 +63,7 @@ function sendMessage(message: any): Promise<any> {
       setTimeout(() => {
         socket.removeEventListener('message', messageHandler);
         reject(new Error('WebSocket timeout'));
-      }, 30000);
+      }, 300000);
     } catch (error) {
       reject(error);
     }

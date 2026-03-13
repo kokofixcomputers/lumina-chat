@@ -288,6 +288,7 @@ export default function App() {
             homeMode={homeMode}
             homeAttachments={homeAttachments}
             prettifyModelNames={store.settings.prettifyModelNames}
+            workflows={store.settings.workflows || []}
           />
 
           {panel === 'settings' && (

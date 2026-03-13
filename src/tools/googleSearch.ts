@@ -14,22 +14,26 @@ export default defineTool(
     required: ['query']
   },
   async (args: { query: string }) => {
-    const serpApiKey = localStorage.getItem('lumina_settings');
+    const settingsData = localStorage.getItem('lumina_settings');
     let apiKey = '';
-    if (serpApiKey) {
+    if (settingsData) {
       try {
-        const settings = JSON.parse(serpApiKey);
-        apiKey = settings.serpApiKey || '';
+        const settings = JSON.parse(settingsData);
+        apiKey = settings.serperApiKey || '';
       } catch {}
     }
     
-    const response = await fetch('/api/search', {
+    if (!apiKey) {
+      throw new Error('Serper API key not configured');
+    }
+    
+    const response = await fetch('https://google.serper.dev/search', {
       method: 'POST',
       headers: { 
-        'Content-Type': 'application/json',
-        'x-serpapi-key': apiKey
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ query: args.query })
+      body: JSON.stringify({ q: args.query })
     });
     
     if (!response.ok) {
@@ -37,6 +41,11 @@ export default defineTool(
     }
     
     const data = await response.json();
-    return data;
+    
+    return {
+      knowledgeGraph: data.knowledgeGraph,
+      organic: data.organic,
+      peopleAlsoAsk: data.peopleAlsoAsk
+    };
   }
 );

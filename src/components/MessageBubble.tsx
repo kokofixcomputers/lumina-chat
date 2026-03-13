@@ -32,14 +32,13 @@ function parseInline(text: string): React.ReactNode {
 function getVisibleStepText(raw: string | undefined | null): string {
   if (!raw) return '';
 
-  // Find start of trailing JSON like {"status": "request_another_tool"}
-  const jsonStart = raw.lastIndexOf('{"status":');
-  if (jsonStart !== -1) {
-    raw = raw.slice(0, jsonStart);
-  }
+  // Regex to match {"status": "value"} - handles spaces around keys/values
+  const jsonRegex = /\{\s*"status"\s*:\s*"[^"]*"\s*\}/g;
+  const cleaned = raw.replace(jsonRegex, '').trim();
 
-  return raw.trim();
+  return cleaned;
 }
+
 
 function renderContent(content: string) {
   const isDark = document.documentElement.classList.contains('dark');
@@ -143,6 +142,7 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
   const [editText, setEditText] = useState(message.content);
   const [, setTheme] = useState(0);
   const [imgError, setImgError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const modelInfo = modelId ? getModelInfo(modelId) : null;
   const ModelIcon = modelInfo && typeof modelInfo.icon !== 'string' ? modelInfo.icon : null;
@@ -158,19 +158,17 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
   ? getVisibleStepText(message.content)
   : '';
 
-  const isEmptyStep =
+  const isEmpty =
     !isUser &&
-    message.isStep &&
     (message.content == null || message.content.trim().length === 0);
 
-  if (isEmptyStep) {
+  if (isEmpty) {
     // Completely hide this message, nothing gets rendered
     return null;
   }
 
   // Tool execution message
   if (isTool) {
-    const [expanded, setExpanded] = useState(false);
     const contentLength = message.content?.length || 0;
     const isLong = contentLength > 100;
     const hasImages = message.images && message.images.length > 0;

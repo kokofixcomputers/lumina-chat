@@ -33,6 +33,7 @@ interface ChatInputProps {
   attachments?: string[];
   onAttachmentsChange?: (attachments: string[])=> void;
   prettifyModelNames?: boolean;
+  workflows?: Array<{ id: string; slug: string; prompt: string }>;
 }
 
 // Color per provider
@@ -74,6 +75,11 @@ function formatCtx(n?: number) {
   return String(n);
 }
 
+interface QandaQuestion {
+  question: string;
+  suggestedAnswers: string[];
+}
+
 export default function ChatInput({
   onSend,
   isGenerating,
@@ -91,6 +97,7 @@ export default function ChatInput({
   attachments = [],
   onAttachmentsChange,
   prettifyModelNames = true,
+  workflows = [],
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -99,11 +106,20 @@ export default function ChatInput({
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(new Set());
+  const [qandaMode, setQandaMode] = useState(false);
+  const [qandaQuestions, setQandaQuestions] = useState<QandaQuestion[]>([]);
+  const [qandaAnswers, setQandaAnswers] = useState<string[]>([]);
+  const [currentQandaIndex, setCurrentQandaIndex] = useState(0);
+  const [customAnswer, setCustomAnswer] = useState('');
+  const [showWorkflowMenu, setShowWorkflowMenu] = useState(false);
+  const [workflowMenuPos, setWorkflowMenuPos] = useState({ top: 0, left: 0 });
+  const [workflowSearch, setWorkflowSearch] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
+  const workflowMenuRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
 
   const openModelPicker = () => {
@@ -124,6 +140,37 @@ export default function ChatInput({
     
     setShowModelPicker(true);
     setTimeout(() => modelSearchRef.current?.focus(), 50);
+  };
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const customEvent = e as CustomEvent<QandaQuestion[]>;
+      setQandaQuestions(customEvent.detail);
+      setQandaAnswers([]);
+      setCurrentQandaIndex(0);
+      setCustomAnswer('');
+      setQandaMode(true);
+    };
+    window.addEventListener('qanda', handler);
+    return () => window.removeEventListener('qanda', handler);
+  }, []);
+
+  const handleQandaAnswer = (answer: string) => {
+    const newAnswers = [...qandaAnswers, answer];
+    setQandaAnswers(newAnswers);
+    setCustomAnswer('');
+    
+    if (currentQandaIndex < qandaQuestions.length - 1) {
+      setCurrentQandaIndex(currentQandaIndex + 1);
+    } else {
+      window.dispatchEvent(new CustomEvent('qanda-response', { detail: newAnswers }));
+      setQandaMode(false);
+    }
+  };
+
+  const handleQandaSkip = () => {
+    window.dispatchEvent(new CustomEvent('qanda-response', { detail: qandaAnswers }));
+    setQandaMode(false);
   };
 
   useEffect(() => {
@@ -152,13 +199,91 @@ export default function ChatInput({
   }, [text, images, attachments, isGenerating, onSend, onAttachmentsChange]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === 'Enter' && !e.shiftKey) { 
+      e.preventDefault(); 
+      
+      // Check if there's a workflow match
+      const match = text.match(/^\/([a-zA-Z0-9_]+)\s+(.*)$/);
+      if (match) {
+        const [, slug, rest] = match;
+        const workflow = workflows.find(w => w.slug === slug);
+        if (workflow) {
+          const finalContent = workflow.prompt + (rest.trim() ? ' ' + rest.trim() : '');
+          onSend(finalContent, [...images, ...attachments]);
+          setText('');
+          setImages([]);
+          if (onAttachmentsChange) onAttachmentsChange([]);
+          if (textareaRef.current) textareaRef.current.style.height = 'auto';
+          setShowWorkflowMenu(false);
+          return;
+        }
+      }
+      
+      handleSend(); 
+    }
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
+    const value = e.target.value;
+    setText(value);
     e.target.style.height = 'auto';
     e.target.style.height = Math.min(e.target.scrollHeight, 180) + 'px';
+    
+    const cursorPos = e.target.selectionStart;
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const match = textBeforeCursor.match(/\/([a-zA-Z0-9_]*)$/);
+    
+    if (match && workflows.length > 0) {
+      setWorkflowSearch(match[1]);
+      setShowWorkflowMenu(true);
+      if (textareaRef.current) {
+        const rect = textareaRef.current.getBoundingClientRect();
+        setWorkflowMenuPos({ top: rect.top - 10, left: rect.left });
+      }
+    } else {
+      setShowWorkflowMenu(false);
+    }
+  };
+
+  const renderTextWithHighlight = () => {
+    const match = getWorkflowMatch();
+    if (!match) return null;
+
+    const { fullMatch, slug } = match;
+
+    return (
+      <div
+        className="pointer-events-none absolute inset-0
+                  px-3 sm:px-4 pt-3.5 pb-2
+                  whitespace-pre-wrap break-words leading-relaxed
+                  text-base sm:text-[13.5px]"
+      >
+        {/* Transparent text to occupy the same width as the raw "/code " */}
+        <span className="text-transparent">
+          {fullMatch}
+        </span>
+
+        {/* Chip absolutely positioned over that transparent span */}
+        <span
+          className="absolute bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))]
+                    px-1 rounded"
+          // you can tweak left/top if needed
+        >
+          /{slug}
+        </span>
+      </div>
+    );
+  };
+
+  const getWorkflowMatch = () => {
+    const match = text.match(/^\/([a-zA-Z0-9_]+)(\s|$)/);
+    if (!match) return null;
+
+    const [fullMatch, slug] = match;
+    const workflow = workflows.find(w => w.slug === slug);
+    if (!workflow) return null;
+
+    return { fullMatch, slug };
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -227,6 +352,94 @@ export default function ChatInput({
     e.preventDefault();
     e.stopPropagation();
   };
+
+  const handleWorkflowSelect = (workflow: { slug: string; prompt: string }) => {
+    const cursorPos = textareaRef.current?.selectionStart || 0;
+    const textBeforeCursor = text.slice(0, cursorPos);
+    const textAfterCursor = text.slice(cursorPos);
+    const match = textBeforeCursor.match(/\/([a-zA-Z0-9_]*)$/);
+    
+    if (match) {
+      const beforeSlash = textBeforeCursor.slice(0, -match[0].length);
+      const newText = beforeSlash + textAfterCursor.trim();
+      setText(newText);
+      setShowWorkflowMenu(false);
+      
+      setTimeout(() => {
+        const finalContent = workflow.prompt + (newText.trim() ? ' ' + newText.trim() : '');
+        onSend(finalContent, [...images, ...attachments]);
+        setText('');
+        setImages([]);
+        if (onAttachmentsChange) onAttachmentsChange([]);
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      }, 0);
+    }
+  };
+
+  useEffect(() => {
+    if (!showWorkflowMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (workflowMenuRef.current && !workflowMenuRef.current.contains(e.target as Node)) {
+        setShowWorkflowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showWorkflowMenu]);
+
+  const filteredWorkflows = workflows.filter(w => 
+    w.slug.toLowerCase().includes(workflowSearch.toLowerCase())
+  );
+
+  if (qandaMode && qandaQuestions.length > 0) {
+    const currentQ = qandaQuestions[currentQandaIndex];
+    return (
+      <div className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2">
+        <div className="chat-input-box">
+          <div className="px-4 pt-4 pb-3">
+            <div className="text-xs text-[rgb(var(--muted))] mb-2">Question {currentQandaIndex + 1} of {qandaQuestions.length}</div>
+            <div className="text-sm font-medium text-[rgb(var(--text))] mb-3">{currentQ.question}</div>
+            <div className="flex flex-col gap-2 mb-3">
+              {currentQ.suggestedAnswers.map((answer, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleQandaAnswer(answer)}
+                  className="px-3 py-2 text-left text-sm rounded-lg border border-[rgb(var(--border))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                >
+                  {answer}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <input
+                type="text"
+                value={customAnswer}
+                onChange={(e) => setCustomAnswer(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && customAnswer.trim() && handleQandaAnswer(customAnswer.trim())}
+                placeholder="Or type your own answer..."
+                className="w-full px-3 py-2 text-sm bg-transparent border border-[rgb(var(--border))] rounded-lg outline-none focus:border-[rgb(var(--accent))]"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 px-3 pb-3">
+            <button
+              onClick={handleQandaSkip}
+              className="px-3 py-1.5 text-xs text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors"
+            >
+              Skip remaining
+            </button>
+            <button
+              onClick={() => customAnswer.trim() && handleQandaAnswer(customAnswer.trim())}
+              disabled={!customAnswer.trim()}
+              className="send-btn ml-auto"
+            >
+              <Send size={15} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
   const canAttachImages = currentModel?.supportsImages ?? false;
@@ -312,16 +525,22 @@ export default function ChatInput({
 
       {/* Main input box */}
       <div className="chat-input-box">
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={handleTextChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask, create, or start a task..."
-          rows={1}
-          className="w-full bg-transparent px-3 sm:px-4 pt-3.5 pb-2 text-base sm:text-[13.5px] text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] resize-none outline-none leading-relaxed"
-          style={{ minHeight: '48px', maxHeight: '180px' }}
-        />
+        <div className="relative">
+          {renderTextWithHighlight()}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={handleTextChange}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask, create, or start a task..."
+            rows={1}
+            className="w-full bg-transparent px-3 sm:px-4 pt-3.5 pb-2
+                      text-base sm:text-[13.5px] text-[rgb(var(--text))]
+                      placeholder:text-[rgb(var(--muted))]
+                      resize-none outline-none leading-relaxed relative"
+          />
+        </div>
+
 
         {/* Toolbar */}
         <div className="flex items-center gap-0.5 px-3 pb-2.5 pt-0.5">
@@ -488,6 +707,30 @@ export default function ChatInput({
             <span>Manage Providers</span>
             <span className="ml-auto opacity-50">→</span>
           </button>
+        </div>
+      )}
+
+      {/* Workflow menu */}
+      {showWorkflowMenu && filteredWorkflows.length > 0 && (
+        <div
+          ref={workflowMenuRef}
+          className="fixed z-50 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl shadow-2xl p-2 min-w-[200px] max-w-[300px]"
+          style={{
+            top: workflowMenuPos.top,
+            left: workflowMenuPos.left,
+            transform: 'translateY(calc(-100% - 8px))',
+          }}
+        >
+          {filteredWorkflows.map(workflow => (
+            <button
+              key={workflow.id}
+              onClick={() => handleWorkflowSelect(workflow)}
+              className="w-full text-left px-3 py-2 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+            >
+              <div className="text-sm font-medium text-[rgb(var(--text))]">/{workflow.slug}</div>
+              <div className="text-xs text-[rgb(var(--muted))] truncate">{workflow.prompt}</div>
+            </button>
+          ))}
         </div>
       )}
     </div>

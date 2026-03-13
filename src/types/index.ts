@@ -70,6 +70,12 @@ export interface ModelSettings {
   stream: boolean;
 }
 
+export interface Workflow {
+  id: string;
+  slug: string;
+  prompt: string;
+}
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   providers: ModelProvider[];
@@ -82,7 +88,8 @@ export interface AppSettings {
   generateFollowUps?: boolean;
   allowImageGeneration?: boolean;
   imageGenerationModel?: string;
-  serpApiKey?: string;
+  serperApiKey?: string;
+  workflows?: Workflow[];
   cloudSync?: {
     enabled: boolean;
     email: string;

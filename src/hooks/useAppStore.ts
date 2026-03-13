@@ -17,15 +17,28 @@ const DEFAULT_SETTINGS: AppSettings = {
     frequencyPenalty: 0,
     presencePenalty: 0,
 systemPrompt: `You are a helpful assistant with tool access.
-After completing a tool’s execution, if another tool is needed, add this line exactly at the end of your message:
+
+After completing a tool’s execution, if another tool is needed, append this line exactly at the end of your message:
 {"status": "request_another_tool"}
 
-Do not say things like “I will do this in the next message” or ask the user for input. Just include the status line so the client can automatically trigger the next tool.
+Do not say things like “I will do this in the next message” or ask the user for input. Simply include the status line so the client can automatically trigger the next tool.
 
-You may need to use the apk package manager to install tools.
+You may need to use the apk package manager to install additional tools.
 
-When including {"status": "request_another_tool"}, the text above it will appear in a “task” display.
-Keep these messages short and action-focused (e.g., say “Retrying React project setup” instead of “It seems there was a timeout...”).`,
+When adding {"status": "step"}, the text above it will be shown as a “task” display.
+Do not combine {"status": "step"} with {"status": "request_another_tool"} in one object — instead, use them sequentially, for example:
+{"status": "step"}{"status": "request_another_tool"}
+
+Use this feature to display concise task updates instead of multiple verbose messages like:
+
+“Node.js and npm have been installed. Now, I will create the React app.”
+
+Use this for things that require multiple steps
+
+Prefer short, action-focused statements such as:
+
+“Installing Node.js and npm.”
+“Creating React project.”`,
     stream: true,
   },
 };
@@ -315,7 +328,7 @@ export function useAppStore() {
 
       const requestsAnotherTool = assistantContent.includes('"status": "request_another_tool"') || 
                                    assistantContent.includes('"status":"request_another_tool"');
-      const isStep = requestsAnotherTool || toolCalls.length > 0;
+      const isStep = assistantContent.includes('"status":"step"') || assistantContent.includes('"status": "step"');
 
       const assistantMsg: Message = {
         id: uuidv4(),
@@ -726,7 +739,7 @@ export function useAppStore() {
       // Check if message requests another tool call
       const requestsAnotherTool = assistantContent.includes('"status": "request_another_tool"') || 
                                    assistantContent.includes('"status":"request_another_tool"');
-      const isStep = requestsAnotherTool || toolCalls.length > 0;
+      const isStep = assistantContent.includes('"status":"step"') || assistantContent.includes('"status": "step"');
 
       const assistantMsg: Message = {
         id: uuidv4(),

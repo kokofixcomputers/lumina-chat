@@ -39,6 +39,7 @@ interface ChatAreaProps {
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
   onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
   onVersionChange?: (msgId: string, versionIndex: number) => void;
+  onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
 }
 
 const QUICK_ACTIONS = [
@@ -74,6 +75,7 @@ export default function ChatArea({
   reasoningEffort = 'off',
   onReasoningEffortChange,
   onVersionChange,
+  onTranscribeAudio,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -121,6 +123,7 @@ export default function ChatArea({
               useResponsesApi={useResponsesApi}
               reasoningEffort={reasoningEffort}
               onReasoningEffortChange={onReasoningEffortChange}
+              onTranscribeAudio={onTranscribeAudio}
             />
           </div>
 

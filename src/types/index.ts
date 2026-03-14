@@ -42,6 +42,7 @@ export interface Conversation {
   mode?: 'chat' | 'image';
   attachments?: string[];
   devEnvSession?: string;
+  hotelSearchKey?: string;
 }
 
 export interface ModelProvider {
@@ -96,6 +97,8 @@ export interface AppSettings {
   imageGenerationModel?: string;
   serperApiKey?: string;
   scrapingBeeApiKey?: string;
+  sttModel?: string;
+  sttBaseUrl?: string;
   workflows?: Workflow[];
   cloudSync?: {
     enabled: boolean;
@@ -111,6 +114,7 @@ export interface AppSettings {
       artifactDevEnv?: boolean;
     };
   };
+  disabledTools?: string[];
 }
 
 export type Panel = 'chat' | 'settings' | 'providers';

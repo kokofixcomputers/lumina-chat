@@ -54,13 +54,27 @@ function loadFromStorage<T>(key: string, fallback: T): T {
 }
 
 function saveToStorage(key: string, value: unknown) {
-  try {
-    const serialized = JSON.stringify(value);
-    localStorage.setItem(key, serialized);
-  } catch (err) {
-    console.error('Failed to save to localStorage:', err);
-    if (err instanceof Error && err.name === 'QuotaExceededError') {
-      console.warn('localStorage quota exceeded. Consider clearing old conversations.');
+  const serialized = JSON.stringify(value);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      localStorage.setItem(key, serialized);
+      return;
+    } catch (err) {
+      if (err instanceof Error && err.name === 'QuotaExceededError' && key === 'lumina_conversations') {
+        // Evict oldest conversation and retry
+        try {
+          const convs: any[] = JSON.parse(localStorage.getItem('lumina_conversations') || '[]');
+          if (convs.length === 0) break;
+          convs.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+          convs.shift();
+          localStorage.setItem('lumina_conversations', JSON.stringify(convs));
+        } catch {
+          break;
+        }
+      } else {
+        console.error('Failed to save to localStorage:', err);
+        break;
+      }
     }
   }
 }
@@ -71,6 +85,21 @@ export function useAppStore() {
   );
   const conversationsRef = useRef<Conversation[]>(conversations);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [storageQuotaExceeded, setStorageQuotaExceeded] = useState(false);
+  const storageQuotaResolverRef = useRef<((action: 'evict' | 'retry' | 'ignore') => void) | null>(null);
+
+  const promptStorageQuota = useCallback((): Promise<'evict' | 'retry' | 'ignore'> => {
+    return new Promise(resolve => {
+      storageQuotaResolverRef.current = resolve;
+      setStorageQuotaExceeded(true);
+    });
+  }, []);
+
+  const resolveStorageQuota = useCallback((action: 'evict' | 'retry' | 'ignore') => {
+    setStorageQuotaExceeded(false);
+    storageQuotaResolverRef.current?.(action);
+    storageQuotaResolverRef.current = null;
+  }, []);
   
   // Store active conversation ID in sessionStorage for tools to access
   useEffect(() => {
@@ -89,8 +118,37 @@ export function useAppStore() {
 
   useEffect(() => {
     conversationsRef.current = conversations;
-    saveToStorage('lumina_conversations', conversations);
-  }, [conversations]);
+    // Async save with quota handling
+    (async () => {
+      const serialized = JSON.stringify(conversations);
+      while (true) {
+        try {
+          localStorage.setItem('lumina_conversations', serialized);
+          return;
+        } catch (err) {
+          if (err instanceof Error && err.name === 'QuotaExceededError') {
+            const action = await promptStorageQuota();
+            if (action === 'evict') {
+              try {
+                const convs: any[] = JSON.parse(localStorage.getItem('lumina_conversations') || '[]');
+                convs.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+                convs.splice(0, 3);
+                localStorage.setItem('lumina_conversations', JSON.stringify(convs));
+              } catch { return; }
+              // loop to retry saving
+            } else if (action === 'retry') {
+              // loop to retry saving
+            } else {
+              return; // ignore
+            }
+          } else {
+            console.error('Failed to save to localStorage:', err);
+            return;
+          }
+        }
+      }
+    })();
+  }, [conversations, promptStorageQuota]);
 
   useEffect(() => {
     saveToStorage('lumina_settings', settings);
@@ -310,7 +368,8 @@ export function useAppStore() {
               
               try {
                 const parsed = JSON.parse(data);
-                if (parsed.error) throw new Error(parsed.error);
+                if (parsed.type === 'error' && parsed.error) throw new Error(parsed.error.message || JSON.stringify(parsed.error));
+                if (parsed.type === 'response.failed' && parsed.response?.error) throw new Error(parsed.response.error.message || JSON.stringify(parsed.response.error));
                 
                 if (parsed.type === 'response.output_text.delta' && parsed.delta) {
                   assistantContent += parsed.delta;
@@ -506,7 +565,7 @@ export function useAppStore() {
           status: 'completed'
         }));
         const messagesToPass = useResponsesApi ? [...previousMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...functionCallItems] : previousMessages;
-        await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, messagesToPass);
+        await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, messagesToPass, useResponsesApi);
       } else if (requestsAnotherTool) {
         // Request another tool call
         setTimeout(async () => {
@@ -767,6 +826,9 @@ export function useAppStore() {
                 let updates: any = { messages: updatedMessages };
                 if (toolCall.function.name === 'create_dev_env' && result.success && result.session) {
                   updates.devEnvSession = result.session;
+                }
+                if (result._hotelSearchKey) {
+                  updates.hotelSearchKey = result._hotelSearchKey;
                 }
                 
                 return { ...c, ...updates };
@@ -1075,7 +1137,8 @@ export function useAppStore() {
               
               try {
                 const parsed = JSON.parse(data);
-                if (parsed.error) throw new Error(parsed.error);
+                if (parsed.type === 'error' && parsed.error) throw new Error(parsed.error.message || JSON.stringify(parsed.error));
+                if (parsed.type === 'response.failed' && parsed.response?.error) throw new Error(parsed.response.error.message || JSON.stringify(parsed.response.error));
                 
                 if (parsed.type === 'response.output_text.delta' && parsed.delta) {
                   assistantContent += parsed.delta;
@@ -1719,6 +1782,34 @@ export function useAppStore() {
     .filter(p => p.enabled)
     .flatMap(p => p.models.map(m => ({ ...m, providerId: p.id, providerName: p.name, fullId: `${p.id}/${m.id}` })));
 
+  const transcribeAudio = useCallback(async (blob: Blob, mimeType: string): Promise<string> => {
+    const provider = settings.providers.find(p => p.enabled);
+    if (!provider) throw new Error('No enabled provider found');
+    let baseUrl = settings.sttBaseUrl || provider.baseUrl;
+    baseUrl = baseUrl
+      .replace(/\/chat\/completions\/?$/, '')
+      .replace(/\/responses\/?$/, '')
+      .replace(/\/$/, '');
+    const model = settings.sttModel || 'gpt-4o-transcribe';
+    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const formData = new FormData();
+    formData.append('file', blob, `recording.${ext}`);
+    formData.append('model', model);
+    console.log('[STT] POST', `${baseUrl}/audio/transcriptions`, 'model:', model, 'blob size:', blob.size, 'ext:', ext);
+    const res = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${provider.apiKey}` },
+      body: formData,
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => res.statusText);
+      throw new Error(`Transcription failed ${res.status}: ${errText}`);
+    }
+    const data = await res.json();
+    console.log('[STT] response:', data);
+    return data.text || '';
+  }, [settings]);
+
   return {
     conversations,
     activeConvId,
@@ -1751,5 +1842,8 @@ export function useAppStore() {
     generateFollowUps,
     getProviderAndModel,
     setConversationDevEnvSession,
+    transcribeAudio,
+    storageQuotaExceeded,
+    resolveStorageQuota,
   };
 }

@@ -3,7 +3,8 @@ import {
   Send, Paperclip, X, Loader2,
   Smile, Image as ImageIcon, Table, LayoutGrid,
   Type, List, Eraser, MoreHorizontal, ChevronDown,
-  Check, Search, Eye, Zap, Settings2, RotateCcw, Sparkles, MessageSquarePlus
+  Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
+  Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, ImageIcon as ImgOut, Video
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
 
@@ -37,6 +38,7 @@ interface ChatInputProps {
   useResponsesApi?: boolean;
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
   onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
+  onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
 }
 
 // Color per provider
@@ -104,6 +106,7 @@ export default function ChatInput({
   useResponsesApi = false,
   reasoningEffort = 'off',
   onReasoningEffortChange,
+  onTranscribeAudio,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -122,6 +125,10 @@ export default function ChatInput({
   const [workflowSearch, setWorkflowSearch] = useState('');
   const [showReasoningMenu, setShowReasoningMenu] = useState(false);
   const [reasoningMenuPos, setReasoningMenuPos] = useState({ top: 0, left: 0 });
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelBtnRef = useRef<HTMLButtonElement>(null);
@@ -415,6 +422,60 @@ export default function ChatInput({
     w.slug.toLowerCase().includes(workflowSearch.toLowerCase())
   );
 
+  const handleMicClick = async () => {
+    if (isTranscribing) return;
+
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        setIsRecording(false);
+        // ondataavailable fires synchronously before onstop in Chrome,
+        // but use a microtask gap to be safe across browsers
+        setTimeout(async () => {
+          if (!onTranscribeAudio || audioChunksRef.current.length === 0) return;
+          setIsTranscribing(true);
+          try {
+            const blob = new Blob(audioChunksRef.current, { type: mimeType });
+            const transcript = await onTranscribeAudio(blob, mimeType);
+            if (transcript) {
+              setText(prev => prev ? prev + ' ' + transcript : transcript);
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.style.height = 'auto';
+                  textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 180) + 'px';
+                }
+              }, 0);
+            }
+          } catch (err) {
+            console.error('STT error:', err);
+          } finally {
+            setIsTranscribing(false);
+          }
+        }, 0);
+      };
+
+      mediaRecorder.start(250);
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Microphone access denied:', err);
+    }
+  };
+
   if (qandaMode && qandaQuestions.length > 0) {
     const currentQ = qandaQuestions[currentQandaIndex];
     return (
@@ -574,6 +635,20 @@ export default function ChatInput({
           <button title="Attach" className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
           <button title="Clear" className="toolbar-btn" onClick={() => setText('')}><Eraser size={15} /></button>
           {onRetry && <button title="Retry" className="toolbar-btn" onClick={onRetry}><RotateCcw size={15} /></button>}
+          <button
+            title={isRecording ? 'Stop recording' : isTranscribing ? 'Transcribing…' : 'Voice input'}
+            onClick={handleMicClick}
+            disabled={isTranscribing}
+            className={`toolbar-btn transition-colors ${
+              isRecording
+                ? 'text-yellow-400 animate-pulse'
+                : isTranscribing
+                ? 'text-yellow-300 opacity-60'
+                : ''
+            }`}
+          >
+            <Mic size={15} />
+          </button>
 
           <button
             onClick={isGenerating ? onStopGeneration : handleSend}
@@ -725,16 +800,16 @@ export default function ChatInput({
                           </div>
                         ) : null}
                         <span className="flex-1 font-medium truncate">{displayName}</span>
-                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                          {m.supportsImages && (
-                            <Eye size={12} className="text-[rgb(var(--muted))]" title="Vision" />
-                          )}
-                          {ctx && (
-                            <span className="flex items-center gap-0.5 text-[10px] text-[rgb(var(--muted))]">
-                              <Zap size={10} />
-                              {ctx}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          {mInfo.capabilities?.image_input && <Eye size={13} className="text-sky-500" title="Vision" />}
+                          {mInfo.capabilities?.audio_input && <Mic size={13} className="text-violet-500" title="Audio input" />}
+                          {mInfo.capabilities?.audio_output && <Volume2 size={13} className="text-purple-500" title="Audio output" />}
+                          {mInfo.capabilities?.image_output && <ImgOut size={13} className="text-pink-500" title="Image output" />}
+                          {mInfo.capabilities?.video_output && <Video size={13} className="text-rose-500" title="Video output" />}
+                          {mInfo.capabilities?.realtime && <Radio size={13} className="text-green-500" title="Realtime" />}
+                          {mInfo.capabilities?.deep_research && <BookOpen size={13} className="text-amber-500" title="Deep research" />}
+                          {mInfo.capabilities?.reasoning && <Brain size={13} className="text-blue-500" title="Reasoning" />}
+                          {mInfo.capabilities?.embeddings && <FlaskConical size={13} className="text-teal-500" title="Embeddings" />}
                           {isSelected && <Check size={13} className="text-[rgb(var(--accent))]" />}
                         </div>
                       </button>

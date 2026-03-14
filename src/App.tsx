@@ -267,6 +267,38 @@ export default function App() {
   return (
     <>
       {showWelcome && <WelcomeScreen onGetStarted={handleGetStarted} />}
+
+      {store.storageQuotaExceeded && (
+        <>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" />
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
+            <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <h3 className="text-base font-semibold">Storage quota exceeded</h3>
+              <p className="text-sm text-[rgb(var(--muted))]">Please select an option to continue saving your conversations.</p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => store.resolveStorageQuota('evict')}
+                  className="w-full btn-primary justify-center"
+                >
+                  Remove oldest 3 conversations
+                </button>
+                <button
+                  onClick={() => store.resolveStorageQuota('retry')}
+                  className="w-full btn-secondary justify-center"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => store.resolveStorageQuota('ignore')}
+                  className="w-full btn-secondary justify-center text-red-500 hover:text-red-600"
+                >
+                  Ignore
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
       <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
         {/* Mobile menu button */}
         <button
@@ -318,6 +350,7 @@ export default function App() {
             useResponsesApi={store.settings.modelSettings.useResponsesApi}
             reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
             onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
+            onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
             onVersionChange={handleVersionChange}
           />
 

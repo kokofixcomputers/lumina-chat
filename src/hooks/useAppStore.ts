@@ -721,11 +721,10 @@ export function useAppStore() {
                         };
                       }));
                       
-                      toolMessages.push({
-                        type: 'function_call_output',
-                        call_id: toolCall.id,
-                        output: JSON.stringify({ success: true, description: result.prompt })
-                      });
+                      toolMessages.push(useResponsesApi
+                        ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ success: true, description: result.prompt }) }
+                        : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }
+                      );
                     } else {
                       throw new Error('No image data in response');
                     }
@@ -763,11 +762,10 @@ export function useAppStore() {
                       };
                     }));
                     
-                    toolMessages.push({
-                      type: 'function_call_output',
-                      call_id: toolCall.id,
-                      output: JSON.stringify({ success: true, description: result.prompt })
-                    });
+                    toolMessages.push(useResponsesApi
+                      ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ success: true, description: result.prompt }) }
+                      : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }
+                    );
                   } else {
                     throw new Error('Image generation failed');
                   }
@@ -809,11 +807,10 @@ export function useAppStore() {
                 };
               }));
               
-              toolMessages.push({
-                type: 'function_call_output',
-                call_id: toolCall.id,
-                output: JSON.stringify({ success: true, file: result.original_path, url: result.url })
-              });
+              toolMessages.push(useResponsesApi
+                ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ success: true, file: result.original_path, url: result.url }) }
+                : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, file: result.original_path, url: result.url }) }
+              );
             } else {
               setConversations(prev => prev.map(c => {
                 if (c.id !== convId) return c;
@@ -834,11 +831,10 @@ export function useAppStore() {
                 return { ...c, ...updates };
               }));
               
-              toolMessages.push({
-                type: 'function_call_output',
-                call_id: toolCall.id,
-                output: JSON.stringify(result)
-              });
+              toolMessages.push(useResponsesApi
+                ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify(result) }
+                : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) }
+              );
             }
           } catch (toolErr) {
             const errorMessage = toolErr instanceof Error ? toolErr.message : String(toolErr);
@@ -855,11 +851,10 @@ export function useAppStore() {
             }));
             
             // Send error back to AI
-            toolMessages.push({
-              type: 'function_call_output',
-              call_id: toolCall.id,
-              output: JSON.stringify({ error: errorMessage, success: false })
-            });
+            toolMessages.push(useResponsesApi
+              ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ error: errorMessage, success: false }) }
+              : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }
+            );
           }
         } else {
           const errorMessage = `Tool "${toolCall.function.name}" not found`;
@@ -876,11 +871,10 @@ export function useAppStore() {
           }));
           
           // Send error back to AI
-          toolMessages.push({
-            type: 'function_call_output',
-            call_id: toolCall.id,
-            output: JSON.stringify({ error: errorMessage, success: false })
-          });
+          toolMessages.push(useResponsesApi
+            ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ error: errorMessage, success: false }) }
+            : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }
+          );
         }
       }
       
@@ -903,11 +897,7 @@ export function useAppStore() {
             } : {}),
           } : {
             ...requestBody,
-            messages: [...previousMessages, ...toolMessages.map(tm => ({
-              role: 'tool',
-              tool_call_id: tm.call_id,
-              content: tm.output
-            }))],
+            messages: [...previousMessages, ...toolMessages],
             stream: settings.modelSettings.stream,
             tools: getToolDefinitions(settings.allowImageGeneration)
           };
@@ -919,7 +909,7 @@ export function useAppStore() {
           });
           
           if (followUpResponse.ok) {
-            await handleContinuationResponse(followUpResponse, convId, provider, model, chatUrl, headers, requestBody, [...previousMessages.filter((m: any) => m.type !== 'reasoning'), ...toolMessages], useResponsesApi);
+            await handleContinuationResponse(followUpResponse, convId, provider, model, chatUrl, headers, requestBody, useResponsesApi ? [...previousMessages.filter((m: any) => m.type !== 'reasoning'), ...toolMessages] : [...previousMessages, ...toolMessages], useResponsesApi);
           }
         } catch (followUpErr) {
           console.error('Follow-up request failed:', followUpErr);

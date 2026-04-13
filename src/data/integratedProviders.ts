@@ -74,4 +74,12 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
       { id: 'mistral-7b-chat', name: 'Mistral 7B Chat', contextLength: 8192, supportsImages: false, supportsStreaming: true },
     ],
   },
+  {
+    id: 'pollinations',
+    name: 'Pollinations.AI',
+    description: 'Pollinations.ai API',
+    baseUrlTemplate: 'https://gen.pollinations.ai/v1',
+    requireAuth: true,
+    defaultModels: []
+  }
 ];

@@ -5,6 +5,7 @@ import { getModelInfo } from '../utils/models';
 import { integratedProviders, type IntegratedProviderTemplate } from '../data/integratedProviders';
 import { encryptData, decryptData } from '../utils/encryption';
 import { setSyncStatus } from '../utils/syncStatus';
+import { fetchWithProxyFallback } from '../utils/proxyFetch';
 
 
 interface SettingsPanelProps {
@@ -1376,7 +1377,12 @@ function IntegratedProviderCard({
       if (template.requireAuth && existingProvider.apiKey) {
         headers['Authorization'] = `Bearer ${existingProvider.apiKey}`;
       }
-      const response = await fetch(modelsUrl, { headers });
+      const response = await fetchWithProxyFallback(
+        modelsUrl,
+        { headers },
+        !!existingProvider.useProxy,
+        () => onUpdate({ useProxy: true }),
+      );
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       const models: ModelConfig[] = (data.data || []).map((m: any) => ({
@@ -1575,9 +1581,12 @@ function ProviderCard({
       const modelsUrl = provider.baseUrl.includes('/chat/completions')
         ? provider.baseUrl.replace('/chat/completions', '/models')
         : `${provider.baseUrl}/models`;
-      const response = await fetch(modelsUrl, {
-        headers: { 'Authorization': `Bearer ${provider.apiKey}` },
-      });
+      const response = await fetchWithProxyFallback(
+        modelsUrl,
+        { headers: { 'Authorization': `Bearer ${provider.apiKey}` } },
+        !!provider.useProxy,
+        () => onUpdate({ useProxy: true }),
+      );
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       const models: ModelConfig[] = (data.data || []).map((m: any) => ({

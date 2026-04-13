@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Conversation, Message, AppSettings, ModelProvider, ModelSettings } from '../types';
 import type { IntegratedProviderTemplate } from '../data/integratedProviders';
 import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../tools';
+import { fetchWithProxyFallback } from '../utils/proxyFetch';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
@@ -263,7 +264,14 @@ export function useAppStore() {
     // Helper function to fetch with retry on 429
     const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
       for (let attempt = 0; attempt < maxRetries; attempt++) {
-        const response = await fetch(url, options);
+        const response = await fetchWithProxyFallback(
+          url,
+          options,
+          !!provider?.useProxy,
+          () => {
+            if (provider) updateProvider(provider.id, { useProxy: true });
+          },
+        );
         
         if (response.status === 429) {
           const resetRequests = response.headers.get('x-ratelimit-reset-requests');

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Plus, Trash2, ChevronDown, ChevronRight, Eye, EyeOff, Download } from 'lucide-react';
 import type { ModelProvider, ModelConfig } from '../types';
 import { getModelInfo } from '../utils/models';
+import { fetchWithProxyFallback } from '../utils/proxyFetch';
 
 interface ProvidersPanelProps {
   providers: ModelProvider[];
@@ -107,9 +108,12 @@ function ProviderCard({
       const modelsUrl = provider.baseUrl.includes('/chat/completions')
         ? provider.baseUrl.replace('/chat/completions', '/models')
         : `${provider.baseUrl}/models`;
-      const response = await fetch(modelsUrl, {
-        headers: { 'Authorization': `Bearer ${provider.apiKey}` },
-      });
+      const response = await fetchWithProxyFallback(
+        modelsUrl,
+        { headers: { 'Authorization': `Bearer ${provider.apiKey}` } },
+        !!provider.useProxy,
+        () => onUpdate({ useProxy: true }),
+      );
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       const models: ModelConfig[] = (data.data || []).map((m: any) => ({

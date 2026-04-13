@@ -55,6 +55,7 @@ export interface ModelProvider {
   isIntegrated?: boolean;
   customFieldValues?: Record<string, string>;
   responsesApiUnsupported?: boolean;
+  useProxy?: boolean;
 }
 
 export interface ModelConfig {

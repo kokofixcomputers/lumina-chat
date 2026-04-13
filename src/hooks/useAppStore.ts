@@ -214,7 +214,9 @@ export function useAppStore() {
   }, []);
 
   const getProviderAndModel = useCallback((providerModelId: string) => {
-    const [providerId, modelId] = providerModelId.split('/');
+    const slashIdx = providerModelId.indexOf('/');
+    const providerId = slashIdx !== -1 ? providerModelId.slice(0, slashIdx) : providerModelId;
+    const modelId = slashIdx !== -1 ? providerModelId.slice(slashIdx + 1) : '';
     const provider = settings.providers.find(p => p.id === providerId);
     const model = provider?.models.find(m => m.id === modelId);
     return { provider, model };

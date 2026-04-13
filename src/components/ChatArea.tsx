@@ -85,8 +85,8 @@ export default function ChatArea({
 
   const selectedModelId = conversation?.modelId || defaultModelId;
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
-  const modelDisplayName = currentModel?.name || selectedModelId.split('/')[1] || 'Unknown model';
-  const modelId = selectedModelId.split('/')[1];
+  const modelDisplayName = currentModel?.name || selectedModelId.slice(selectedModelId.indexOf('/') + 1) || 'Unknown model';
+  const modelId = selectedModelId.slice(selectedModelId.indexOf('/') + 1);
 
   // ── Home / empty state ──────────────────────────────
   if (!conversation) {

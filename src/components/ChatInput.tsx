@@ -528,7 +528,7 @@ export default function ChatInput({
 
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
   const canAttachImages = currentModel?.supportsImages ?? false;
-  const modelId = currentModel?.fullId.split('/')[1] || '';
+  const modelId = currentModel ? currentModel.fullId.slice(currentModel.fullId.indexOf('/') + 1) : '';
   const modelInfo = getModelInfo(modelId);
   const displayModelName = prettifyModelNames ? modelInfo.displayName : modelId;
   const ModelIcon = typeof modelInfo.icon === 'string' ? null : modelInfo.icon;
@@ -780,7 +780,7 @@ export default function ChatInput({
                   {!isCollapsed && models.map(m => {
                     const ctx = formatCtx(m.contextLength);
                     const isSelected = selectedModelId === m.fullId;
-                    const mId = m.fullId.split('/')[1];
+                    const mId = m.fullId.slice(m.fullId.indexOf('/') + 1);
                     const mInfo = getModelInfo(mId);
                     const MIcon = typeof mInfo.icon === 'string' ? null : mInfo.icon;
                     const displayName = prettifyModelNames ? mInfo.displayName : mId;

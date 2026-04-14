@@ -364,6 +364,8 @@ export default function App() {
               onAddProvider={store.addProvider}
               onAddIntegratedProvider={store.addIntegratedProvider}
               onDeleteProvider={store.deleteProvider}
+              onUpsertApiFormat={store.upsertApiFormat}
+              onDeleteApiFormat={store.deleteApiFormat}
               onImportData={handleImportData}
               onClose={() => setPanel('chat')}
             />

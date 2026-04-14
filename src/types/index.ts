@@ -56,6 +56,35 @@ export interface ModelProvider {
   customFieldValues?: Record<string, string>;
   responsesApiUnsupported?: boolean;
   useProxy?: boolean;
+  apiFormatId?: string; // references ProviderApiFormat.id, defaults to 'openai'
+  directUrl?: boolean;  // if true, baseUrl is the exact endpoint — no path appending
+}
+
+export interface ProviderApiFormat {
+  id: string;
+  name: string;
+  // Auth
+  authHeader: string;         // e.g. "Authorization"
+  authPrefix: string;         // e.g. "Bearer "
+  // Model placement
+  modelIn: 'body' | 'url' | 'header'; // where to put the model id
+  modelKey: string;           // body key or url placeholder or header name
+  // Endpoints
+  chatPath: string;           // e.g. "/chat/completions"
+  modelsPath: string;         // e.g. "/models" — empty = no model fetching
+  // Extra static headers / body fields (JSON strings)
+  extraHeaders: string;       // JSON object string
+  extraBody: string;          // JSON object string
+  // Custom request/response templates (optional — if set, overrides extraBody logic)
+  // Built-in variables: {{messages}}, {{model}}, {{apiKey}}, {{stream}},
+  //                     {{temperature}}, {{maxTokens}}, {{topP}}
+  // Custom variables defined in customVars below.
+  requestBodyTemplate?: string;         // JSON template string, non-streaming
+  streamingRequestBodyTemplate?: string;// JSON template string, streaming
+  responseTextPath?: string;            // dot-path to assistant text, e.g. "choices.0.message.content"
+  streamingChunkPath?: string;          // dot-path to delta text per SSE chunk, e.g. "choices.0.delta.content"
+  streamingDoneSentinel?: string;       // SSE data value that signals end, default "[DONE]"
+  customVars?: Record<string, string>;  // user-defined static variable values
 }
 
 export interface ModelConfig {
@@ -116,6 +145,7 @@ export interface AppSettings {
     };
   };
   disabledTools?: string[];
+  apiFormats?: ProviderApiFormat[];
 }
 
 export type Panel = 'chat' | 'settings' | 'providers';

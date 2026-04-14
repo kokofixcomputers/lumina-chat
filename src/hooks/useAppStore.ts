@@ -4,6 +4,7 @@ import type { Conversation, Message, AppSettings, ModelProvider, ModelSettings }
 import type { IntegratedProviderTemplate } from '../data/integratedProviders';
 import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../tools';
 import { fetchWithProxyFallback } from '../utils/proxyFetch';
+import { resolveFormat, applyVars, getByPath } from '../components/ProvidersPanel';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
@@ -1045,21 +1046,65 @@ export function useAppStore() {
       } : {}),
     } : null;
 
+    // Resolve active API format for this provider
+    const activeApiFormat = resolveFormat(settings.apiFormats || [], provider.apiFormatId);
+    const hasCustomTemplate = !!(activeApiFormat.requestBodyTemplate || activeApiFormat.streamingRequestBodyTemplate);
+
+    // Build custom body if format has templates
+    const buildCustomBody = (streaming: boolean): string | null => {
+      const template = streaming
+        ? (activeApiFormat.streamingRequestBodyTemplate || activeApiFormat.requestBodyTemplate)
+        : activeApiFormat.requestBodyTemplate;
+      if (!template) return null;
+      const vars: Record<string, unknown> = {
+        messages: apiMessages,
+        model: model?.id || 'gpt-4o',
+        apiKey: provider.apiKey,
+        stream: streaming,
+        temperature: settings.modelSettings.temperature,
+        maxTokens: settings.modelSettings.maxTokens,
+        topP: settings.modelSettings.topP,
+        ...(activeApiFormat.customVars || {}),
+      };
+      return applyVars(template, vars);
+    };
+
     try {
+      const basePath = activeApiFormat.chatPath || '/chat/completions';
+      const baseUrl = provider.baseUrl.replace(/\/$/, '');
       const chatUrl = useResponsesApi
         ? (provider.baseUrl.includes('/responses') ? provider.baseUrl : `${provider.baseUrl}/responses`)
-        : (provider.baseUrl.includes('/chat/completions') ? provider.baseUrl : `${provider.baseUrl}/chat/completions`);
+        : provider.directUrl
+          ? provider.baseUrl
+          : hasCustomTemplate
+            ? `${baseUrl}${basePath}`
+            : (provider.baseUrl.includes('/chat/completions') ? provider.baseUrl : `${provider.baseUrl}/chat/completions`);
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${provider.apiKey}`,
       };
+      // Auth header from format
+      if (provider.apiKey) {
+        headers[activeApiFormat.authHeader] = `${activeApiFormat.authPrefix}${provider.apiKey}`;
+      }
+      // Extra static headers from format
+      try { Object.assign(headers, JSON.parse(activeApiFormat.extraHeaders)); } catch { /* ignore */ }
       if (settings.serpApiKey) {
         headers['x-serpapi-key'] = settings.serpApiKey;
       }
+
+      const isStreaming = settings.modelSettings.stream;
+      const customBodyStr = !useResponsesApi ? buildCustomBody(isStreaming) : null;
+      const bodyToSend = useResponsesApi
+        ? responsesApiBody
+        : customBodyStr !== null
+          ? JSON.parse(customBodyStr)
+          : requestBody;
+
       const response = await fetchWithRetry(chatUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify(useResponsesApi ? responsesApiBody : requestBody),
+        body: JSON.stringify(bodyToSend),
         signal: controller.signal,
       });
 
@@ -1260,7 +1305,8 @@ export function useAppStore() {
           const lines = chunk.split('\n').filter(l => l.trim().startsWith('data: '));
           for (const line of lines) {
             let data = line.slice(line.indexOf('data: ') + 6).trim();
-            if (data === '[DONE]') continue;
+            const doneSentinel = activeApiFormat.streamingDoneSentinel ?? '[DONE]';
+            if (data === doneSentinel) continue;
             
             // Decode HTML entities comprehensively
             data = data
@@ -1279,7 +1325,9 @@ export function useAppStore() {
               if (parsed.choices?.[0]?.finish_reason === 'error') {
                 throw new Error(parsed.error || 'Stream error');
               }
-              const delta = parsed.choices?.[0]?.delta?.content || '';
+              const delta = activeApiFormat.streamingChunkPath
+                ? getByPath(parsed, activeApiFormat.streamingChunkPath)
+                : (parsed.choices?.[0]?.delta?.content || '');
               assistantContent += delta;
               setStreamingContent(assistantContent);
               if (delta) tokenCount++;
@@ -1311,7 +1359,9 @@ export function useAppStore() {
         toolCalls = Array.from(toolCallsMap.values());
       } else {
         const data = await response.json();
-        assistantContent = data.choices?.[0]?.message?.content || '';
+        assistantContent = activeApiFormat.responseTextPath
+          ? getByPath(data, activeApiFormat.responseTextPath)
+          : (data.choices?.[0]?.message?.content || '');
         toolCalls = data.choices?.[0]?.message?.tool_calls || [];
         tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
       }
@@ -1495,6 +1545,24 @@ export function useAppStore() {
     setSettings(prev => ({
       ...prev,
       providers: prev.providers.filter(p => p.id !== id),
+    }));
+  }, []);
+
+  const upsertApiFormat = useCallback((fmt: import('../types').ProviderApiFormat) => {
+    setSettings(prev => {
+      const existing = prev.apiFormats || [];
+      const idx = existing.findIndex(f => f.id === fmt.id);
+      const next = idx >= 0
+        ? existing.map((f, i) => i === idx ? fmt : f)
+        : [...existing, fmt];
+      return { ...prev, apiFormats: next };
+    });
+  }, []);
+
+  const deleteApiFormat = useCallback((id: string) => {
+    setSettings(prev => ({
+      ...prev,
+      apiFormats: (prev.apiFormats || []).filter(f => f.id !== id),
     }));
   }, []);
 
@@ -1829,6 +1897,8 @@ export function useAppStore() {
     addIntegratedProvider,
     addProvider,
     deleteProvider,
+    upsertApiFormat,
+    deleteApiFormat,
     setConversationModel,
     deleteLastMessage,
     editMessage,

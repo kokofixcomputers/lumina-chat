@@ -1,4 +1,4 @@
-import { X, Database, Settings as SettingsIcon, Plus, Trash2, ChevronDown, ChevronRight, Eye, EyeOff, Download, Upload, FileDown, Menu, Info, Cloud } from 'lucide-react';
+import { X, Database, Settings as SettingsIcon, Settings2, Zap, Plus, Trash2, ChevronDown, ChevronRight, Eye, EyeOff, Download, Upload, FileDown, Menu, Info, Cloud } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { AppSettings, ModelSettings, ModelProvider, ModelConfig } from '../types';
 import { getModelInfo } from '../utils/models';
@@ -6,6 +6,7 @@ import { integratedProviders, type IntegratedProviderTemplate } from '../data/in
 import { encryptData, decryptData } from '../utils/encryption';
 import { setSyncStatus } from '../utils/syncStatus';
 import { fetchWithProxyFallback } from '../utils/proxyFetch';
+import { OPENAI_FORMAT, ApiFormatsTab } from './ProvidersPanel';
 
 
 interface SettingsPanelProps {
@@ -17,6 +18,8 @@ interface SettingsPanelProps {
   onAddIntegratedProvider: (template: IntegratedProviderTemplate) => void;
   onAddProvider: () => void;
   onDeleteProvider: (id: string) => void;
+  onUpsertApiFormat: (fmt: import('../types').ProviderApiFormat) => void;
+  onDeleteApiFormat: (id: string) => void;
   onImportData: (data: any) => void;
   onClose: () => void;
 }
@@ -90,11 +93,13 @@ export default function SettingsPanel({
   onAddProvider,
   onDeleteProvider,
   onAddIntegratedProvider,
+  onUpsertApiFormat,
+  onDeleteApiFormat,
   onImportData,
   onClose,
 }: SettingsPanelProps) {
   const ms = settings.modelSettings;
-  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'data' | 'cloudsync' | 'tools' | 'workflows' | 'localagent' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'apiformats' | 'directmodels' | 'data' | 'cloudsync' | 'tools' | 'workflows' | 'localagent' | 'about'>('general');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
   const [fade, setFade] = useState(true);
@@ -289,6 +294,28 @@ export default function SettingsPanel({
                 Model Providers
               </button>
               <button
+                onClick={() => { setActiveTab('apiformats'); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all mt-1 ${
+                  activeTab === 'apiformats'
+                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] shadow-sm'
+                    : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] hover:text-[rgb(var(--text))]'
+                }`}
+              >
+                <Settings2 size={16} />
+                API Formats
+              </button>
+              <button
+                onClick={() => { setActiveTab('directmodels'); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all mt-1 ${
+                  activeTab === 'directmodels'
+                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] shadow-sm'
+                    : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] hover:text-[rgb(var(--text))]'
+                }`}
+              >
+                <Zap size={16} />
+                Direct Models
+              </button>
+              <button
                 onClick={() => { setActiveTab('data'); setSidebarOpen(false); }}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all mt-1 ${
                   activeTab === 'data'
@@ -381,6 +408,8 @@ export default function SettingsPanel({
                 <h2 className="font-semibold">
                   {activeTab === 'general' ? 'General Settings'
                     : activeTab === 'providers' ? 'Model Providers'
+                    : activeTab === 'apiformats' ? 'API Formats'
+                    : activeTab === 'directmodels' ? 'Direct Models'
                     : activeTab === 'data' ? 'Import/Export Data'
                     : activeTab === 'cloudsync' ? 'Cloud Sync'
                     : activeTab === 'workflows' ? 'Workflows'
@@ -640,6 +669,7 @@ export default function SettingsPanel({
                       <ProviderCard
                         key={p.id}
                         provider={p}
+                        apiFormats={settings.apiFormats || []}
                         onUpdate={patch => onUpdateProvider(p.id, patch)}
                         onDelete={() => onDeleteProvider(p.id)}
                       />
@@ -647,6 +677,31 @@ export default function SettingsPanel({
                   </div>
                 </section>
               </div>
+
+            ) : activeTab === 'apiformats' ? (
+              <div className="flex-1 overflow-y-auto pb-safe max-w-2xl">
+                <ApiFormatsTab
+                  apiFormats={settings.apiFormats || []}
+                  onUpsert={onUpsertApiFormat}
+                  onDelete={onDeleteApiFormat}
+                />
+              </div>
+
+            ) : activeTab === 'directmodels' ? (
+              <DirectModelsTab
+                providers={settings.providers.filter(p => p.directUrl)}
+                onAdd={() => {
+                  const id = `direct_${Date.now()}`;
+                  onUpdateSettings({
+                    providers: [
+                      ...settings.providers,
+                      { id, name: 'New Direct Model', baseUrl: '', apiKey: '', models: [{ id: 'model-name', name: 'model-name' }], enabled: true, directUrl: true },
+                    ],
+                  });
+                }}
+                onUpdate={(id, patch) => onUpdateProvider(id, patch)}
+                onDelete={id => onDeleteProvider(id)}
+              />
 
             ) : activeTab === 'data' ? (
               <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-2xl">
@@ -1340,6 +1395,107 @@ export default function SettingsPanel({
 }
 
 
+function DirectModelsTab({ providers, onAdd, onUpdate, onDelete }: {
+  providers: ModelProvider[];
+  onAdd: () => void;
+  onUpdate: (id: string, patch: Partial<ModelProvider>) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto p-5 pb-safe max-w-2xl">
+      <p className="text-xs text-[rgb(var(--muted))] mb-4">
+        Direct models send requests straight to the URL you provide — no base URL path appending.
+        Useful for local models, proxies, or any endpoint that already is the full chat completions URL.
+      </p>
+      <button onClick={onAdd} className="btn-primary mb-4 text-sm">
+        <Plus size={14} />Add direct model
+      </button>
+      <div className="space-y-3">
+        {providers.map(p => (
+          <DirectModelCard key={p.id} provider={p} onUpdate={patch => onUpdate(p.id, patch)} onDelete={() => onDelete(p.id)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DirectModelCard({ provider, onUpdate, onDelete }: {
+  provider: ModelProvider;
+  onUpdate: (patch: Partial<ModelProvider>) => void;
+  onDelete: () => void;
+}) {
+  const [showKey, setShowKey] = useState(false);
+  const model = provider.models[0] ?? { id: '', name: '' };
+
+  const setModel = (patch: Partial<ModelConfig>) => {
+    onUpdate({ models: [{ ...model, ...patch }] });
+  };
+
+  return (
+    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => onUpdate({ enabled: !provider.enabled })}
+          className={`toggle w-10 h-5 shrink-0 ${provider.enabled ? 'bg-green-500' : 'bg-black/15 dark:bg-white/15'}`}
+        >
+          <span className={`toggle-thumb w-3 h-3 ${provider.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+        </button>
+        <input
+          className="input text-sm font-semibold flex-1"
+          value={provider.name}
+          onChange={e => onUpdate({ name: e.target.value })}
+          placeholder="Display name"
+        />
+        <button onClick={onDelete} className="btn-icon w-7 h-7 text-[rgb(var(--muted))] hover:text-red-500 shrink-0">
+          <Trash2 size={14} />
+        </button>
+      </div>
+
+      <div className="form-group mb-0">
+        <label className="form-label text-xs">Chat Completions URL</label>
+        <input
+          className="input text-sm font-mono"
+          value={provider.baseUrl}
+          onChange={e => onUpdate({ baseUrl: e.target.value })}
+          placeholder="https://example.com/v1/chat/completions"
+        />
+        <p className="form-help">Requests are sent directly to this URL — nothing is appended.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="form-group mb-0">
+          <label className="form-label text-xs">Model ID</label>
+          <input
+            className="input text-sm font-mono"
+            value={model.id}
+            onChange={e => setModel({ id: e.target.value, name: e.target.value })}
+            placeholder="gpt-4o"
+          />
+        </div>
+        <div className="form-group mb-0">
+          <label className="form-label text-xs">API Key</label>
+          <div className="relative">
+            <input
+              className="input text-sm pr-9 font-mono"
+              type={showKey ? 'text' : 'password'}
+              value={provider.apiKey}
+              onChange={e => onUpdate({ apiKey: e.target.value })}
+              placeholder="sk-... (optional)"
+            />
+            <button
+              onClick={() => setShowKey(p => !p)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+            >
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function IntegratedProviderCard({
   template,
   existingProvider,
@@ -1563,10 +1719,12 @@ function ModelRow({ model, onUpdate, onDelete }: {
 
 function ProviderCard({
   provider,
+  apiFormats,
   onUpdate,
   onDelete,
 }: {
   provider: ModelProvider;
+  apiFormats: import('../types').ProviderApiFormat[];
   onUpdate: (patch: Partial<ModelProvider>) => void;
   onDelete: () => void;
 }) {
@@ -1574,16 +1732,20 @@ function ProviderCard({
   const [showKey, setShowKey] = useState(false);
   const [fetching, setFetching] = useState(false);
 
+  const allFormats = [OPENAI_FORMAT, ...apiFormats];
+  const activeFormat = apiFormats.find(f => f.id === provider.apiFormatId) ?? OPENAI_FORMAT;
+
   const fetchModels = async () => {
-    if (!provider.baseUrl || !provider.apiKey) return;
+    if (!provider.baseUrl || !activeFormat.modelsPath) return;
     setFetching(true);
     try {
-      const modelsUrl = provider.baseUrl.includes('/chat/completions')
-        ? provider.baseUrl.replace('/chat/completions', '/models')
-        : `${provider.baseUrl}/models`;
+      const modelsUrl = `${provider.baseUrl.replace(/\/$/, '')}${activeFormat.modelsPath}`;
+      const headers: Record<string, string> = {};
+      if (provider.apiKey) headers[activeFormat.authHeader] = `${activeFormat.authPrefix}${provider.apiKey}`;
+      try { Object.assign(headers, JSON.parse(activeFormat.extraHeaders)); } catch {}
       const response = await fetchWithProxyFallback(
         modelsUrl,
-        { headers: { 'Authorization': `Bearer ${provider.apiKey}` } },
+        { headers },
         !!provider.useProxy,
         () => onUpdate({ useProxy: true }),
       );
@@ -1689,16 +1851,25 @@ function ProviderCard({
                 </button>
               </div>
             </div>
+            <div className="form-group mb-0">
+              <label className="form-label text-xs">API Format</label>
+              <select className="input text-sm" value={provider.apiFormatId || 'openai'} onChange={e => onUpdate({ apiFormatId: e.target.value })}>
+                {allFormats.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              <p className="form-help">Controls how requests are structured and authenticated</p>
+            </div>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">Models</p>
               <div className="flex gap-1">
-                <button onClick={fetchModels} disabled={fetching} className="btn-secondary py-1 px-3 text-xs gap-1.5">
-                  <Download size={12} />
-                  {fetching ? 'Fetching...' : 'Fetch'}
-                </button>
+                {activeFormat.modelsPath && (
+                  <button onClick={fetchModels} disabled={fetching} className="btn-secondary py-1 px-3 text-xs gap-1.5">
+                    <Download size={12} />
+                    {fetching ? 'Fetching...' : 'Fetch'}
+                  </button>
+                )}
                 <button onClick={addModel} className="btn-secondary py-1 px-3 text-xs gap-1.5">
                   <Plus size={12} />
                   Add

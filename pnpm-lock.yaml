@@ -17,6 +17,9 @@ importers:
       crypto-js:
         specifier: ^4.2.0
         version: 4.2.0
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       html-builder-cli:
         specifier: ^3.1.0
         version: 3.1.0
@@ -677,6 +680,9 @@ packages:
 
   fault@1.0.4:
     resolution: {integrity: sha512-CJ0HCB5tL5fYTEA7ToAq5+kTwd++Borf1/bifxd9iT70QcXr4MRrO3Llf8Ifs70q+SJcGHFtnIE/Nw6giCtECA==}
+
+  fflate@0.8.2:
+    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
   format@0.2.2:
     resolution: {integrity: sha512-wzsgA6WOq+09wrU1tsJ09udeR/YZRaeArL9e1wPbFg3GG2yDnC2ldKpxs4xunpFF9DgqCqOIra3bc1HWrJ37Ww==}
@@ -1509,6 +1515,8 @@ snapshots:
   fault@1.0.4:
     dependencies:
       format: 0.2.2
+
+  fflate@0.8.2: {}
 
   format@0.2.2: {}
 

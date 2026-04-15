@@ -13,6 +13,7 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>('chat');
   const [homeMode, setHomeMode] = useState<'chat' | 'image'>('chat');
   const [homeAttachments, setHomeAttachments] = useState<string[]>([]);
+  const [homeBuildMode, setHomeBuildMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
@@ -37,6 +38,7 @@ export default function App() {
     if (!convId) {
       convId = store.newConversation(homeMode, homeAttachments);
       store.setActiveConvId(convId);
+      if (homeBuildMode) store.setBuildMode(convId, true);
     }
     const conv = store.conversations.find(c => c.id === convId);
     if (conv?.mode === 'image') {
@@ -122,6 +124,14 @@ export default function App() {
       store.setConversationMode(store.activeConvId, mode);
     } else {
       setHomeMode(mode);
+    }
+  };
+
+  const handleBuildModeChange = (on: boolean) => {
+    if (store.activeConvId) {
+      store.setBuildMode(store.activeConvId, on);
+    } else {
+      setHomeBuildMode(on);
     }
   };
 
@@ -341,6 +351,8 @@ export default function App() {
             onDeleteMessage={handleDeleteMessage}
             onModeChange={handleModeChange}
             onAttachmentsChange={handleAttachmentsChange}
+            onBuildModeChange={handleBuildModeChange}
+            homeBuildMode={homeBuildMode}
             onGenerateTitle={handleGenerateTitle}
             onGenerateFollowUps={handleGenerateFollowUps}
             homeMode={homeMode}

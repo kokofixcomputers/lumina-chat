@@ -39,6 +39,9 @@ interface ChatInputProps {
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
   onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
   onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
+  buildMode?: boolean;
+  onBuildModeChange?: (on: boolean) => void;
+  onOpenBuildFS?: () => void;
 }
 
 // Color per provider
@@ -107,6 +110,9 @@ export default function ChatInput({
   reasoningEffort = 'off',
   onReasoningEffortChange,
   onTranscribeAudio,
+  buildMode = false,
+  onBuildModeChange,
+  onOpenBuildFS,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -683,6 +689,31 @@ export default function ChatInput({
               >
                 Image
               </button>
+            </div>
+          )}
+          {onBuildModeChange && (
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => onBuildModeChange(!buildMode)}
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all ${
+                  buildMode
+                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                    : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                }`}
+                title="Toggle Build Mode — gives AI access to a virtual filesystem"
+              >
+                <span>⚒</span>
+                Build
+              </button>
+              {buildMode && onOpenBuildFS && (
+                <button
+                  onClick={onOpenBuildFS}
+                  className="px-2 py-0.5 rounded-lg text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-all"
+                  title="Browse virtual filesystem"
+                >
+                  Files
+                </button>
+              )}
             </div>
           )}
           {useResponsesApi && onReasoningEffortChange && (

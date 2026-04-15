@@ -31,10 +31,12 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
   {
     id: 'anthropic',
     name: 'Anthropic',
-    description: 'Claude models via proxy',
+    description: 'Claude models via native Anthropic API',
     baseUrlTemplate: 'https://api.anthropic.com/v1',
     requireAuth: true,
     defaultModels: [
+      { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', contextLength: 200000, supportsImages: true, supportsStreaming: true },
+      { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextLength: 200000, supportsImages: true, supportsStreaming: true },
       { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', contextLength: 200000, supportsImages: true, supportsStreaming: true },
       { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', contextLength: 200000, supportsImages: true, supportsStreaming: true },
     ],

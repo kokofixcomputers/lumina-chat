@@ -17,8 +17,43 @@ export const OPENAI_FORMAT: ProviderApiFormat = {
   extraBody: '{}',
 };
 
+export const ANTHROPIC_FORMAT: ProviderApiFormat = {
+  id: 'anthropic',
+  name: 'Anthropic',
+  authHeader: 'x-api-key',
+  authPrefix: '',
+  modelIn: 'body',
+  modelKey: 'model',
+  chatPath: '/messages',
+  modelsPath: '/models',
+  extraHeaders: JSON.stringify({ 'anthropic-version': '2023-06-01' }),
+  extraBody: '{}',
+  requestBodyTemplate: `{
+  "model": {{model}},
+  "max_tokens": {{maxTokens}},
+  "messages": {{messages}},
+  "temperature": {{temperature}},
+  "top_p": {{topP}}
+}`,
+  streamingRequestBodyTemplate: `{
+  "model": {{model}},
+  "max_tokens": {{maxTokens}},
+  "messages": {{messages}},
+  "temperature": {{temperature}},
+  "top_p": {{topP}},
+  "stream": true
+}`,
+  responseTextPath: 'content.0.text',
+  streamingChunkPath: 'delta.text',
+  streamingDoneSentinel: 'message_stop',
+};
+
+export const BUILTIN_FORMATS: ProviderApiFormat[] = [OPENAI_FORMAT, ANTHROPIC_FORMAT];
+
 export function resolveFormat(formats: ProviderApiFormat[], id?: string): ProviderApiFormat {
-  if (!id || id === 'openai') return OPENAI_FORMAT;
+  if (!id) return OPENAI_FORMAT;
+  const builtin = BUILTIN_FORMATS.find(f => f.id === id);
+  if (builtin) return builtin;
   return formats.find(f => f.id === id) ?? OPENAI_FORMAT;
 }
 
@@ -108,7 +143,7 @@ function ProviderCard({ provider, apiFormats, onUpdate, onDelete }: {
   const [expanded, setExpanded] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const allFormats = [OPENAI_FORMAT, ...apiFormats];
+  const allFormats = [...BUILTIN_FORMATS, ...apiFormats];
   const activeFormat = resolveFormat(apiFormats, provider.apiFormatId);
 
   const fetchModels = async () => {
@@ -119,7 +154,7 @@ function ProviderCard({ provider, apiFormats, onUpdate, onDelete }: {
       const headers: Record<string, string> = {};
       if (provider.apiKey) headers[activeFormat.authHeader] = `${activeFormat.authPrefix}${provider.apiKey}`;
       try { Object.assign(headers, JSON.parse(activeFormat.extraHeaders)); } catch { /* ignore */ }
-      const response = await fetchWithProxyFallback(modelsUrl, { headers }, !!provider.useProxy, () => onUpdate({ useProxy: true }));
+      const response = await fetchWithProxyFallback(modelsUrl, { headers }, !!provider.useProxy, () => onUpdate({ useProxy: true }), provider.proxyMode);
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       const models: ModelConfig[] = (data.data || []).map((m: any) => ({
@@ -177,6 +212,25 @@ function ProviderCard({ provider, apiFormats, onUpdate, onDelete }: {
               <select className="input text-sm" value={provider.apiFormatId || 'openai'} onChange={e => onUpdate({ apiFormatId: e.target.value })}>
                 {allFormats.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
+            </div>
+            <div className="form-group mb-0">
+              <label className="form-label text-xs">Proxy</label>
+              <div className="flex rounded-lg overflow-hidden border border-[rgb(var(--border))] w-fit text-xs font-medium">
+                {(['off', 'auto', 'on'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => onUpdate({ proxyMode: mode })}
+                    className={`px-3 py-1.5 capitalize transition-colors ${
+                      (provider.proxyMode ?? 'auto') === mode
+                        ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                        : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    {mode === 'auto' ? 'Default' : mode === 'on' ? 'On' : 'Off'}
+                  </button>
+                ))}
+              </div>
+              <p className="form-help">Default lets the app auto-detect. On always routes through the CORS proxy. Off disables it.</p>
             </div>
           </div>
           <div>
@@ -471,6 +525,12 @@ export function ApiFormatsTab({ apiFormats, onUpsert, onDelete }: {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">OpenAI <span className="text-xs font-normal text-[rgb(var(--muted))]">(built-in)</span></p>
           <p className="text-xs text-[rgb(var(--muted))] font-mono">Bearer auth · model in body · /chat/completions</p>
+        </div>
+      </div>
+      <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl px-4 py-3 mb-3 flex items-center gap-3 opacity-60">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">Anthropic <span className="text-xs font-normal text-[rgb(var(--muted))]">(built-in)</span></p>
+          <p className="text-xs text-[rgb(var(--muted))] font-mono">x-api-key auth · anthropic-version: 2023-06-01 · /messages</p>
         </div>
       </div>
       {apiFormats.map(fmt =>

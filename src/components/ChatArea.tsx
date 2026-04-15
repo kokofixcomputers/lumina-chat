@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Settings, Bot } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
+import BuildModeFS from './BuildModeFS';
 import type { Conversation } from '../types';
 
 interface Model {
@@ -40,6 +41,8 @@ interface ChatAreaProps {
   onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
   onVersionChange?: (msgId: string, versionIndex: number) => void;
   onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
+  onBuildModeChange?: (on: boolean) => void;
+  homeBuildMode?: boolean;
 }
 
 const QUICK_ACTIONS = [
@@ -76,8 +79,11 @@ export default function ChatArea({
   onReasoningEffortChange,
   onVersionChange,
   onTranscribeAudio,
+  onBuildModeChange,
+  homeBuildMode = false,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [showFS, setShowFS] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -124,6 +130,8 @@ export default function ChatArea({
               reasoningEffort={reasoningEffort}
               onReasoningEffortChange={onReasoningEffortChange}
               onTranscribeAudio={onTranscribeAudio}
+              buildMode={homeBuildMode}
+              onBuildModeChange={onBuildModeChange}
             />
           </div>
 
@@ -146,7 +154,8 @@ export default function ChatArea({
 
   // ── Chat view ───────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
+    <div className="flex-1 flex min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
+      <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="flex items-center px-5 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -157,6 +166,15 @@ export default function ChatArea({
           <span className="text-[rgb(var(--muted))] text-[12px] shrink-0">· {modelDisplayName}</span>
         </div>
         <div className="ml-auto flex items-center gap-1 shrink-0">
+          {conversation.buildMode && (
+            <button
+              onClick={() => setShowFS(s => !s)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${showFS ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'}`}
+              title="Browse virtual filesystem"
+            >
+              <span>⚒</span> Files
+            </button>
+          )}
           <button className="btn-icon" onClick={onTogglePanel}><Settings size={15} /></button>
         </div>
       </div>
@@ -228,7 +246,14 @@ export default function ChatArea({
         useResponsesApi={useResponsesApi}
         reasoningEffort={reasoningEffort}
         onReasoningEffortChange={onReasoningEffortChange}
+        buildMode={conversation.buildMode}
+        onBuildModeChange={onBuildModeChange ? (on) => onBuildModeChange(on) : undefined}
+        onOpenBuildFS={() => setShowFS(s => !s)}
       />
+      </div>
+      {showFS && conversation.id && (
+        <BuildModeFS convId={conversation.id} onClose={() => setShowFS(false)} />
+      )}
     </div>
   );
 }

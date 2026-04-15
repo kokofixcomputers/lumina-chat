@@ -43,6 +43,7 @@ export interface Conversation {
   attachments?: string[];
   devEnvSession?: string;
   hotelSearchKey?: string;
+  buildMode?: boolean;
 }
 
 export interface ModelProvider {
@@ -56,6 +57,7 @@ export interface ModelProvider {
   customFieldValues?: Record<string, string>;
   responsesApiUnsupported?: boolean;
   useProxy?: boolean;
+  proxyMode?: 'auto' | 'on' | 'off'; // 'auto' = app decides, 'on' = always proxy, 'off' = never proxy
   apiFormatId?: string; // references ProviderApiFormat.id, defaults to 'openai'
   directUrl?: boolean;  // if true, baseUrl is the exact endpoint — no path appending
 }

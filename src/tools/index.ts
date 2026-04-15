@@ -10,6 +10,7 @@ import webRequest from './webRequest';
 import devEnvTools from './devEnv';
 import qanda from './qanda';
 import localAgentTools from './localAgent';
+import { buildFsTools } from './buildFs';
 
 const tools: Tool[] = [
   getCurrentTime,
@@ -24,11 +25,11 @@ const tools: Tool[] = [
   ...localAgentTools,
 ];
 
-export function getAllTools(includeImageGen = false): Tool[] {
+export function getAllTools(includeImageGen = false, buildMode = false): Tool[] {
   const settingsData = localStorage.getItem('lumina_settings');
   let localAgentEnabled = false;
   let disabledTools: string[] = [];
-  
+
   if (settingsData) {
     try {
       const settings = JSON.parse(settingsData);
@@ -37,22 +38,25 @@ export function getAllTools(includeImageGen = false): Tool[] {
     } catch {}
   }
 
-  const baseTools = includeImageGen ? [...tools.filter(t => !t.definition.function.name.startsWith('local_agent_')), generateImage] : tools.filter(t => !t.definition.function.name.startsWith('local_agent_'));
-  
-  const filteredTools = baseTools.filter(t => !disabledTools.includes(t.definition.function.name));
+  const baseTools = includeImageGen
+    ? [...tools.filter(t => !t.definition.function.name.startsWith('local_agent_')), generateImage]
+    : tools.filter(t => !t.definition.function.name.startsWith('local_agent_'));
+
+  const withBuild = buildMode ? [...baseTools, ...buildFsTools] : baseTools;
+  const filteredTools = withBuild.filter(t => !disabledTools.includes(t.definition.function.name));
 
   if (localAgentEnabled) {
     return [...filteredTools, ...localAgentTools.filter(t => !disabledTools.includes(t.definition.function.name))];
   }
-  
+
   return filteredTools;
 }
 
-export function getToolByName(name: string): Tool | undefined {
+export function getToolByName(name: string, buildMode = false): Tool | undefined {
   const settingsData = localStorage.getItem('lumina_settings');
   let localAgentEnabled = false;
   let disabledTools: string[] = [];
-  
+
   if (settingsData) {
     try {
       const settings = JSON.parse(settingsData);
@@ -63,17 +67,13 @@ export function getToolByName(name: string): Tool | undefined {
 
   if (disabledTools.includes(name)) return undefined;
 
-  const allTools = [...tools, generateImage];
-  
-  if (name.startsWith('local_agent_') && !localAgentEnabled) {
-    return undefined;
-  }
-  
+  const allTools = [...tools, generateImage, ...(buildMode ? buildFsTools : [])];
+
+  if (name.startsWith('local_agent_') && !localAgentEnabled) return undefined;
+
   const found = allTools.find(t => t.definition.function.name === name);
   if (!found) return undefined;
 
-  // Wrap execute to yield to the event loop first so React can flush
-  // the loading state to the DOM before the tool starts running
   return {
     ...found,
     execute: (args: any) => new Promise((resolve, reject) => {
@@ -82,36 +82,29 @@ export function getToolByName(name: string): Tool | undefined {
   };
 }
 
-export function getToolDefinitions(includeImageGen = false) {
-  return getAllTools(includeImageGen).map(t => t.definition);
+export function getToolDefinitions(includeImageGen = false, buildMode = false) {
+  return getAllTools(includeImageGen, buildMode).map(t => t.definition);
 }
 
-export function getToolDefinitionsForResponsesApi(includeImageGen = false) {
-  const tools = getAllTools(includeImageGen).map(t => ({
+export function getToolDefinitionsForResponsesApi(includeImageGen = false, buildMode = false) {
+  const toolList = getAllTools(includeImageGen, buildMode).map(t => ({
     type: 'function',
     name: t.definition.function.name,
     description: t.definition.function.description,
     parameters: t.definition.function.parameters,
   }));
-  
-  // Add built-in image generation tool for responses API
+
   if (includeImageGen) {
     const settingsData = localStorage.getItem('lumina_settings');
     let imageModel = 'gpt-image-1';
-    
     if (settingsData) {
       try {
         const settings = JSON.parse(settingsData);
         imageModel = settings.imageGenerationModel || 'gpt-image-1';
       } catch {}
     }
-    
-    tools.push({
-      type: 'image_generation',
-      model: imageModel,
-      size: '1024x1024'
-    } as any);
+    toolList.push({ type: 'image_generation', model: imageModel, size: '1024x1024' } as any);
   }
-  
-  return tools;
+
+  return toolList;
 }

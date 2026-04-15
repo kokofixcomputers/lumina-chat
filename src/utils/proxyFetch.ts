@@ -1,31 +1,38 @@
 /**
  * Wraps fetch with automatic CORS-proxy fallback via /api/proxy.
  *
- * If the direct fetch fails with a network error (TypeError – typical for CORS
- * blocks) it retries through the proxy endpoint.  When the proxy succeeds the
- * optional `onProxySuccess` callback is called so callers can persist the flag.
+ * proxyMode:
+ *   'on'   — always use proxy
+ *   'off'  — never use proxy (direct only)
+ *   'auto' — try direct first; on TypeError (CORS/network) fall back to proxy.
+ *            Only calls onProxySuccess if the proxy request actually succeeds.
  */
 export async function fetchWithProxyFallback(
   url: string,
   options: RequestInit,
-  useProxy: boolean,
+  useProxy: boolean,           // legacy auto-detected flag
   onProxySuccess?: () => void,
+  proxyMode?: 'auto' | 'on' | 'off',
 ): Promise<Response> {
-  if (useProxy) {
+  const mode = proxyMode ?? (useProxy ? 'on' : 'auto');
+
+  if (mode === 'on') {
     return proxyFetch(url, options);
   }
 
+  if (mode === 'off') {
+    return fetch(url, options);
+  }
+
+  // mode === 'auto': try direct, fall back to proxy on network error
   try {
-    const res = await fetch(url, options);
-    return res;
+    return await fetch(url, options);
   } catch (err) {
-    // TypeError is thrown for network failures / CORS blocks
-    if (err instanceof TypeError) {
-      const res = await proxyFetch(url, options);
-      onProxySuccess?.();
-      return res;
-    }
-    throw err;
+    if (!(err instanceof TypeError)) throw err;
+    // Direct failed — try proxy, but only persist success if it works
+    const res = await proxyFetch(url, options);
+    onProxySuccess?.();
+    return res;
   }
 }
 

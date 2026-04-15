@@ -6,7 +6,7 @@ import { integratedProviders, type IntegratedProviderTemplate } from '../data/in
 import { encryptData, decryptData } from '../utils/encryption';
 import { setSyncStatus } from '../utils/syncStatus';
 import { fetchWithProxyFallback } from '../utils/proxyFetch';
-import { OPENAI_FORMAT, ApiFormatsTab } from './ProvidersPanel';
+import { OPENAI_FORMAT, ANTHROPIC_FORMAT, BUILTIN_FORMATS, resolveFormat, ApiFormatsTab } from './ProvidersPanel';
 
 
 interface SettingsPanelProps {
@@ -510,25 +510,50 @@ export default function SettingsPanel({
                   )}
                   <div className="form-group">
                     <label className="form-label">Speech-to-Text Model</label>
-                    <input
-                      type="text"
-                      value={settings.sttModel || 'gpt-4o-transcribe'}
-                      onChange={e => onUpdateSettings({ sttModel: e.target.value })}
+                    <select
                       className="input text-sm"
-                      placeholder="gpt-4o-transcribe"
-                    />
-                    <p className="form-help">Model used for microphone transcription (e.g. gpt-4o-transcribe, whisper-1)</p>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Speech-to-Text Base URL</label>
-                    <input
-                      type="text"
-                      value={settings.sttBaseUrl || ''}
-                      onChange={e => onUpdateSettings({ sttBaseUrl: e.target.value })}
-                      className="input text-sm font-mono"
-                      placeholder="https://api.openai.com/v1"
-                    />
-                    <p className="form-help">Base URL for the transcription API. Defaults to the first enabled provider's URL.</p>
+                      value={(() => {
+                        // value is "providerId/modelId" or just a bare model id for legacy
+                        const sttUrl = settings.sttBaseUrl;
+                        const sttModel = settings.sttModel || 'gpt-4o-transcribe';
+                        // find matching provider by baseUrl
+                        const matched = settings.providers.find(p => p.enabled && p.baseUrl && sttUrl && p.baseUrl.replace(/\/$/, '') === sttUrl.replace(/\/$/, ''));
+                        if (matched) return `${matched.id}/${sttModel}`;
+                        return `__bare__/${sttModel}`;
+                      })()}
+                      onChange={e => {
+                        const val = e.target.value;
+                        const slashIdx = val.indexOf('/');
+                        const providerId = val.slice(0, slashIdx);
+                        const modelId = val.slice(slashIdx + 1);
+                        const provider = settings.providers.find(p => p.id === providerId);
+                        onUpdateSettings({
+                          sttModel: modelId,
+                          sttBaseUrl: provider?.baseUrl || '',
+                        });
+                      }}
+                    >
+                      {settings.providers.filter(p => p.enabled && p.models.length > 0).flatMap(p =>
+                        p.models.map(m => (
+                          <option key={`${p.id}/${m.id}`} value={`${p.id}/${m.id}`}>
+                            {p.name} — {m.name || m.id}
+                          </option>
+                        ))
+                      )}
+                      {/* Always show current value even if provider not found */}
+                      {!settings.providers.filter(p => p.enabled).some(p =>
+                        p.models.some(m => {
+                          const sttUrl = settings.sttBaseUrl;
+                          const matched = sttUrl && p.baseUrl.replace(/\/$/, '') === sttUrl.replace(/\/$/, '');
+                          return matched && m.id === (settings.sttModel || 'gpt-4o-transcribe');
+                        })
+                      ) && (
+                        <option value={`__bare__/${settings.sttModel || 'gpt-4o-transcribe'}`}>
+                          {settings.sttModel || 'gpt-4o-transcribe'} (custom)
+                        </option>
+                      )}
+                    </select>
+                    <p className="form-help">Model used for microphone transcription. Picks the provider's base URL automatically.</p>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Max History</label>
@@ -1538,6 +1563,7 @@ function IntegratedProviderCard({
         { headers },
         !!existingProvider.useProxy,
         () => onUpdate({ useProxy: true }),
+        existingProvider.proxyMode,
       );
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
@@ -1657,12 +1683,32 @@ function IntegratedProviderCard({
             </div>
           ))}
           <br></br>
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-[rgb(var(--muted))]">{existingProvider.models.length} models configured</p>
-            <button onClick={fetchModels} disabled={fetching} className="btn-secondary py-1 px-3 text-xs gap-1.5">
-              <Download size={12} />
-              {fetching ? 'Fetching...' : 'Refresh Models'}
-            </button>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[rgb(var(--muted))]">Proxy</span>
+              <div className="flex rounded-lg overflow-hidden border border-[rgb(var(--border))] text-xs font-medium">
+                {(['off', 'auto', 'on'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => onUpdate({ proxyMode: mode })}
+                    className={`px-2.5 py-1 capitalize transition-colors ${
+                      (existingProvider.proxyMode ?? 'auto') === mode
+                        ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                        : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    {mode === 'auto' ? 'Default' : mode === 'on' ? 'On' : 'Off'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-[rgb(var(--muted))]">{existingProvider.models.length} models configured</p>
+              <button onClick={fetchModels} disabled={fetching} className="btn-secondary py-1 px-3 text-xs gap-1.5">
+                <Download size={12} />
+                {fetching ? 'Fetching...' : 'Refresh Models'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1732,8 +1778,8 @@ function ProviderCard({
   const [showKey, setShowKey] = useState(false);
   const [fetching, setFetching] = useState(false);
 
-  const allFormats = [OPENAI_FORMAT, ...apiFormats];
-  const activeFormat = apiFormats.find(f => f.id === provider.apiFormatId) ?? OPENAI_FORMAT;
+  const allFormats = [...BUILTIN_FORMATS, ...apiFormats];
+  const activeFormat = resolveFormat(apiFormats, provider.apiFormatId);
 
   const fetchModels = async () => {
     if (!provider.baseUrl || !activeFormat.modelsPath) return;
@@ -1748,6 +1794,7 @@ function ProviderCard({
         { headers },
         !!provider.useProxy,
         () => onUpdate({ useProxy: true }),
+        provider.proxyMode,
       );
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
@@ -1857,6 +1904,25 @@ function ProviderCard({
                 {allFormats.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
               <p className="form-help">Controls how requests are structured and authenticated</p>
+            </div>
+            <div className="form-group mb-0">
+              <label className="form-label text-xs">Proxy</label>
+              <div className="flex rounded-lg overflow-hidden border border-[rgb(var(--border))] w-fit text-xs font-medium">
+                {(['off', 'auto', 'on'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => onUpdate({ proxyMode: mode })}
+                    className={`px-3 py-1.5 capitalize transition-colors ${
+                      (provider.proxyMode ?? 'auto') === mode
+                        ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                        : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    {mode === 'auto' ? 'Default' : mode === 'on' ? 'On' : 'Off'}
+                  </button>
+                ))}
+              </div>
+              <p className="form-help">Default lets the app auto-detect. On always routes through the CORS proxy. Off disables it.</p>
             </div>
           </div>
 

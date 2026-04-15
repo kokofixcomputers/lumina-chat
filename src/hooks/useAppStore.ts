@@ -18,31 +18,10 @@ const DEFAULT_SETTINGS: AppSettings = {
     topP: 1,
     frequencyPenalty: 0,
     presencePenalty: 0,
-systemPrompt: `You are a helpful assistant with tool access.
-
-After completing a tool’s execution, if another tool is needed, append this line exactly at the end of your message:
+systemPrompt: `You are a concise assistant with tool access.
+After using a tool, if another is needed, add:
 {"status": "request_another_tool"}
-
-Do not say things like “I will do this in the next message” or ask the user for input. Simply include the status line so the client can automatically trigger the next tool.
-
-You may need to use the apk package manager to install additional tools.
-
-When adding {"status": "step"}, the text above it will be shown as a “task” display.
-Do not combine {"status": "step"} with {"status": "request_another_tool"} in one object — instead, use them sequentially, for example:
-{"status": "step"}{"status": "request_another_tool"}
-
-Please only have very short messages 2-8 words and don't put code in step status
-
-Use this feature to display concise task updates instead of multiple verbose messages like:
-
-“Node.js and npm have been installed. Now, I will create the React app.”
-
-Use this for things that require multiple steps
-
-Prefer short, action-focused statements such as:
-
-“Installing Node.js and npm.”
-“Creating React project.”`,
+While using tools, please tell the user what you are doing by adding {"status": "step"} on the same line as {"status": "request_another_tool"} Keep these messages brief, 2-8 words Example: “Installing Node.js.” {"status": "step"} {"status": "request_another_tool"}`,
     stream: true,
   },
 };
@@ -272,6 +251,7 @@ export function useAppStore() {
           () => {
             if (provider) updateProvider(provider.id, { useProxy: true });
           },
+          provider?.proxyMode,
         );
         
         if (response.status === 429) {
@@ -366,7 +346,9 @@ export function useAppStore() {
               if (!line.startsWith('data: ')) continue;
               
               let data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
+              const _cSentinel = activeApiFormat?.streamingDoneSentinel ?? '[DONE]';
+              if (data === _cSentinel) continue;
+              try { if (JSON.parse(data)?.type === _cSentinel) continue; } catch { /* not JSON */ }
               
               // Decode HTML entities comprehensively
               data = data
@@ -485,7 +467,9 @@ export function useAppStore() {
           const lines = chunk.split('\n').filter(l => l.trim().startsWith('data: '));
           for (const line of lines) {
             let data = line.slice(line.indexOf('data: ') + 6).trim();
-            if (data === '[DONE]') continue;
+            const _fmtSentinel = activeApiFormat?.streamingDoneSentinel ?? '[DONE]';
+            if (data === _fmtSentinel) continue;
+            try { if (JSON.parse(data)?.type === _fmtSentinel) continue; } catch { /* not JSON */ }
             
             // Decode HTML entities comprehensively
             data = data
@@ -538,9 +522,8 @@ export function useAppStore() {
       const duration = (endTime - startTime) / 1000;
       const tokensPerSecond = tokenCount > 0 ? Math.round(tokenCount / duration) : undefined;
 
-      const requestsAnotherTool = assistantContent.includes('"status": "request_another_tool"') || 
-                                   assistantContent.includes('"status":"request_another_tool"');
-      const isStep = assistantContent.includes('"status":"step"') || assistantContent.includes('"status": "step"');
+      const requestsAnotherTool = /\{"status"\s*:\s*"request_another_tool"\}\s*$/.test(assistantContent);
+      const isStep = /\{"status"\s*:\s*"step"\}(\s*\{"status"\s*:\s*"request_another_tool"\})?\s*$/.test(assistantContent);
 
       // Only add message if there's content or no tool calls
       if (assistantContent || toolCalls.length === 0) {
@@ -596,7 +579,7 @@ export function useAppStore() {
               top_p: settings.modelSettings.topP,
               frequency_penalty: settings.modelSettings.frequencyPenalty,
               presence_penalty: settings.modelSettings.presencePenalty,
-              tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+              tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration, buildMode),
               tool_choice: 'auto',
               ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
                 reasoning: { effort: settings.modelSettings.reasoningEffort }
@@ -634,7 +617,7 @@ export function useAppStore() {
       const toolMessages: any[] = [];
       
       for (const toolCall of toolCalls) {
-        const tool = getToolByName(toolCall.function.name);
+        const tool = getToolByName(toolCall.function.name, buildMode);
         
         const loadingMsgId = uuidv4();
         const loadingMsg: Message = {
@@ -910,7 +893,7 @@ export function useAppStore() {
             ...requestBody,
             messages: [...previousMessages, ...toolMessages],
             stream: settings.modelSettings.stream,
-            tools: getToolDefinitions(settings.allowImageGeneration)
+            tools: getToolDefinitions(settings.allowImageGeneration, buildMode)
           };
           
           const followUpResponse = await fetchWithRetry(chatUrl, {
@@ -1016,6 +999,8 @@ export function useAppStore() {
       }
     }
 
+    const buildMode = !!conv.buildMode;
+
     const requestBody = {
       model: model?.id || 'gpt-4o',
       messages: apiMessages,
@@ -1025,7 +1010,7 @@ export function useAppStore() {
       frequency_penalty: settings.modelSettings.frequencyPenalty,
       presence_penalty: settings.modelSettings.presencePenalty,
       stream: settings.modelSettings.stream,
-      tools: getToolDefinitions(settings.allowImageGeneration),
+      tools: getToolDefinitions(settings.allowImageGeneration, buildMode),
     };
 
     // Build request for responses API if enabled
@@ -1039,7 +1024,7 @@ export function useAppStore() {
       top_p: settings.modelSettings.topP,
       frequency_penalty: settings.modelSettings.frequencyPenalty,
       presence_penalty: settings.modelSettings.presencePenalty,
-      tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+      tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration, buildMode),
       tool_choice: 'auto',
       ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
         reasoning: { effort: settings.modelSettings.reasoningEffort }
@@ -1169,7 +1154,9 @@ export function useAppStore() {
               if (!line.startsWith('data: ')) continue;
               
               let data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
+              const _rSentinel = activeApiFormat?.streamingDoneSentinel ?? '[DONE]';
+              if (data === _rSentinel) continue;
+              try { if (JSON.parse(data)?.type === _rSentinel) continue; } catch { /* not JSON */ }
               
               // Decode HTML entities comprehensively
               data = data
@@ -1307,6 +1294,8 @@ export function useAppStore() {
             let data = line.slice(line.indexOf('data: ') + 6).trim();
             const doneSentinel = activeApiFormat.streamingDoneSentinel ?? '[DONE]';
             if (data === doneSentinel) continue;
+            // Also handle JSON-encoded sentinel (e.g. Anthropic's {"type":"message_stop"})
+            try { if (JSON.parse(data)?.type === doneSentinel) continue; } catch { /* not JSON */ }
             
             // Decode HTML entities comprehensively
             data = data
@@ -1371,9 +1360,8 @@ export function useAppStore() {
       const tokensPerSecond = tokenCount > 0 ? Math.round(tokenCount / duration) : undefined;
 
       // Check if message requests another tool call
-      const requestsAnotherTool = assistantContent.includes('"status": "request_another_tool"') || 
-                                   assistantContent.includes('"status":"request_another_tool"');
-      const isStep = assistantContent.includes('"status":"step"') || assistantContent.includes('"status": "step"');
+      const requestsAnotherTool = /\{"status"\s*:\s*"request_another_tool"\}\s*$/.test(assistantContent);
+      const isStep = /\{"status"\s*:\s*"step"\}(\s*\{"status"\s*:\s*"request_another_tool"\})?\s*$/.test(assistantContent);
 
       const assistantMsg: Message = {
         id: uuidv4(),
@@ -1450,7 +1438,7 @@ export function useAppStore() {
               top_p: settings.modelSettings.topP,
               frequency_penalty: settings.modelSettings.frequencyPenalty,
               presence_penalty: settings.modelSettings.presencePenalty,
-              tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+              tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration, buildMode),
               tool_choice: 'auto',
               ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
                 reasoning: { effort: settings.modelSettings.reasoningEffort }
@@ -1524,6 +1512,7 @@ export function useAppStore() {
       models: template.defaultModels,
       isIntegrated: true,
       customFieldValues: {},
+      apiFormatId: template.id === 'anthropic' ? 'anthropic' : undefined,
     };
     setSettings(prev => ({ ...prev, providers: [...prev.providers, newProvider] }));
   }, []);
@@ -1620,6 +1609,10 @@ export function useAppStore() {
 
   const setConversationAttachments = useCallback((convId: string, attachments: string[]) => {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, attachments } : c));
+  }, []);
+
+  const setBuildMode = useCallback((convId: string, buildMode: boolean) => {
+    setConversations(prev => prev.map(c => c.id === convId ? { ...c, buildMode } : c));
   }, []);
 
   const generateConversationTitle = useCallback(async (convId: string, provider: ModelProvider, model: ModelConfig | undefined) => {
@@ -1851,9 +1844,14 @@ export function useAppStore() {
     .flatMap(p => p.models.map(m => ({ ...m, providerId: p.id, providerName: p.name, fullId: `${p.id}/${m.id}` })));
 
   const transcribeAudio = useCallback(async (blob: Blob, mimeType: string): Promise<string> => {
-    const provider = settings.providers.find(p => p.enabled);
+    // Find the provider that matches the configured STT base URL, or fall back to first enabled
+    const sttUrl = settings.sttBaseUrl;
+    const provider = sttUrl
+      ? settings.providers.find(p => p.enabled && p.baseUrl.replace(/\/$/, '') === sttUrl.replace(/\/$/, ''))
+        ?? settings.providers.find(p => p.enabled)
+      : settings.providers.find(p => p.enabled);
     if (!provider) throw new Error('No enabled provider found');
-    let baseUrl = settings.sttBaseUrl || provider.baseUrl;
+    let baseUrl = sttUrl || provider.baseUrl;
     baseUrl = baseUrl
       .replace(/\/chat\/completions\/?$/, '')
       .replace(/\/responses\/?$/, '')
@@ -1906,6 +1904,7 @@ export function useAppStore() {
     updateMessageVersions,
     setConversationMode,
     setConversationAttachments,
+    setBuildMode,
     generateImage,
     stopGeneration,
     generateConversationTitle,

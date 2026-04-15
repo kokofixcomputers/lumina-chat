@@ -67,8 +67,7 @@ export function applyVars(template: string, vars: Record<string, unknown>): stri
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
     const v = vars[key];
     if (v === undefined) return `{{${key}}}`;
-    if (typeof v === 'string') return v;
-    return JSON.stringify(v);
+    return JSON.stringify(v); // handles strings, arrays, objects, booleans, numbers
   });
 }
 

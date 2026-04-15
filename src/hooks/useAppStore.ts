@@ -1051,7 +1051,6 @@ export function useAppStore() {
         topP: settings.modelSettings.topP,
         ...(activeApiFormat.customVars || {}),
       };
-      console.log(vars)
       return applyVars(template, vars);
     };
 

@@ -33,8 +33,7 @@ export const ANTHROPIC_FORMAT: ProviderApiFormat = {
   "system": {{system}},
   "max_tokens": {{maxTokens}},
   "messages": {{messages}},
-  "temperature": {{temperature}},
-  "top_p": {{topP}}
+  "temperature": {{temperature}}
 }`,
   streamingRequestBodyTemplate: `{
   "model": {{model}},
@@ -42,7 +41,6 @@ export const ANTHROPIC_FORMAT: ProviderApiFormat = {
   "max_tokens": {{maxTokens}},
   "messages": {{messages}},
   "temperature": {{temperature}},
-  "top_p": {{topP}},
   "stream": true
 }`,
   responseTextPath: 'content.0.text',

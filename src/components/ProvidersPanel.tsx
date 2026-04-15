@@ -30,6 +30,7 @@ export const ANTHROPIC_FORMAT: ProviderApiFormat = {
   extraBody: '{}',
   requestBodyTemplate: `{
   "model": {{model}},
+  "system": {{system}},
   "max_tokens": {{maxTokens}},
   "messages": {{messages}},
   "temperature": {{temperature}},
@@ -37,6 +38,7 @@ export const ANTHROPIC_FORMAT: ProviderApiFormat = {
 }`,
   streamingRequestBodyTemplate: `{
   "model": {{model}},
+  "system": {{system}},
   "max_tokens": {{maxTokens}},
   "messages": {{messages}},
   "temperature": {{temperature}},
@@ -259,6 +261,7 @@ function ProviderCard({ provider, apiFormats, onUpdate, onDelete }: {
 const BUILTIN_VARS = [
   { name: '{{messages}}', desc: 'Array of conversation messages' },
   { name: '{{model}}', desc: 'Selected model ID' },
+  { name: '{{system}}',   desc: 'System prompt text (extracted from messages)' },
   { name: '{{apiKey}}', desc: 'Provider API key' },
   { name: '{{stream}}', desc: 'true / false' },
   { name: '{{temperature}}', desc: 'Temperature setting' },

@@ -1035,6 +1035,9 @@ export function useAppStore() {
     const activeApiFormat = resolveFormat(settings.apiFormats || [], provider.apiFormatId);
     const hasCustomTemplate = !!(activeApiFormat.requestBodyTemplate || activeApiFormat.streamingRequestBodyTemplate);
 
+    const systemMessage = apiMessages.find(m => m.role === 'system');
+    const nonSystemMessages = apiMessages.filter(m => m.role !== 'system');
+
     // Build custom body if format has templates
     const buildCustomBody = (streaming: boolean): string | null => {
       const template = streaming
@@ -1042,7 +1045,8 @@ export function useAppStore() {
         : activeApiFormat.requestBodyTemplate;
       if (!template) return null;
       const vars: Record<string, unknown> = {
-        messages: apiMessages,
+        messages: nonSystemMessages,
+        system: systemMessage?.content ?? '',
         model: model?.id || 'gpt-4o',
         apiKey: provider.apiKey,
         stream: streaming,

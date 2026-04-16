@@ -575,7 +575,26 @@ export function useAppStore() {
           call_id: tc.id,
           status: 'completed'
         }));
-        const messagesToPass = useResponsesApi ? [...previousMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...functionCallItems] : previousMessages;
+        const isAnthropicFormat = activeApiFormat?.id === 'anthropic';
+        const messagesToPass = useResponsesApi
+        ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...functionCallItems]
+        : isAnthropicFormat
+          ? [...apiMessages,
+              {
+                role: 'assistant',
+                content: [
+                  // Include text content if present alongside tool_use blocks
+                  ...(assistantContent ? [{ type: 'text', text: assistantContent }] : []),
+                  ...toolCalls.map((tc: any) => ({
+                    type: 'tool_use',
+                    id: tc.id,
+                    name: tc.function.name,
+                    input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })()
+                  }))
+                ]
+              }
+            ]
+          : [...apiMessages, { role: 'assistant', content: assistantContent || '', tool_calls: toolCalls }];
         await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, messagesToPass, useResponsesApi);
       } else if (requestsAnotherTool) {
         // Request another tool call

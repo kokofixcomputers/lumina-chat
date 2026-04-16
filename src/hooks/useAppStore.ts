@@ -909,12 +909,40 @@ export function useAppStore() {
             ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? {
               reasoning: { effort: settings.modelSettings.reasoningEffort }
             } : {}),
-          } : {
-            ...requestBody,
-            messages: [...previousMessages, ...toolMessages],
-            stream: settings.modelSettings.stream,
-            tools: getToolDefinitions(settings.allowImageGeneration, buildMode)
-          };
+          } : (() => {
+            const isAnthropic = activeApiFormat?.id === 'anthropic';
+            const followUpMessages = [...previousMessages, ...toolMessages];
+            
+            if (isAnthropic) {
+              // Rebuild via template so tools are in Anthropic format
+              const systemMsg = followUpMessages.find((m: any) => m.role === 'system');
+              const nonSystem = followUpMessages.filter((m: any) => m.role !== 'system');
+              const vars: Record<string, unknown> = {
+                messages: nonSystem,
+                messagesNoSystem: nonSystem,
+                system: systemMsg?.content ?? '',
+                model: model?.id ?? '',
+                apiKey: provider.apiKey,
+                stream: settings.modelSettings.stream,
+                temperature: settings.modelSettings.temperature,
+                maxTokens: settings.modelSettings.maxTokens,
+                topP: settings.modelSettings.topP,
+                tools: anthropicTools,
+                ...(activeApiFormat.customVars || {}),
+              };
+              const template = settings.modelSettings.stream
+                ? (activeApiFormat.streamingRequestBodyTemplate || activeApiFormat.requestBodyTemplate)
+                : activeApiFormat.requestBodyTemplate;
+              return template ? JSON.parse(applyVars(template, vars)) : { ...requestBody, messages: followUpMessages };
+            }
+            
+            return {
+              ...requestBody,
+              messages: followUpMessages,
+              stream: settings.modelSettings.stream,
+              tools: getToolDefinitions(settings.allowImageGeneration, buildMode),
+            };
+          })();
           
           const followUpResponse = await fetchWithRetry(chatUrl, {
             method: 'POST',

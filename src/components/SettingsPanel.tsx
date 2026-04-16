@@ -1,5 +1,5 @@
-import { X, Database, Settings as SettingsIcon, Settings2, Zap, Plus, Trash2, ChevronDown, ChevronRight, Eye, EyeOff, Download, Upload, FileDown, Menu, Info, Cloud } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { X, Database, Settings as SettingsIcon, Settings2, Zap, Plus, Trash2, ChevronDown, ChevronRight, Eye, EyeOff, Download, Upload, FileDown, Menu, Info, Cloud, Search, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import type { AppSettings, ModelSettings, ModelProvider, ModelConfig } from '../types';
 import { getModelInfo } from '../utils/models';
 import { integratedProviders, type IntegratedProviderTemplate } from '../data/integratedProviders';
@@ -40,6 +40,37 @@ const TAGLINES = [
   'Where Knowledge meets Intelligence.',
   'Where Knowledge begins.',
 ];
+
+const PROVIDER_COLORS: Record<string, string> = {
+  openai: '#10a37f',
+  'anthropic-proxy': '#d4a574',
+  ollama: '#6366f1',
+  groq: '#f97316',
+  mistral: '#eb6f33',
+  together: '#8b5cf6',
+};
+
+const PROVIDER_INITIALS: Record<string, string> = {
+  openai: 'O',
+  'anthropic-proxy': 'A',
+  ollama: 'L',
+  groq: 'G',
+  mistral: 'M',
+  together: 'T',
+};
+
+function ProviderDot({ providerId, providerName }: { providerId: string; providerName: string }) {
+  const color = PROVIDER_COLORS[providerId] || '#8b5cf6';
+  const initial = PROVIDER_INITIALS[providerId] || providerName[0]?.toUpperCase() || '?';
+  return (
+    <div
+      className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0"
+      style={{ background: color }}
+    >
+      {initial}
+    </div>
+  );
+}
 
 
 
@@ -115,6 +146,10 @@ export default function SettingsPanel({
   const [agentProtocol, setAgentProtocol] = useState<'ws' | 'wss'>(settings.localAgent?.protocol || 'ws');
   const [agentEnabled, setAgentEnabled] = useState(settings.localAgent?.enabled || false);
   const [agentStatus, setAgentStatus] = useState<'disabled' | 'error' | 'connected'>('disabled');
+  const [showSttPicker, setShowSttPicker] = useState(false);
+  const [sttModelSearch, setSttModelSearch] = useState('');
+  const [sttCollapsedProviders, setSttCollapsedProviders] = useState<Set<string>>(new Set());
+  const sttDropdownRef = useRef<HTMLDivElement>(null);
 
   const commitSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA;
   const shortSha = commitSha?.slice(0, 7);
@@ -173,6 +208,18 @@ export default function SettingsPanel({
       setSyncStatus('synced');
     }
   }, [autoSyncEnabled, syncEmail, syncPassword]);
+
+  useEffect(() => {
+    if (!showSttPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (sttDropdownRef.current && !sttDropdownRef.current.contains(e.target as Node)) {
+        setShowSttPicker(false);
+        setSttModelSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSttPicker]);
 
   const syncToCloud = async (silent = false) => {
     if (!autoSyncEnabled || !syncEmail || !syncPassword || !cloudSyncEnabled) {
@@ -513,50 +560,161 @@ export default function SettingsPanel({
                   )}
                   <div className="form-group">
                     <label className="form-label">Speech-to-Text Model</label>
-                    <select
-                      className="input text-sm"
-                      value={(() => {
-                        // value is "providerId/modelId" or just a bare model id for legacy
-                        const sttUrl = settings.sttBaseUrl;
-                        const sttModel = settings.sttModel || 'gpt-4o-transcribe';
-                        // find matching provider by baseUrl
-                        const matched = settings.providers.find(p => p.enabled && p.baseUrl && sttUrl && p.baseUrl.replace(/\/$/, '') === sttUrl.replace(/\/$/, ''));
-                        if (matched) return `${matched.id}/${sttModel}`;
-                        return `__bare__/${sttModel}`;
-                      })()}
-                      onChange={e => {
-                        const val = e.target.value;
-                        const slashIdx = val.indexOf('/');
-                        const providerId = val.slice(0, slashIdx);
-                        const modelId = val.slice(slashIdx + 1);
-                        const provider = settings.providers.find(p => p.id === providerId);
-                        onUpdateSettings({
-                          sttModel: modelId,
-                          sttBaseUrl: provider?.baseUrl || '',
-                        });
-                      }}
-                    >
-                      {settings.providers.filter(p => p.enabled && p.models.length > 0).flatMap(p =>
-                        p.models.map(m => (
-                          <option key={`${p.id}/${m.id}`} value={`${p.id}/${m.id}`}>
-                            {p.name} — {m.name || m.id}
-                          </option>
-                        ))
-                      )}
-                      {/* Always show current value even if provider not found */}
-                      {!settings.providers.filter(p => p.enabled).some(p =>
-                        p.models.some(m => {
+
+                    {/* Trigger button */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowSttPicker(v => !v)}
+                        className="input text-sm w-full flex items-center gap-2 text-left"
+                      >
+                        {(() => {
                           const sttUrl = settings.sttBaseUrl;
-                          const matched = sttUrl && p.baseUrl.replace(/\/$/, '') === sttUrl.replace(/\/$/, '');
-                          return matched && m.id === (settings.sttModel || 'gpt-4o-transcribe');
-                        })
-                      ) && (
-                        <option value={`__bare__/${settings.sttModel || 'gpt-4o-transcribe'}`}>
-                          {settings.sttModel || 'gpt-4o-transcribe'} (custom)
-                        </option>
+                          const sttModel = settings.sttModel || 'gpt-4o-transcribe';
+                          const matched = settings.providers.find(
+                            p => p.enabled && p.baseUrl && sttUrl &&
+                              p.baseUrl.replace(/\/$/, '') === sttUrl.replace(/\/$/, '')
+                          );
+                          const providerName = matched?.name ?? 'Custom';
+                          return (
+                            <>
+                              {matched && (
+                                <ProviderDot providerId={matched.id} providerName={matched.name} />
+                              )}
+                              <span className="flex-1 truncate">
+                                {providerName} — {sttModel}
+                              </span>
+                              <ChevronDown size={13} className="text-[rgb(var(--muted))] shrink-0" />
+                            </>
+                          );
+                        })()}
+                      </button>
+
+                      {/* Dropdown */}
+                      {showSttPicker && (
+                        <div
+                          ref={sttDropdownRef}
+                          className="model-picker-dropdown absolute z-50 w-full"
+                          style={{ bottom: '100%', marginBottom: 8 }}
+                        >
+                          {/* Search */}
+                          <div className="flex items-center gap-2 mx-2 mb-1 px-2.5 py-1.5 rounded-lg bg-[rgb(var(--bg))] border border-[rgb(var(--border))]">
+                            <Search size={13} className="text-[rgb(var(--muted))] shrink-0" />
+                            <input
+                              value={sttModelSearch}
+                              onChange={e => setSttModelSearch(e.target.value)}
+                              placeholder="Search models..."
+                              className="flex-1 bg-transparent text-[13px] outline-none text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+                            />
+                          </div>
+
+                          {/* Groups */}
+                          {(() => {
+                            const grouped = settings.providers
+                              .filter(p => p.enabled && p.models.length > 0)
+                              .reduce<Record<string, { providerId: string; providerName: string; fullId: string; modelId: string; modelName: string }[]>>(
+                                (acc, p) => {
+                                  const filtered = p.models.filter(m =>
+                                    !sttModelSearch ||
+                                    m.id.toLowerCase().includes(sttModelSearch.toLowerCase()) ||
+                                    (m.name ?? '').toLowerCase().includes(sttModelSearch.toLowerCase())
+                                  );
+                                  if (filtered.length > 0) {
+                                    acc[p.name] = filtered.map(m => ({
+                                      providerId: p.id,
+                                      providerName: p.name,
+                                      fullId: `${p.id}/${m.id}`,
+                                      modelId: m.id,
+                                      modelName: m.name || m.id,
+                                    }));
+                                  }
+                                  return acc;
+                                },
+                                {}
+                              );
+
+                            const currentFullId = (() => {
+                              const sttUrl = settings.sttBaseUrl;
+                              const sttModel = settings.sttModel || 'gpt-4o-transcribe';
+                              const matched = settings.providers.find(
+                                p => p.enabled && p.baseUrl && sttUrl &&
+                                  p.baseUrl.replace(/\/$/, '') === sttUrl.replace(/\/$/, '')
+                              );
+                              return matched ? `${matched.id}/${sttModel}` : `__bare__/${sttModel}`;
+                            })();
+
+                            if (Object.keys(grouped).length === 0) {
+                              return (
+                                <p className="text-[12px] text-[rgb(var(--muted))] text-center py-4">
+                                  No models found
+                                </p>
+                              );
+                            }
+
+                            return Object.entries(grouped).map(([providerName, models]) => {
+                              const isCollapsed = sttCollapsedProviders.has(providerName);
+                              return (
+                                <div key={providerName} className="mb-1">
+                                  {/* Provider header */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newSet = new Set(sttCollapsedProviders);
+                                      if (isCollapsed) newSet.delete(providerName);
+                                      else newSet.add(providerName);
+                                      setSttCollapsedProviders(newSet);
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-1.5 mt-1 w-full hover:bg-black/[0.03] dark:hover:bg-white/[0.03] rounded-lg transition-colors"
+                                  >
+                                    <ProviderDot
+                                      providerId={models[0].providerId}
+                                      providerName={providerName}
+                                    />
+                                    <span className="text-[11px] font-semibold text-[rgb(var(--muted))] uppercase tracking-wider flex-1 text-left">
+                                      {providerName}
+                                    </span>
+                                    <ChevronDown
+                                      size={12}
+                                      className={`text-[rgb(var(--muted))] transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+                                    />
+                                  </button>
+
+                                  {/* Models */}
+                                  {!isCollapsed && models.map(m => {
+                                    const isSelected = currentFullId === m.fullId;
+                                    return (
+                                      <button
+                                        key={m.fullId}
+                                        type="button"
+                                        onClick={() => {
+                                          const provider = settings.providers.find(p => p.id === m.providerId);
+                                          onUpdateSettings({
+                                            sttModel: m.modelId,
+                                            sttBaseUrl: provider?.baseUrl || '',
+                                          });
+                                          setShowSttPicker(false);
+                                          setSttModelSearch('');
+                                        }}
+                                        className={`model-option w-full text-left ${isSelected ? 'selected' : ''}`}
+                                      >
+                                        <span className="flex-1 font-medium truncate">{m.modelName}</span>
+                                        {isSelected && (
+                                          <Check size={13} className="text-[rgb(var(--accent))] shrink-0 ml-2" />
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
                       )}
-                    </select>
-                    <p className="form-help">Model used for microphone transcription. Picks the provider's base URL automatically.</p>
+                    </div>
+
+                    <p className="form-help">
+                      Model used for microphone transcription. Picks the provider's base URL automatically.
+                    </p>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Max History</label>

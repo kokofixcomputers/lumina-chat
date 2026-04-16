@@ -622,6 +622,7 @@ export function useAppStore() {
       useResponsesApi: boolean = false
     ) => {
       const toolMessages: any[] = [];
+      const isAnthropic = activeApiFormat?.id === 'anthropic';
       
       for (const toolCall of toolCalls) {
         const tool = getToolByName(toolCall.function.name, buildMode);
@@ -724,8 +725,10 @@ export function useAppStore() {
                       
                       toolMessages.push(useResponsesApi
                         ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ success: true, description: result.prompt }) }
-                        : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }
-                      );
+                        : isAnthropic
+                          ? { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }] }
+                          : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }
+                        );
                     } else {
                       throw new Error('No image data in response');
                     }
@@ -765,8 +768,10 @@ export function useAppStore() {
                     
                     toolMessages.push(useResponsesApi
                       ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ success: true, description: result.prompt }) }
-                      : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }
-                    );
+                      : isAnthropic
+                        ? { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }] }
+                        : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, description: result.prompt }) }
+                      );
                   } else {
                     throw new Error('Image generation failed');
                   }
@@ -810,8 +815,10 @@ export function useAppStore() {
               
               toolMessages.push(useResponsesApi
                 ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ success: true, file: result.original_path, url: result.url }) }
-                : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, file: result.original_path, url: result.url }) }
-              );
+                : isAnthropic
+                  ? { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: JSON.stringify({ success: true, file: result.original_path, url: result.url }) }] }
+                  : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, file: result.original_path, url: result.url }) }
+                );
             } else {
               setConversations(prev => prev.map(c => {
                 if (c.id !== convId) return c;
@@ -834,8 +841,10 @@ export function useAppStore() {
               
               toolMessages.push(useResponsesApi
                 ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify(result) }
-                : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) }
-              );
+                : isAnthropic
+                  ? { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: JSON.stringify(result) }] }
+                  : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) }
+                );
             }
           } catch (toolErr) {
             const errorMessage = toolErr instanceof Error ? toolErr.message : String(toolErr);
@@ -854,8 +863,10 @@ export function useAppStore() {
             // Send error back to AI
             toolMessages.push(useResponsesApi
               ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ error: errorMessage, success: false }) }
-              : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }
-            );
+              : isAnthropic
+                ? { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }] }
+                : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }
+              );
           }
         } else {
           const errorMessage = `Tool "${toolCall.function.name}" not found`;
@@ -874,8 +885,10 @@ export function useAppStore() {
           // Send error back to AI
           toolMessages.push(useResponsesApi
             ? { type: 'function_call_output', call_id: toolCall.id, output: JSON.stringify({ error: errorMessage, success: false }) }
-            : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }
-          );
+            : isAnthropic
+              ? { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }] }
+              : { role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ error: errorMessage, success: false }) }
+            );
         }
       }
       
@@ -1045,6 +1058,15 @@ export function useAppStore() {
     const systemMessage = apiMessages.find(m => m.role === 'system');
     const nonSystemMessages = apiMessages.filter(m => m.role !== 'system');
 
+    const rawTools = getToolDefinitions(settings.allowImageGeneration, buildMode);
+
+    const anthropicTools = rawTools.map((t: any) => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: t.function.parameters,
+    }));
+
+
     // Build custom body if format has templates
     const buildCustomBody = (streaming: boolean): string | null => {
       const template = streaming
@@ -1060,6 +1082,7 @@ export function useAppStore() {
         temperature: settings.modelSettings.temperature,
         maxTokens: settings.modelSettings.maxTokens,
         topP: settings.modelSettings.topP,
+        tools: anthropicTools,
         ...(activeApiFormat.customVars || {}),
       };
       return applyVars(template, vars);
@@ -1356,6 +1379,18 @@ export function useAppStore() {
                   }
                 }
               }
+              if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+                toolCallsMap.set(parsed.index, {
+                  id: parsed.content_block.id,
+                  type: 'function',
+                  function: { name: parsed.content_block.name, arguments: '' },
+                  fcid: parsed.content_block.id,
+                });
+              }
+              if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta') {
+                const call = toolCallsMap.get(parsed.index);
+                if (call) call.function.arguments += parsed.delta.partial_json;
+              }
             } catch (parseErr) {
               if (parseErr instanceof Error && !parseErr.message.includes('JSON')) {
                 throw parseErr;
@@ -1431,7 +1466,14 @@ export function useAppStore() {
           call_id: tc.id,
           status: 'completed'
         }));
-        const messagesToPass = useResponsesApi ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...functionCallItems] : [...apiMessages, { role: 'assistant', content: assistantContent || '', tool_calls: toolCalls }];
+        const isAnthropicFormat = activeApiFormat?.id === 'anthropic';
+      const messagesToPass = useResponsesApi
+        ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...functionCallItems]
+        : isAnthropicFormat
+          ? [...apiMessages,
+              { role: 'assistant', content: toolCalls.map((tc: any) => ({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })() })) }
+            ]
+          : [...apiMessages, { role: 'assistant', content: assistantContent || '', tool_calls: toolCalls }];
         await executeToolCalls(toolCalls, convId, provider, model, chatUrl, headers, requestBody, messagesToPass, useResponsesApi);
       } else if (requestsAnotherTool) {
         // Request another tool call

@@ -1414,12 +1414,17 @@ export function useAppStore() {
               if (parsed.choices?.[0]?.finish_reason === 'error') {
                 throw new Error(parsed.error || 'Stream error');
               }
-              const delta = activeApiFormat.streamingChunkPath
-                ? getByPath(parsed, activeApiFormat.streamingChunkPath)
-                : (parsed.choices?.[0]?.delta?.content || '');
-              assistantContent += delta;
-              setStreamingContent(assistantContent);
-              if (delta) tokenCount++;
+              const delta = (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta')
+                ? ''  // don't extract text from tool argument chunks
+                : activeApiFormat.streamingChunkPath
+                  ? (getByPath(parsed, activeApiFormat.streamingChunkPath) ?? '')
+                  : (parsed.choices?.[0]?.delta?.content ?? '');
+
+              if (delta) {
+                assistantContent += delta;
+                setStreamingContent(assistantContent);
+                tokenCount++;
+              }
               
               // Handle streaming tool calls
               if (parsed.choices?.[0]?.delta?.tool_calls) {

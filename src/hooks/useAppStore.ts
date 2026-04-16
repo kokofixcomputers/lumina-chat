@@ -1391,7 +1391,7 @@ export function useAppStore() {
             if (line.startsWith('event:')) continue;
             if (!line.startsWith('data:')) continue;
 
-            let data = line.slice(line.indexOf('data:') + 6).trim();
+            let data = line.slice(6).trim();
             const doneSentinel = activeApiFormat.streamingDoneSentinel ?? '[DONE]';
             if (data === doneSentinel) continue;
             // Also handle JSON-encoded sentinel (e.g. Anthropic's {"type":"message_stop"})

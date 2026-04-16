@@ -116,6 +116,9 @@ export default function SettingsPanel({
   const [agentEnabled, setAgentEnabled] = useState(settings.localAgent?.enabled || false);
   const [agentStatus, setAgentStatus] = useState<'disabled' | 'error' | 'connected'>('disabled');
 
+  const commitSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA;
+  const shortSha = commitSha?.slice(0, 7);
+
   useEffect(() => {
     if (!agentEnabled) {
       setAgentStatus('disabled');
@@ -1340,7 +1343,7 @@ export default function SettingsPanel({
                   </div>
 
                   <div className="text-sm text-[rgb(var(--muted))]">
-                    <p>Version 1.0.0</p>
+                    <p>Build {shortSha}</p>
                   </div>
                 </div>
               </div>

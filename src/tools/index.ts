@@ -26,6 +26,7 @@ const tools: Tool[] = [
 ];
 
 export function getAllTools(includeImageGen = false, buildMode = false): Tool[] {
+  console.log(buildMode)
   const settingsData = localStorage.getItem('lumina_settings');
   let localAgentEnabled = false;
   let disabledTools: string[] = [];

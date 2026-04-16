@@ -316,6 +316,7 @@ export function useAppStore() {
       previousMessages: any[],
       useResponsesApi: boolean = false
     ) => {
+      console.log('handleContinuationResponse called');
       let assistantContent = '';
       let toolCalls: any[] = [];
       const toolCallsMap = new Map<number, any>();
@@ -652,6 +653,7 @@ export function useAppStore() {
     ) => {
       const toolMessages: any[] = [];
       const isAnthropic = activeApiFormat?.id === 'anthropic';
+      console.log('executeToolCalls called, toolCalls:', toolCalls.length);
       
       for (const toolCall of toolCalls) {
         const tool = getToolByName(toolCall.function.name, buildMode);

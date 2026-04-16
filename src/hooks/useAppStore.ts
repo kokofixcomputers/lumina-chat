@@ -503,9 +503,6 @@ export function useAppStore() {
                 setStreamingContent(assistantContent);
                 tokenCount++;
               }
-              assistantContent += delta;
-              setStreamingContent(assistantContent);
-              if (delta) tokenCount++;
               
               if (parsed.choices?.[0]?.delta?.tool_calls) {
                 for (const tc of parsed.choices[0].delta.tool_calls) {

@@ -491,7 +491,17 @@ export function useAppStore() {
               const parsed = JSON.parse(data);
               if (parsed.error) throw new Error(parsed.error);
               if (parsed.choices?.[0]?.finish_reason === 'error') throw new Error(parsed.error || 'Stream error');
-              const delta = parsed.choices?.[0]?.delta?.content || '';
+              const delta = (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta')
+                ? ''  // ← don't extract text from tool argument chunks
+                : activeApiFormat.streamingChunkPath
+                  ? (getByPath(parsed, activeApiFormat.streamingChunkPath) ?? '')
+                  : (parsed.choices?.[0]?.delta?.content ?? '');
+
+              if (delta) {
+                assistantContent += delta;
+                setStreamingContent(assistantContent);
+                tokenCount++;
+              }
               assistantContent += delta;
               setStreamingContent(assistantContent);
               if (delta) tokenCount++;

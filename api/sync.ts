@@ -5,8 +5,27 @@ export const config = {
 };
 
 export default async function handler(req: Request) {
+  // Handle OPTIONS requests for CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+        'Access-Control-Max-Age': '86400' // Cache preflight response for 24 hours
+      }
+    });
+  }
+
+  // Handle POST requests as before
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: {
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
   }
 
   try {
@@ -25,9 +44,19 @@ export default async function handler(req: Request) {
     if (action === 'get') {
       const result = await sql`SELECT data, updated_at FROM user_data WHERE email = ${email}`;
       if (result.length === 0) {
-        return new Response(JSON.stringify({ exists: false }), { status: 200 });
+        return new Response(JSON.stringify({ exists: false }), {
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
       }
-      return new Response(JSON.stringify({ exists: true, data: result[0].data, updatedAt: result[0].updated_at }), { status: 200 });
+      return new Response(JSON.stringify({ exists: true, data: result[0].data, updatedAt: result[0].updated_at }), {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
     }
 
     if (action === 'save') {
@@ -37,17 +66,37 @@ export default async function handler(req: Request) {
         ON CONFLICT (email)
         DO UPDATE SET data = ${JSON.stringify(data)}, updated_at = NOW()
       `;
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
     }
 
     if (action === 'delete') {
       await sql`DELETE FROM user_data WHERE email = ${email}`;
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
     }
 
-    return new Response(JSON.stringify({ error: 'Invalid action' }), { status: 400 });
+    return new Response(JSON.stringify({ error: 'Invalid action' }), {
+      status: 400,
+      headers: {
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
   } catch (error) {
     console.error('Sync error:', error);
-    return new Response(JSON.stringify({ error: 'Database unavailable', disabled: true }), { status: 500 });
+    return new Response(JSON.stringify({ error: 'Database unavailable', disabled: true }), {
+      status: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
   }
 }

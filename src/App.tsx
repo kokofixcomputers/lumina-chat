@@ -210,7 +210,7 @@ export default function App() {
         const { encryptData, decryptData } = await import('./utils/encryption');
         
         // Check server for updates
-        const getResponse = await fetch('/api/sync', {
+        const getResponse = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get', email: cloudSync.email })
@@ -247,7 +247,7 @@ export default function App() {
           const conversations = JSON.parse(currentConversations || '[]');
           const encrypted = encryptData({ settings, conversations }, cloudSync.password);
           
-          const response = await fetch('/api/sync', {
+          const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'save', email: cloudSync.email, data: encrypted })

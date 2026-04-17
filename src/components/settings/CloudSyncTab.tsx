@@ -100,7 +100,7 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
                     setSyncMessage('Uploading data...');
                     try {
                       const encrypted = encryptData({ settings, conversations }, syncPassword);
-                      const response = await fetch('/api/sync', {
+                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'save', email: syncEmail, data: encrypted })
@@ -137,7 +137,7 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
                     setSyncStatus('loading');
                     setSyncMessage('Checking for data...');
                     try {
-                      const response = await fetch('/api/sync', {
+                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'get', email: syncEmail })
@@ -184,7 +184,7 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
                     setSyncStatus('loading');
                     setSyncMessage('Erasing data...');
                     try {
-                      const response = await fetch('/api/sync', {
+                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'delete', email: syncEmail })
@@ -253,7 +253,7 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
                     setSyncStatus('loading');
                     try {
                       const encrypted = encryptData({ settings, conversations }, syncPassword);
-                      const response = await fetch('/api/sync', {
+                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'save', email: syncEmail, data: encrypted })

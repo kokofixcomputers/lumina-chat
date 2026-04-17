@@ -85,33 +85,80 @@ export default function ChatArea({
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+  const prevConvIdRef = useRef<string | null>(null);
   const [showFS, setShowFS] = useState(false);
 
-  // Eased scroll toward bottom — moves at most `speed` px per frame so it
-  // glides smoothly even as new lines push the content taller.
+  // Trickle buffer — drips streamingContent out at a controlled rate so large
+  // chunks don't cause a single-frame content jump.
+  const [displayContent, setDisplayContent] = useState('');
+  const displayContentRef = useRef('');
+  const streamingContentRef = useRef('');
+  const trickleRafRef = useRef<number | null>(null);
+
+  streamingContentRef.current = streamingContent;
+
+  const CHARS_PER_FRAME = 12; // ~720 chars/sec at 60fps — fast but smooth
+
+  const trickle = () => {
+    const target = streamingContentRef.current;
+    const current = displayContentRef.current;
+    if (current.length >= target.length) {
+      trickleRafRef.current = null;
+      return;
+    }
+    const next = target.slice(0, current.length + CHARS_PER_FRAME);
+    displayContentRef.current = next;
+    setDisplayContent(next);
+    trickleRafRef.current = requestAnimationFrame(trickle);
+  };
+
+  useEffect(() => {
+    if (!streamingContent) {
+      // Generation ended — flush remaining immediately
+      displayContentRef.current = '';
+      setDisplayContent('');
+      if (trickleRafRef.current !== null) { cancelAnimationFrame(trickleRafRef.current); trickleRafRef.current = null; }
+      return;
+    }
+    if (trickleRafRef.current === null) {
+      trickleRafRef.current = requestAnimationFrame(trickle);
+    }
+  }, [streamingContent]);
+
+  // Eased scroll — 12% of remaining per frame, feels smooth during streaming
   const easeToBottom = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (remaining <= 1) { scrollRafRef.current = null; return; }
-    // Move 12% of remaining distance per frame (ease-out feel), min 2px, max 80px
     const step = Math.min(80, Math.max(2, remaining * 0.12));
     el.scrollTop += step;
     scrollRafRef.current = requestAnimationFrame(easeToBottom);
   };
 
-  // New messages → kick off eased scroll
+  // Conversation switch → instant snap
+  useEffect(() => {
+    const convId = conversation?.id ?? null;
+    if (convId !== prevConvIdRef.current) {
+      prevConvIdRef.current = convId;
+      if (scrollRafRef.current !== null) { cancelAnimationFrame(scrollRafRef.current); scrollRafRef.current = null; }
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, [conversation?.id]);
+
+  // New message appended → fast ease
   useEffect(() => {
     if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(easeToBottom);
   }, [conversation?.messages.length]);
 
-  // Streaming → keep the eased scroll loop running while content grows
+  // Trickle output grows → keep ease loop alive
   useEffect(() => {
-    if (!streamingContent) return;
-    if (scrollRafRef.current !== null) return; // loop already running
+    if (!displayContent) return;
+    if (scrollRafRef.current !== null) return;
     scrollRafRef.current = requestAnimationFrame(easeToBottom);
-  }, [streamingContent]);
+  }, [displayContent]);
 
   const selectedModelId = conversation?.modelId || defaultModelId;
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
@@ -223,7 +270,7 @@ export default function ChatArea({
           {/* Streaming */}
           {isGenerating && streamingContent && (
             <MessageBubble
-              message={{ id: 'streaming', role: 'assistant', content: streamingContent, timestamp: Date.now() }}
+              message={{ id: 'streaming', role: 'assistant', content: displayContent, timestamp: Date.now() }}
               modelName={modelDisplayName}
               modelId={modelId}
               isStreaming

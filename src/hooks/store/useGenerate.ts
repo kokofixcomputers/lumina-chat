@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Conversation, Message, AppSettings, ModelProvider, ModelConfig } from '../../types';
+import { resolveFormat, getByPath } from '../../components/ProvidersPanel';
+import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 
 interface GenerateOptions {
   conversations: Conversation[];
@@ -9,6 +11,20 @@ interface GenerateOptions {
   addMessage: (convId: string, msg: Message) => void;
   updateConversationTitle: (id: string, title: string) => void;
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
+}
+
+/** Build chat URL + auth headers from a provider's API format */
+function buildProviderRequest(provider: ModelProvider, apiFormats: AppSettings['apiFormats']) {
+  const fmt = resolveFormat(apiFormats || [], provider.apiFormatId);
+  const base = provider.baseUrl.replace(/\/$/, '');
+  const chatPath = fmt.chatPath || '/chat/completions';
+  const url = provider.directUrl ? provider.baseUrl
+    : provider.baseUrl.includes(chatPath) ? provider.baseUrl
+    : `${base}${chatPath}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (provider.apiKey) headers[fmt.authHeader] = `${fmt.authPrefix}${provider.apiKey}`;
+  try { Object.assign(headers, JSON.parse(fmt.extraHeaders)); } catch { /* ignore */ }
+  return { url, headers, fmt };
 }
 
 export function useGenerate({
@@ -25,43 +41,49 @@ export function useGenerate({
     const conv = conversations.find(c => c.id === convId);
     if (!conv || !provider || !model) return;
     try {
-      const chatUrl = provider.baseUrl.includes('/chat/completions')
-        ? provider.baseUrl
-        : `${provider.baseUrl}/chat/completions`;
+      const { url, headers, fmt } = buildProviderRequest(provider, settings.apiFormats);
       const messages = conv.messages.filter(m => m.role !== 'tool').map(m => ({ role: m.role, content: m.content }));
       messages.push({ role: 'user', content: 'Based on the conversation history, generate a Chat Title for this conversation. Reply only with the chat title and nothing else. markdown is not supported' });
-      const response = await fetch(chatUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${provider.apiKey}` },
-        body: JSON.stringify({ model: model.id, messages, stream: false }),
-      });
+      const response = await fetchWithProxyFallback(
+        url,
+        { method: 'POST', headers, body: JSON.stringify({ model: model.id, messages, stream: false }) },
+        !!provider.useProxy,
+        undefined,
+        provider.proxyMode,
+      );
       if (response.ok) {
         const data = await response.json();
-        const title = data.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, '') || 'New conversation';
+        const text = fmt.responseTextPath
+          ? getByPath(data, fmt.responseTextPath)
+          : data.choices?.[0]?.message?.content;
+        const title = (text || '').trim().replace(/^["']|["']$/g, '') || 'New conversation';
         updateConversationTitle(convId, title);
       }
     } catch (err) {
       console.error('Failed to generate title:', err);
     }
-  }, [conversations, updateConversationTitle]);
+  }, [conversations, settings, updateConversationTitle]);
 
   const generateFollowUps = useCallback(async (convId: string, msgId: string, provider: ModelProvider, model: ModelConfig | undefined) => {
     const conv = conversations.find(c => c.id === convId);
     if (!conv || !provider || !model) return;
     try {
-      const chatUrl = provider.baseUrl.includes('/chat/completions')
-        ? provider.baseUrl
-        : `${provider.baseUrl}/chat/completions`;
+      const { url, headers, fmt } = buildProviderRequest(provider, settings.apiFormats);
       const messages = conv.messages.filter(m => m.role !== 'tool').map(m => ({ role: m.role, content: m.content }));
       messages.push({ role: 'user', content: 'Based on the conversation history, generate atmost 3 follow up questions. Markdown is not supported. dont warp in ```json I want questions that the user would ask, not the assistant ai. in a JSON list like this ["followup1", "followup2", "followup3"]. Under 3 is fine. but do not include over 3. Don\'t include anything else in your message other than the json list' });
-      const response = await fetch(chatUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${provider.apiKey}` },
-        body: JSON.stringify({ model: model.id, messages, stream: false }),
-      });
+      const response = await fetchWithProxyFallback(
+        url,
+        { method: 'POST', headers, body: JSON.stringify({ model: model.id, messages, stream: false }) },
+        !!provider.useProxy,
+        undefined,
+        provider.proxyMode,
+      );
       if (response.ok) {
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content?.trim() || '';
+        const text = fmt.responseTextPath
+          ? getByPath(data, fmt.responseTextPath)
+          : data.choices?.[0]?.message?.content;
+        const content = (text || '').trim();
         try {
           const followUps = JSON.parse(content).slice(0, 3);
           setConversations(prev => prev.map(c => {
@@ -73,7 +95,7 @@ export function useGenerate({
     } catch (err) {
       console.error('Failed to generate follow-ups:', err);
     }
-  }, [conversations, setConversations]);
+  }, [conversations, settings, setConversations]);
 
   const generateImage = useCallback(async (prompt: string, convId: string) => {
     const conv = conversations.find(c => c.id === convId);

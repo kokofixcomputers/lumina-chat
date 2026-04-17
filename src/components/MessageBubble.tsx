@@ -167,6 +167,7 @@ interface MessageBubbleProps {
   message: Message;
   modelName?: string;
   modelId?: string;
+  isStreaming?: boolean;
   onRetry?: () => void;
   onEdit?: (newContent: string) => void;
   onDelete?: () => void;
@@ -174,7 +175,7 @@ interface MessageBubbleProps {
   onVersionChange?: (versionIndex: number) => void;
 }
 
-export default function MessageBubble({ message, modelName, modelId, onRetry, onEdit, onDelete, onFollowUpClick, onVersionChange }: MessageBubbleProps) {
+export default function MessageBubble({ message, modelName, modelId, isStreaming, onRetry, onEdit, onDelete, onFollowUpClick, onVersionChange }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const [isEditing, setIsEditing] = useState(false);
@@ -397,6 +398,9 @@ export default function MessageBubble({ message, modelName, modelId, onRetry, on
             {!isUser && !displayMessage.isStep && (
               <>
                 {renderContent(displayMessage.content)}
+                {isStreaming && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-current align-middle ml-0.5 animate-pulse" />
+                )}
                 {/* Version navigation */}
                 {hasVersions && (
                   <div className="flex items-center gap-2 mt-3 mb-1">

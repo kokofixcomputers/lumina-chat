@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
-  Trash2, Star, ChevronDown, X, Edit2, Cloud
+  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
 
@@ -40,6 +40,24 @@ export default function Sidebar({
   const [searchQ, setSearchQ] = useState('');
   const [todayOpen, setTodayOpen] = useState(true);
   const [olderOpen, setOlderOpen] = useState(true);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  const currentSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined;
+
+  useEffect(() => {
+    if (!currentSha) return; // no sha in env = dev mode, skip
+    const check = async () => {
+      try {
+        const res = await fetch('/api/hash');
+        if (!res.ok) return;
+        const { sha } = await res.json();
+        if (sha && sha !== currentSha) setUpdateAvailable(true);
+      } catch { /* ignore network errors */ }
+    };
+    check();
+    const id = setInterval(check, 5 * 60 * 1000); // every 5 min
+    return () => clearInterval(id);
+  }, [currentSha]);
 
   const now = Date.now();
 
@@ -208,6 +226,15 @@ export default function Sidebar({
 
       {/* Bottom */}
       <div className="border-t border-[rgb(var(--border))] px-1 py-2 space-y-0.5">
+        {updateAvailable && (
+          <button
+            className="sidebar-item w-full text-green-500 hover:text-green-400"
+            onClick={() => window.location.reload()}
+          >
+            <RefreshCw size={15} />
+            <span>Update Available</span>
+          </button>
+        )}
         <button className="sidebar-item w-full" onClick={onOpenProviders}>
           <Database size={15} />
           <span>Providers</span>

@@ -202,6 +202,7 @@ export default function ChatArea({
               message={{ id: 'streaming', role: 'assistant', content: streamingContent, timestamp: Date.now() }}
               modelName={modelDisplayName}
               modelId={modelId}
+              isStreaming
             />
           )}
 

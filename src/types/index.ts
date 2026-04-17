@@ -136,6 +136,7 @@ export interface AppSettings {
     enabled: boolean;
     email: string;
     password: string;
+    syncSystem?: 'old' | 'new';
   };
   devEnv?: {
     address?: string;

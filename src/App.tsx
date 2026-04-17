@@ -213,6 +213,109 @@ export default function App() {
       return;
     }
 
+    const syncSystem = cloudSync.syncSystem ?? 'old';
+
+    // ── New System: WebSocket ──────────────────────────────────────────────────
+    if (syncSystem === 'new') {
+      setSyncStatus('syncing');
+      const wsUrl = `wss://my-ai-chat.kokofixcomputers.workers.dev/ws?userId=${encodeURIComponent(cloudSync.email)}`;
+      let ws: WebSocket | null = null;
+      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      let dead = false;
+      let reconnectDelay = 3000;
+
+      const connect = () => {
+        if (dead) return;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => { setSyncStatus('synced'); reconnectDelay = 3000; };
+
+        ws.onmessage = async (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            const { encryptData, decryptData } = await import('./utils/encryption');
+
+            if (msg.type === 'init') {
+              // Server sent stored keys on connect — apply silently, no reload
+              const data = msg.data as Record<string, string>;
+              for (const [key, encVal] of Object.entries(data)) {
+                if (key === 'greeting') continue;
+                const decrypted = decryptData(encVal, cloudSync.password);
+                if (decrypted) {
+                  if (key === 'settings') localStorage.setItem('lumina_settings', JSON.stringify(decrypted));
+                  if (key === 'conversations') localStorage.setItem('lumina_conversations', JSON.stringify(decrypted));
+                }
+              }
+              // Push local data up
+              const currentSettings = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
+              const currentConversations = JSON.parse(localStorage.getItem('lumina_conversations') || '[]');
+              ws?.send(JSON.stringify({ type: 'set', key: 'settings', value: encryptData(currentSettings, cloudSync.password) }));
+              ws?.send(JSON.stringify({ type: 'set', key: 'conversations', value: encryptData(currentConversations, cloudSync.password) }));
+            }
+
+            if (msg.type === 'update') {
+              const decrypted = decryptData(msg.value, cloudSync.password);
+              if (decrypted) {
+                if (msg.key === 'settings') {
+                  const current = localStorage.getItem('lumina_settings');
+                  const incoming = JSON.stringify(decrypted);
+                  if (current !== incoming) {
+                    localStorage.setItem('lumina_settings', incoming);
+                    window.location.reload();
+                  }
+                }
+                if (msg.key === 'conversations') {
+                  const current = localStorage.getItem('lumina_conversations');
+                  const incoming = JSON.stringify(decrypted);
+                  if (current !== incoming) {
+                    localStorage.setItem('lumina_conversations', incoming);
+                    window.location.reload();
+                  }
+                }
+              }
+            }
+          } catch { /* ignore parse errors */ }
+        };
+
+        ws.onerror = () => setSyncStatus('error');
+        ws.onclose = () => {
+          setSyncStatus('error');
+          if (!dead) {
+            reconnectTimer = setTimeout(connect, reconnectDelay);
+            reconnectDelay = Math.min(reconnectDelay * 2, 60000); // cap at 60s
+          }
+        };
+      };
+
+      // Push local changes when they happen
+      let lastSettings = localStorage.getItem('lumina_settings');
+      let lastConversations = localStorage.getItem('lumina_conversations');
+      const pushInterval = setInterval(async () => {
+        if (ws?.readyState !== WebSocket.OPEN) return;
+        const curSettings = localStorage.getItem('lumina_settings');
+        const curConversations = localStorage.getItem('lumina_conversations');
+        if (curSettings === lastSettings && curConversations === lastConversations) return;
+        const { encryptData } = await import('./utils/encryption');
+        if (curSettings !== lastSettings) {
+          lastSettings = curSettings;
+          ws.send(JSON.stringify({ type: 'set', key: 'settings', value: encryptData(JSON.parse(curSettings || '{}'), cloudSync.password) }));
+        }
+        if (curConversations !== lastConversations) {
+          lastConversations = curConversations;
+          ws.send(JSON.stringify({ type: 'set', key: 'conversations', value: encryptData(JSON.parse(curConversations || '[]'), cloudSync.password) }));
+        }
+      }, 5000);
+
+      connect();
+      return () => {
+        dead = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        clearInterval(pushInterval);
+        ws?.close();
+      };
+    }
+
+    // ── Old System: HTTP polling ───────────────────────────────────────────────
     setSyncStatus('synced');
     let lastConversations = localStorage.getItem('lumina_conversations');
     let lastSettings = localStorage.getItem('lumina_settings');
@@ -221,20 +324,14 @@ export default function App() {
     const syncWithServer = async () => {
       try {
         const { encryptData, decryptData } = await import('./utils/encryption');
-        
-        // Check server for updates
         const getResponse = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get', email: cloudSync.email })
         });
-        
         const getResult = await getResponse.json();
-        
         if (getResult.exists && getResult.updatedAt) {
           const serverUpdateTime = new Date(getResult.updatedAt).getTime();
-          
-          // If server has newer data, apply it
           if (serverUpdateTime > lastServerUpdate + 5000) {
             const decrypted = decryptData(getResult.data, cloudSync.password);
             if (decrypted) {
@@ -246,26 +343,20 @@ export default function App() {
             }
           }
         }
-        
-        // Check for local changes and push to server
         const currentConversations = localStorage.getItem('lumina_conversations');
         const currentSettings = localStorage.getItem('lumina_settings');
-
         if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
           lastConversations = currentConversations;
           lastSettings = currentSettings;
-          
           setSyncStatus('syncing');
           const settings = JSON.parse(currentSettings || '{}');
           const conversations = JSON.parse(currentConversations || '[]');
           const encrypted = encryptData({ settings, conversations }, cloudSync.password);
-          
           const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'save', email: cloudSync.email, data: encrypted })
           });
-          
           const result = await response.json();
           if (result.success) {
             setSyncStatus('synced');
@@ -277,13 +368,13 @@ export default function App() {
         } else {
           setSyncStatus('synced');
         }
-      } catch (err) {
+      } catch {
         setSyncStatus('error');
       }
     };
 
     const interval = setInterval(syncWithServer, 10000);
-    syncWithServer(); // Initial sync
+    syncWithServer();
     return () => clearInterval(interval);
   }, [store.settings.cloudSync]);
 

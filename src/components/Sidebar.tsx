@@ -45,7 +45,7 @@ export default function Sidebar({
   const currentSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined;
 
   useEffect(() => {
-    if (!currentSha) return; // no sha in env = dev mode, skip
+    if (!currentSha) return; // no sha in env = dev mode, skip 
     const check = async () => {
       try {
         const res = await fetch('/api/hash');

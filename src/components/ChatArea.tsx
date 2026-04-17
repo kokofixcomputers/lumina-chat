@@ -83,11 +83,27 @@ export default function ChatArea({
   homeBuildMode = false,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const [showFS, setShowFS] = useState(false);
 
+  // Smooth auto-scroll: on new messages snap instantly; during streaming use rAF so it
+  // glides continuously without jerking on every token.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [conversation?.messages, streamingContent]);
+    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      scrollRafRef.current = null;
+    });
+  }, [conversation?.messages]);
+
+  useEffect(() => {
+    if (!streamingContent) return;
+    if (scrollRafRef.current !== null) return; // already scheduled
+    scrollRafRef.current = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      scrollRafRef.current = null;
+    });
+  }, [streamingContent]);
 
   const selectedModelId = conversation?.modelId || defaultModelId;
   const currentModel = allModels.find(m => m.fullId === selectedModelId);

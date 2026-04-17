@@ -21,7 +21,7 @@
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "status": 204
+        "status": "204"
       }
     }
   ]

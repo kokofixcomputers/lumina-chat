@@ -18,10 +18,10 @@
       "src": "/api/(.*)",
       "methods": ["OPTIONS"],
       "dest": "/api/$1",
+      "status": 204,
       "headers": {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "status": "204"
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
       }
     }
   ]

@@ -148,6 +148,8 @@ export interface AppSettings {
   };
   disabledTools?: string[];
   apiFormats?: ProviderApiFormat[];
+  memoriesEnabled?: boolean;
+  memories?: string[]; // each entry is a plain-text memory fact
 }
 
 export type Panel = 'chat' | 'settings' | 'providers';

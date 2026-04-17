@@ -1033,8 +1033,15 @@ export function useAppStore() {
     const responsesApiMessages: Array<{ type?: string; role: string; content: unknown; tool_call_id?: string }> = [];
 
     if (settings.modelSettings.systemPrompt) {
-      apiMessages.push({ role: 'system', content: settings.modelSettings.systemPrompt });
-      responsesApiMessages.push({ type: 'message', role: 'system', content: settings.modelSettings.systemPrompt });
+      // Append memories to system prompt if enabled
+      let systemPrompt = settings.modelSettings.systemPrompt;
+      if (settings.memoriesEnabled && settings.memories && settings.memories.length > 0) {
+        systemPrompt += `\n\n## Memories about the user\nThe following facts have been saved about the user. Use them to personalize responses:\n${settings.memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nWhen you learn new important facts (timezone, preferences, name, etc.), save them with memory_save.`;
+      } else if (settings.memoriesEnabled) {
+        systemPrompt += `\n\nMemories are enabled. When you learn important facts about the user (timezone, location, preferred languages, name, etc.), save them with memory_save so you can recall them in future conversations.`;
+      }
+      apiMessages.push({ role: 'system', content: systemPrompt });
+      responsesApiMessages.push({ type: 'message', role: 'system', content: systemPrompt });
     }
 
     // Get fresh conversation state from ref (updated by useEffect)

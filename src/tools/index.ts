@@ -11,6 +11,7 @@ import devEnvTools from './devEnv';
 import qanda from './qanda';
 import localAgentTools from './localAgent';
 import { buildFsTools } from './buildFs';
+import { memoryTools } from './memories';
 
 const tools: Tool[] = [
   getCurrentTime,
@@ -26,16 +27,17 @@ const tools: Tool[] = [
 ];
 
 export function getAllTools(includeImageGen = false, buildMode = false): Tool[] {
-  console.log(buildMode)
   const settingsData = localStorage.getItem('lumina_settings');
   let localAgentEnabled = false;
   let disabledTools: string[] = [];
+  let memoriesEnabled = false;
 
   if (settingsData) {
     try {
       const settings = JSON.parse(settingsData);
       localAgentEnabled = settings.localAgent?.enabled || false;
       disabledTools = settings.disabledTools || [];
+      memoriesEnabled = settings.memoriesEnabled || false;
     } catch {}
   }
 
@@ -44,7 +46,8 @@ export function getAllTools(includeImageGen = false, buildMode = false): Tool[] 
     : tools.filter(t => !t.definition.function.name.startsWith('local_agent_'));
 
   const withBuild = buildMode ? [...baseTools, ...buildFsTools] : baseTools;
-  const filteredTools = withBuild.filter(t => !disabledTools.includes(t.definition.function.name));
+  const withMemory = memoriesEnabled ? [...withBuild, ...memoryTools] : withBuild;
+  const filteredTools = withMemory.filter(t => !disabledTools.includes(t.definition.function.name));
 
   if (localAgentEnabled) {
     return [...filteredTools, ...localAgentTools.filter(t => !disabledTools.includes(t.definition.function.name))];
@@ -68,7 +71,7 @@ export function getToolByName(name: string, buildMode = false): Tool | undefined
 
   if (disabledTools.includes(name)) return undefined;
 
-  const allTools = [...tools, generateImage, ...(buildMode ? buildFsTools : [])];
+  const allTools = [...tools, generateImage, ...(buildMode ? buildFsTools : []), ...memoryTools];
 
   if (name.startsWith('local_agent_') && !localAgentEnabled) return undefined;
 

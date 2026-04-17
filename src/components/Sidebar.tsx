@@ -55,7 +55,7 @@ export default function Sidebar({
       } catch { /* ignore network errors */ }
     };
     check();
-    const id = setInterval(check, 1 * 60 * 1000); // every 5 min
+    const id = setInterval(check, 5 * 60 * 1000); // every 5 min
     return () => clearInterval(id);
   }, [currentSha]);
 

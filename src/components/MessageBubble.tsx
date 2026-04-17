@@ -121,8 +121,8 @@ function renderContent(content: string) {
         const headers = tableLines[0].split('|').slice(1, -1).map(h => h.trim());
         const rows = tableLines.slice(2).map(row => row.split('|').slice(1, -1).map(c => c.trim()));
         out.push(
-          <div key={k++} className="overflow-x-auto my-3">
-            <table className="min-w-full border-collapse border border-[rgb(var(--border))] text-[13px]">
+          <div key={k++} className="overflow-x-auto my-3 rounded-xl overflow-hidden border border-[rgb(var(--border))]">
+            <table className="min-w-full border-collapse text-[13px]">
               <thead className="bg-black/[0.03] dark:bg-white/[0.05]">
                 <tr>
                   {headers.map((h, idx) => (

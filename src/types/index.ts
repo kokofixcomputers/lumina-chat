@@ -150,6 +150,11 @@ export interface AppSettings {
   apiFormats?: ProviderApiFormat[];
   memoriesEnabled?: boolean;
   memories?: string[]; // each entry is a plain-text memory fact
+  localAgent?: {
+    enabled: boolean;
+    port: string;
+    protocol: 'ws' | 'wss';
+  };
 }
 
 export type Panel = 'chat' | 'settings' | 'providers';

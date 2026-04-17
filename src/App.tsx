@@ -223,21 +223,18 @@ export default function App() {
       let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
       let dead = false;
       let reconnectDelay = 3000;
-      let lastPushTime = 0; // when WE last pushed anything
       let lastPushedSettings = localStorage.getItem('lumina_settings');
       let lastPushedConversations = localStorage.getItem('lumina_conversations');
-      let initDone = false;
+      let ignoreNextUpdate = false; // suppress echo after our own push
 
       const push = async (key: string, value: unknown) => {
         if (ws?.readyState !== WebSocket.OPEN) return;
         const { encryptData } = await import('./utils/encryption');
-        lastPushTime = Date.now();
         ws.send(JSON.stringify({ type: 'set', key, value: encryptData(value, cloudSync.password) }));
       };
 
       const connect = () => {
         if (dead) return;
-        initDone = false;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => { setSyncStatus('synced'); reconnectDelay = 3000; };
@@ -247,35 +244,52 @@ export default function App() {
             const msg = JSON.parse(event.data);
             const { decryptData } = await import('./utils/encryption');
 
+            // On connect the server sends init with all stored data — overwrite local
             if (msg.type === 'init') {
-              // On first connect: server sends what it has stored.
-              // We push our local data — server will broadcast update to other clients.
-              // We do NOT apply server data here to avoid overwriting local changes.
-              initDone = true;
-              lastPushedSettings = localStorage.getItem('lumina_settings');
-              lastPushedConversations = localStorage.getItem('lumina_conversations');
+              const data = msg.data as Record<string, string>;
+              let changed = false;
+              for (const [key, encVal] of Object.entries(data)) {
+                if (key === 'greeting') continue;
+                const decrypted = decryptData(encVal, cloudSync.password);
+                if (!decrypted) continue;
+                const str = JSON.stringify(decrypted);
+                if (key === 'settings' && str !== localStorage.getItem('lumina_settings')) {
+                  localStorage.setItem('lumina_settings', str);
+                  lastPushedSettings = str;
+                  changed = true;
+                }
+                if (key === 'conversations' && str !== localStorage.getItem('lumina_conversations')) {
+                  localStorage.setItem('lumina_conversations', str);
+                  lastPushedConversations = str;
+                  changed = true;
+                }
+              }
+              if (changed) { window.location.reload(); return; }
+              // Nothing from server — push our local state up
               await push('settings', JSON.parse(lastPushedSettings || '{}'));
               await push('conversations', JSON.parse(lastPushedConversations || '[]'));
+              ignoreNextUpdate = true;
+              setTimeout(() => { ignoreNextUpdate = false; }, 2000);
             }
 
-            if (msg.type === 'update' && initDone) {
-              // Ignore updates that arrived within 2s of our own push (echo guard)
-              if (Date.now() - lastPushTime < 2000) return;
+            // Any update from another client — overwrite local, reload
+            if (msg.type === 'update') {
+              if (ignoreNextUpdate) return;
               const decrypted = decryptData(msg.value, cloudSync.password);
               if (!decrypted) return;
-              const incoming = JSON.stringify(decrypted);
-              if (msg.key === 'settings' && incoming !== localStorage.getItem('lumina_settings')) {
-                localStorage.setItem('lumina_settings', incoming);
-                lastPushedSettings = incoming;
+              const str = JSON.stringify(decrypted);
+              if (msg.key === 'settings') {
+                localStorage.setItem('lumina_settings', str);
+                lastPushedSettings = str;
                 window.location.reload();
               }
-              if (msg.key === 'conversations' && incoming !== localStorage.getItem('lumina_conversations')) {
-                localStorage.setItem('lumina_conversations', incoming);
-                lastPushedConversations = incoming;
+              if (msg.key === 'conversations') {
+                localStorage.setItem('lumina_conversations', str);
+                lastPushedConversations = str;
                 window.location.reload();
               }
             }
-          } catch { /* ignore parse errors */ }
+          } catch { /* ignore */ }
         };
 
         ws.onerror = () => setSyncStatus('error');
@@ -288,17 +302,21 @@ export default function App() {
         };
       };
 
-      // Push local changes every 3s only if something actually changed since last push
+      // Push local changes every 3s if something changed
       const pushInterval = setInterval(async () => {
-        if (ws?.readyState !== WebSocket.OPEN || !initDone) return;
+        if (ws?.readyState !== WebSocket.OPEN) return;
         const curSettings = localStorage.getItem('lumina_settings');
         const curConversations = localStorage.getItem('lumina_conversations');
         if (curSettings !== lastPushedSettings) {
           lastPushedSettings = curSettings;
+          ignoreNextUpdate = true;
+          setTimeout(() => { ignoreNextUpdate = false; }, 2000);
           await push('settings', JSON.parse(curSettings || '{}'));
         }
         if (curConversations !== lastPushedConversations) {
           lastPushedConversations = curConversations;
+          ignoreNextUpdate = true;
+          setTimeout(() => { ignoreNextUpdate = false; }, 2000);
           await push('conversations', JSON.parse(curConversations || '[]'));
         }
       }, 3000);

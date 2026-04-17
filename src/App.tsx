@@ -223,22 +223,21 @@ export default function App() {
       let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
       let dead = false;
       let reconnectDelay = 3000;
-      // Track when WE last pushed each key so we can ignore echoes/stale updates
-      const lastPushedAt: Record<string, number> = {};
-      // Track last snapshot we pushed to detect real local changes
+      let lastPushTime = 0; // when WE last pushed anything
       let lastPushedSettings = localStorage.getItem('lumina_settings');
       let lastPushedConversations = localStorage.getItem('lumina_conversations');
+      let initDone = false;
 
       const push = async (key: string, value: unknown) => {
         if (ws?.readyState !== WebSocket.OPEN) return;
         const { encryptData } = await import('./utils/encryption');
-        const ts = Date.now();
-        lastPushedAt[key] = ts;
-        ws.send(JSON.stringify({ type: 'set', key, value: encryptData(value, cloudSync.password), ts }));
+        lastPushTime = Date.now();
+        ws.send(JSON.stringify({ type: 'set', key, value: encryptData(value, cloudSync.password) }));
       };
 
       const connect = () => {
         if (dead) return;
+        initDone = false;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => { setSyncStatus('synced'); reconnectDelay = 3000; };
@@ -249,51 +248,30 @@ export default function App() {
             const { decryptData } = await import('./utils/encryption');
 
             if (msg.type === 'init') {
-              // Server sends stored data on connect.
-              // Only apply a key if the server's timestamp is newer than our last push.
-              const data = msg.data as Record<string, { value: string; ts?: number }>;
-              let needsReload = false;
-              for (const [key, entry] of Object.entries(data)) {
-                if (key === 'greeting') continue;
-                const serverTs: number = entry.ts ?? 0;
-                const ourTs: number = lastPushedAt[key] ?? 0;
-                if (serverTs <= ourTs) continue; // we pushed more recently, skip
-                const decrypted = decryptData(entry.value ?? entry, cloudSync.password);
-                if (!decrypted) continue;
-                const incoming = JSON.stringify(decrypted);
-                if (key === 'settings' && incoming !== localStorage.getItem('lumina_settings')) {
-                  localStorage.setItem('lumina_settings', incoming);
-                  needsReload = true;
-                }
-                if (key === 'conversations' && incoming !== localStorage.getItem('lumina_conversations')) {
-                  localStorage.setItem('lumina_conversations', incoming);
-                  needsReload = true;
-                }
-              }
-              if (needsReload) { window.location.reload(); return; }
-              // Push our local data (server may be empty or older)
-              const curSettings = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
-              const curConversations = JSON.parse(localStorage.getItem('lumina_conversations') || '[]');
+              // On first connect: server sends what it has stored.
+              // We push our local data — server will broadcast update to other clients.
+              // We do NOT apply server data here to avoid overwriting local changes.
+              initDone = true;
               lastPushedSettings = localStorage.getItem('lumina_settings');
               lastPushedConversations = localStorage.getItem('lumina_conversations');
-              await push('settings', curSettings);
-              await push('conversations', curConversations);
+              await push('settings', JSON.parse(lastPushedSettings || '{}'));
+              await push('conversations', JSON.parse(lastPushedConversations || '[]'));
             }
 
-            if (msg.type === 'update') {
-              // Only apply if the sender's timestamp is newer than our last push of this key
-              const serverTs: number = msg.ts ?? 0;
-              const ourTs: number = lastPushedAt[msg.key] ?? 0;
-              if (serverTs <= ourTs) return; // we pushed more recently — ignore
+            if (msg.type === 'update' && initDone) {
+              // Ignore updates that arrived within 2s of our own push (echo guard)
+              if (Date.now() - lastPushTime < 2000) return;
               const decrypted = decryptData(msg.value, cloudSync.password);
               if (!decrypted) return;
               const incoming = JSON.stringify(decrypted);
               if (msg.key === 'settings' && incoming !== localStorage.getItem('lumina_settings')) {
                 localStorage.setItem('lumina_settings', incoming);
+                lastPushedSettings = incoming;
                 window.location.reload();
               }
               if (msg.key === 'conversations' && incoming !== localStorage.getItem('lumina_conversations')) {
                 localStorage.setItem('lumina_conversations', incoming);
+                lastPushedConversations = incoming;
                 window.location.reload();
               }
             }
@@ -310,9 +288,9 @@ export default function App() {
         };
       };
 
-      // Push local changes every 3s only if something actually changed
+      // Push local changes every 3s only if something actually changed since last push
       const pushInterval = setInterval(async () => {
-        if (ws?.readyState !== WebSocket.OPEN) return;
+        if (ws?.readyState !== WebSocket.OPEN || !initDone) return;
         const curSettings = localStorage.getItem('lumina_settings');
         const curConversations = localStorage.getItem('lumina_conversations');
         if (curSettings !== lastPushedSettings) {

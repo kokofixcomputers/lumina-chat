@@ -85,27 +85,32 @@ export default function ChatArea({
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
-  const isStreamingRef = useRef(false);
   const [showFS, setShowFS] = useState(false);
 
-  isStreamingRef.current = isGenerating && !!streamingContent;
-
-  // New messages → smooth scroll
-  useEffect(() => {
+  // Eased scroll toward bottom — moves at most `speed` px per frame so it
+  // glides smoothly even as new lines push the content taller.
+  const easeToBottom = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (remaining <= 1) { scrollRafRef.current = null; return; }
+    // Move 12% of remaining distance per frame (ease-out feel), min 2px, max 80px
+    const step = Math.min(80, Math.max(2, remaining * 0.12));
+    el.scrollTop += step;
+    scrollRafRef.current = requestAnimationFrame(easeToBottom);
+  };
+
+  // New messages → kick off eased scroll
+  useEffect(() => {
+    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(easeToBottom);
   }, [conversation?.messages.length]);
 
-  // Streaming → instant scroll, coalesced to one rAF per frame
+  // Streaming → keep the eased scroll loop running while content grows
   useEffect(() => {
     if (!streamingContent) return;
-    if (scrollRafRef.current !== null) return;
-    scrollRafRef.current = requestAnimationFrame(() => {
-      const el = scrollContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      scrollRafRef.current = null;
-    });
+    if (scrollRafRef.current !== null) return; // loop already running
+    scrollRafRef.current = requestAnimationFrame(easeToBottom);
   }, [streamingContent]);
 
   const selectedModelId = conversation?.modelId || defaultModelId;

@@ -83,24 +83,27 @@ export default function ChatArea({
   homeBuildMode = false,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+  const isStreamingRef = useRef(false);
   const [showFS, setShowFS] = useState(false);
 
-  // Smooth auto-scroll: on new messages snap instantly; during streaming use rAF so it
-  // glides continuously without jerking on every token.
-  useEffect(() => {
-    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
-    scrollRafRef.current = requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      scrollRafRef.current = null;
-    });
-  }, [conversation?.messages]);
+  isStreamingRef.current = isGenerating && !!streamingContent;
 
+  // New messages → smooth scroll
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [conversation?.messages.length]);
+
+  // Streaming → instant scroll, coalesced to one rAF per frame
   useEffect(() => {
     if (!streamingContent) return;
-    if (scrollRafRef.current !== null) return; // already scheduled
+    if (scrollRafRef.current !== null) return;
     scrollRafRef.current = requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
       scrollRafRef.current = null;
     });
   }, [streamingContent]);
@@ -196,7 +199,7 @@ export default function ChatArea({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto py-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto py-6">
         <div className="overflow-x-hidden">
           {conversation.messages.map((msg, idx) => (
             <MessageBubble

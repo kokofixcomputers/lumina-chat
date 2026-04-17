@@ -223,6 +223,19 @@ export default function App() {
       let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
       let dead = false;
       let reconnectDelay = 3000;
+      // Track when WE last pushed each key so we can ignore echoes/stale updates
+      const lastPushedAt: Record<string, number> = {};
+      // Track last snapshot we pushed to detect real local changes
+      let lastPushedSettings = localStorage.getItem('lumina_settings');
+      let lastPushedConversations = localStorage.getItem('lumina_conversations');
+
+      const push = async (key: string, value: unknown) => {
+        if (ws?.readyState !== WebSocket.OPEN) return;
+        const { encryptData } = await import('./utils/encryption');
+        const ts = Date.now();
+        lastPushedAt[key] = ts;
+        ws.send(JSON.stringify({ type: 'set', key, value: encryptData(value, cloudSync.password), ts }));
+      };
 
       const connect = () => {
         if (dead) return;
@@ -233,45 +246,55 @@ export default function App() {
         ws.onmessage = async (event) => {
           try {
             const msg = JSON.parse(event.data);
-            const { encryptData, decryptData } = await import('./utils/encryption');
+            const { decryptData } = await import('./utils/encryption');
 
             if (msg.type === 'init') {
-              // Server sent stored keys on connect — apply silently, no reload
-              const data = msg.data as Record<string, string>;
-              for (const [key, encVal] of Object.entries(data)) {
+              // Server sends stored data on connect.
+              // Only apply a key if the server's timestamp is newer than our last push.
+              const data = msg.data as Record<string, { value: string; ts?: number }>;
+              let needsReload = false;
+              for (const [key, entry] of Object.entries(data)) {
                 if (key === 'greeting') continue;
-                const decrypted = decryptData(encVal, cloudSync.password);
-                if (decrypted) {
-                  if (key === 'settings') localStorage.setItem('lumina_settings', JSON.stringify(decrypted));
-                  if (key === 'conversations') localStorage.setItem('lumina_conversations', JSON.stringify(decrypted));
+                const serverTs: number = entry.ts ?? 0;
+                const ourTs: number = lastPushedAt[key] ?? 0;
+                if (serverTs <= ourTs) continue; // we pushed more recently, skip
+                const decrypted = decryptData(entry.value ?? entry, cloudSync.password);
+                if (!decrypted) continue;
+                const incoming = JSON.stringify(decrypted);
+                if (key === 'settings' && incoming !== localStorage.getItem('lumina_settings')) {
+                  localStorage.setItem('lumina_settings', incoming);
+                  needsReload = true;
+                }
+                if (key === 'conversations' && incoming !== localStorage.getItem('lumina_conversations')) {
+                  localStorage.setItem('lumina_conversations', incoming);
+                  needsReload = true;
                 }
               }
-              // Push local data up
-              const currentSettings = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
-              const currentConversations = JSON.parse(localStorage.getItem('lumina_conversations') || '[]');
-              ws?.send(JSON.stringify({ type: 'set', key: 'settings', value: encryptData(currentSettings, cloudSync.password) }));
-              ws?.send(JSON.stringify({ type: 'set', key: 'conversations', value: encryptData(currentConversations, cloudSync.password) }));
+              if (needsReload) { window.location.reload(); return; }
+              // Push our local data (server may be empty or older)
+              const curSettings = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
+              const curConversations = JSON.parse(localStorage.getItem('lumina_conversations') || '[]');
+              lastPushedSettings = localStorage.getItem('lumina_settings');
+              lastPushedConversations = localStorage.getItem('lumina_conversations');
+              await push('settings', curSettings);
+              await push('conversations', curConversations);
             }
 
             if (msg.type === 'update') {
+              // Only apply if the sender's timestamp is newer than our last push of this key
+              const serverTs: number = msg.ts ?? 0;
+              const ourTs: number = lastPushedAt[msg.key] ?? 0;
+              if (serverTs <= ourTs) return; // we pushed more recently — ignore
               const decrypted = decryptData(msg.value, cloudSync.password);
-              if (decrypted) {
-                if (msg.key === 'settings') {
-                  const current = localStorage.getItem('lumina_settings');
-                  const incoming = JSON.stringify(decrypted);
-                  if (current !== incoming) {
-                    localStorage.setItem('lumina_settings', incoming);
-                    window.location.reload();
-                  }
-                }
-                if (msg.key === 'conversations') {
-                  const current = localStorage.getItem('lumina_conversations');
-                  const incoming = JSON.stringify(decrypted);
-                  if (current !== incoming) {
-                    localStorage.setItem('lumina_conversations', incoming);
-                    window.location.reload();
-                  }
-                }
+              if (!decrypted) return;
+              const incoming = JSON.stringify(decrypted);
+              if (msg.key === 'settings' && incoming !== localStorage.getItem('lumina_settings')) {
+                localStorage.setItem('lumina_settings', incoming);
+                window.location.reload();
+              }
+              if (msg.key === 'conversations' && incoming !== localStorage.getItem('lumina_conversations')) {
+                localStorage.setItem('lumina_conversations', incoming);
+                window.location.reload();
               }
             }
           } catch { /* ignore parse errors */ }
@@ -282,29 +305,25 @@ export default function App() {
           setSyncStatus('error');
           if (!dead) {
             reconnectTimer = setTimeout(connect, reconnectDelay);
-            reconnectDelay = Math.min(reconnectDelay * 2, 60000); // cap at 60s
+            reconnectDelay = Math.min(reconnectDelay * 2, 60000);
           }
         };
       };
 
-      // Push local changes when they happen
-      let lastSettings = localStorage.getItem('lumina_settings');
-      let lastConversations = localStorage.getItem('lumina_conversations');
+      // Push local changes every 3s only if something actually changed
       const pushInterval = setInterval(async () => {
         if (ws?.readyState !== WebSocket.OPEN) return;
         const curSettings = localStorage.getItem('lumina_settings');
         const curConversations = localStorage.getItem('lumina_conversations');
-        if (curSettings === lastSettings && curConversations === lastConversations) return;
-        const { encryptData } = await import('./utils/encryption');
-        if (curSettings !== lastSettings) {
-          lastSettings = curSettings;
-          ws.send(JSON.stringify({ type: 'set', key: 'settings', value: encryptData(JSON.parse(curSettings || '{}'), cloudSync.password) }));
+        if (curSettings !== lastPushedSettings) {
+          lastPushedSettings = curSettings;
+          await push('settings', JSON.parse(curSettings || '{}'));
         }
-        if (curConversations !== lastConversations) {
-          lastConversations = curConversations;
-          ws.send(JSON.stringify({ type: 'set', key: 'conversations', value: encryptData(JSON.parse(curConversations || '[]'), cloudSync.password) }));
+        if (curConversations !== lastPushedConversations) {
+          lastPushedConversations = curConversations;
+          await push('conversations', JSON.parse(curConversations || '[]'));
         }
-      }, 5000);
+      }, 3000);
 
       connect();
       return () => {

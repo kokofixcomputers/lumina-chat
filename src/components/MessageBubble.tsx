@@ -157,6 +157,7 @@ function renderContent(content: string) {
     else if (line.match(/^[-*] /)) { out.push(<li key={k++} className="ml-5 list-disc text-[13.5px] leading-relaxed">{parseInline(line.slice(2))}</li>); }
     else if (line.match(/^\d+\. /)) { out.push(<li key={k++} className="ml-5 list-decimal text-[13.5px] leading-relaxed">{parseInline(line.replace(/^\d+\. /, ''))}</li>); }
     else if (line === '') { out.push(<div key={k++} className="h-2.5" />); }
+    else if (/^---+$/.test(line.trim())) { out.push(<hr key={k++} className="my-3 border-none h-px bg-[rgb(var(--border))]" />); }
     else { out.push(<p key={k++} className="text-[13.5px] leading-relaxed">{parseInline(line)}</p>); }
     i++;
   }

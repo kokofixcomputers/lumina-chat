@@ -540,8 +540,8 @@ export function useAppStore() {
       const requestsAnotherTool = /\{"status"\s*:\s*"request_another_tool"\}\s*$/.test(assistantContent);
       const isStep = /\{"status"\s*:\s*"step"\}(\s*\{"status"\s*:\s*"request_another_tool"\})?\s*$/.test(assistantContent);
 
-      // Only add message if there's content or no tool calls
-      if (assistantContent || toolCalls.length === 0) {
+      // Always add assistant message if there's content OR tool calls (tool calls need to be in history)
+      if (assistantContent || toolCalls.length > 0) {
         const assistantMsg: Message = {
           id: uuidv4(),
           role: 'assistant',
@@ -1046,8 +1046,21 @@ export function useAppStore() {
     const limitedMessages = allMessages.slice(-maxHistory);
     
     for (const m of limitedMessages) {
-      // Skip tool messages - they're only for internal tool follow-ups
-      if (m.role === 'tool') continue;
+      // Include tool messages so the AI remembers previous tool results
+      if (m.role === 'tool') {
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: m.tool_call_id || '',
+          content: m.content,
+        });
+        // Responses API uses function_call_output type
+        responsesApiMessages.push({
+          type: 'function_call_output',
+          call_id: m.tool_call_id || '',
+          output: m.content,
+        } as any);
+        continue;
+      }
       
       if (m.images && m.images.length > 0) {
         const parts: unknown[] = [];
@@ -1490,8 +1503,8 @@ export function useAppStore() {
         requestsAnotherTool,
       };
       
-      // Only add message if there's content or if there are no tool calls
-      if (assistantContent || toolCalls.length === 0) {
+      // Always add assistant message if there's content OR tool calls (tool calls need to be in history)
+      if (assistantContent || toolCalls.length > 0) {
         addMessage(convId, assistantMsg);
       }
 

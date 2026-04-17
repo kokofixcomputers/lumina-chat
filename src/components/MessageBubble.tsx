@@ -17,6 +17,19 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
+function openLink(url: string, e: React.MouseEvent) {
+  const tauri = (window as any).__TAURI_INTERNALS__;
+  console.log(tauri)
+  if (!tauri) return; // not in Tauri — let browser handle target="_blank"
+  e.preventDefault();
+  import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
+    openUrl(url);
+  }).catch(() => {
+    // fallback for older Tauri versions
+    tauri.invoke?.('plugin:shell|open', { path: url });
+  });
+}
+
 function parseInline(text: string): React.ReactNode {
   // Match **bold**, *italic*, `code`, and [label](url)
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*|\[[^\]]+\]\([^()]+\))/g);
@@ -36,6 +49,7 @@ function parseInline(text: string): React.ReactNode {
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-600 dark:text-blue-400 underline underline-offset-2"
+            onClick={e => openLink(url, e)}
           >
             {label}
           </a>

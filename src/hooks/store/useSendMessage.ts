@@ -31,14 +31,28 @@ export function useSendMessage({
   setIsGenerating,
 }: SendMessageOptions) {
   const [streamingContent, setStreamingContent] = useState('');
+  const streamingContentRef = useRef('');
+  const streamingActiveRef = useRef(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  const updateStreaming = (text: string) => {
+    streamingContentRef.current = text;
+    if (!streamingActiveRef.current) {
+      streamingActiveRef.current = true;
+      setStreamingContent(text); // one setState to show the bubble
+    }
+  };
+  const clearStreaming = () => {
+    streamingContentRef.current = '';
+    streamingActiveRef.current = false;
+  };
 
   const stopGeneration = useCallback(() => {
     if (abortController) {
       abortController.abort();
       setAbortController(null);
       setIsGenerating(false);
-      setStreamingContent('');
+      clearStreaming();
     }
   }, [abortController, setIsGenerating]);
 
@@ -76,7 +90,7 @@ export function useSendMessage({
     const userMsg: Message = { id: uuidv4(), role: 'user', content, images: images.length ? images : undefined, timestamp: Date.now() };
     addMessage(convId, userMsg);
     setIsGenerating(true);
-    setStreamingContent('');
+    clearStreaming();
 
     const controller = new AbortController();
     setAbortController(controller);
@@ -265,7 +279,7 @@ export function useSendMessage({
           const raw = decodeHtml(line.slice(line.indexOf('data:') + 6).trim());
           if (isSentinel(raw)) continue;
           const { delta } = parseSseChunk(raw, toolCallsMap);
-          if (delta) { assistantContent += delta; setStreamingContent(assistantContent); tokenCount++; }
+          if (delta) { assistantContent += delta; updateStreaming(assistantContent); tokenCount++; }
         }
       }
       return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()) };
@@ -292,8 +306,8 @@ export function useSendMessage({
             const parsed = JSON.parse(raw);
             if (parsed.type === 'error' && parsed.error) throw new Error(parsed.error.message || JSON.stringify(parsed.error));
             if (parsed.type === 'response.failed' && parsed.response?.error) throw new Error(parsed.response.error.message || JSON.stringify(parsed.response.error));
-            if (parsed.type === 'response.output_text.delta' && parsed.delta) { assistantContent += parsed.delta; setStreamingContent(assistantContent); tokenCount++; }
-            if (parsed.type === 'response.output_text.done' && parsed.text) { assistantContent = parsed.text; setStreamingContent(assistantContent); }
+            if (parsed.type === 'response.output_text.delta' && parsed.delta) { assistantContent += parsed.delta; updateStreaming(assistantContent); tokenCount++; }
+            if (parsed.type === 'response.output_text.done' && parsed.text) { assistantContent = parsed.text; updateStreaming(assistantContent); }
             if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'function_call') {
               functionCallsMap.set(parsed.item.id, { id: parsed.item.call_id, type: 'function', function: { name: parsed.item.name, arguments: '' }, fc_id: parsed.item.id });
             }
@@ -454,7 +468,7 @@ export function useSendMessage({
       if (assistantContent || toolCalls.length > 0) addMessage(convId, assistantMsg);
 
       if (toolCalls.length === 0) {
-        setStreamingContent('');
+        clearStreaming();
         setIsGenerating(false);
         // title + follow-ups
         const shouldTitle = settings.generateTitle !== false;
@@ -534,10 +548,10 @@ export function useSendMessage({
       addMessage(convId, { id: uuidv4(), role: 'assistant', content: err instanceof Error ? err.message : String(err), timestamp: Date.now(), isError: true });
     } finally {
       setIsGenerating(false);
-      setStreamingContent('');
+      clearStreaming();
       setAbortController(null);
     }
   }, [conversations, conversationsRef, settings, getProviderAndModel, addMessage, setConversations, updateProvider, generateConversationTitle, generateFollowUps, setIsGenerating]);
 
-  return { streamingContent, setStreamingContent, abortController, stopGeneration, sendMessage };
+  return { streamingContent, streamingContentRef, setStreamingContent, abortController, stopGeneration, sendMessage };
 }

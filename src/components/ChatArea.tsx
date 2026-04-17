@@ -1,8 +1,50 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import { Settings, Bot } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import BuildModeFS from './BuildModeFS';
+
+// Memoized bubble — only re-renders when its own message object changes
+const MemoMessageBubble = memo(MessageBubble);
+
+// StreamingBubble writes directly to the DOM — zero React re-renders during streaming
+function StreamingBubble({ streamingContentRef, modelDisplayName, modelId }: {
+  streamingContentRef: React.MutableRefObject<string>;
+  modelDisplayName: string;
+  modelId: string;
+}) {
+  const containerRef = useRef<HTMLParagraphElement>(null);
+  const displayedRef = useRef('');
+  const rafRef = useRef<number | null>(null);
+  const CHARS_PER_FRAME = 24;
+
+  useEffect(() => {
+    const trickle = () => {
+      const target = streamingContentRef.current;
+      const cur = displayedRef.current;
+      if (cur.length < target.length) {
+        const next = target.slice(0, cur.length + CHARS_PER_FRAME);
+        displayedRef.current = next;
+        if (containerRef.current) containerRef.current.textContent = next;
+      }
+      rafRef.current = requestAnimationFrame(trickle);
+    };
+    rafRef.current = requestAnimationFrame(trickle);
+    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="flex gap-3 px-8 py-2 max-w-4xl mx-auto w-full">
+      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0 mt-0.5">
+        <Bot size={13} className="text-white dark:text-black" />
+      </div>
+      <div className="flex-1 min-w-0 pt-1">
+        <p ref={containerRef} className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words" />
+        <span className="inline-block w-2 h-2 rounded-full bg-current align-middle ml-0.5 animate-pulse" />
+      </div>
+    </div>
+  );
+}
 import type { Conversation } from '../types';
 
 interface Model {
@@ -18,6 +60,7 @@ interface ChatAreaProps {
   conversation: Conversation | null;
   isGenerating: boolean;
   streamingContent: string;
+  streamingContentRef: React.MutableRefObject<string>;
   allModels: Model[];
   onSend: (content: string, images: string[]) => void;
   onModelChange: (modelId: string) => void;
@@ -56,6 +99,7 @@ export default function ChatArea({
   conversation,
   isGenerating,
   streamingContent,
+  streamingContentRef,
   allModels,
   onSend,
   onModelChange,
@@ -88,43 +132,6 @@ export default function ChatArea({
   const prevConvIdRef = useRef<string | null>(null);
   const [showFS, setShowFS] = useState(false);
 
-  // Trickle buffer — drips streamingContent out at a controlled rate so large
-  // chunks don't cause a single-frame content jump.
-  const [displayContent, setDisplayContent] = useState('');
-  const displayContentRef = useRef('');
-  const streamingContentRef = useRef('');
-  const trickleRafRef = useRef<number | null>(null);
-
-  streamingContentRef.current = streamingContent;
-
-  const CHARS_PER_FRAME = 12; // ~720 chars/sec at 60fps — fast but smooth
-
-  const trickle = () => {
-    const target = streamingContentRef.current;
-    const current = displayContentRef.current;
-    if (current.length >= target.length) {
-      trickleRafRef.current = null;
-      return;
-    }
-    const next = target.slice(0, current.length + CHARS_PER_FRAME);
-    displayContentRef.current = next;
-    setDisplayContent(next);
-    trickleRafRef.current = requestAnimationFrame(trickle);
-  };
-
-  useEffect(() => {
-    if (!streamingContent) {
-      // Generation ended — flush remaining immediately
-      displayContentRef.current = '';
-      setDisplayContent('');
-      if (trickleRafRef.current !== null) { cancelAnimationFrame(trickleRafRef.current); trickleRafRef.current = null; }
-      return;
-    }
-    if (trickleRafRef.current === null) {
-      trickleRafRef.current = requestAnimationFrame(trickle);
-    }
-  }, [streamingContent]);
-
   // Eased scroll — 12% of remaining per frame, feels smooth during streaming
   const easeToBottom = () => {
     const el = scrollContainerRef.current;
@@ -153,12 +160,12 @@ export default function ChatArea({
     scrollRafRef.current = requestAnimationFrame(easeToBottom);
   }, [conversation?.messages.length]);
 
-  // Trickle output grows → keep ease loop alive
+  // Streaming → keep ease loop alive
   useEffect(() => {
-    if (!displayContent) return;
+    if (!streamingContent) return;
     if (scrollRafRef.current !== null) return;
     scrollRafRef.current = requestAnimationFrame(easeToBottom);
-  }, [displayContent]);
+  }, [streamingContent]);
 
   const selectedModelId = conversation?.modelId || defaultModelId;
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
@@ -254,7 +261,7 @@ export default function ChatArea({
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto py-6">
         <div className="overflow-x-hidden">
           {conversation.messages.map((msg, idx) => (
-            <MessageBubble
+            <MemoMessageBubble
               key={msg.id}
               message={msg}
               modelName={msg.role === 'assistant' ? modelDisplayName : undefined}
@@ -269,11 +276,10 @@ export default function ChatArea({
 
           {/* Streaming */}
           {isGenerating && streamingContent && (
-            <MessageBubble
-              message={{ id: 'streaming', role: 'assistant', content: displayContent, timestamp: Date.now() }}
-              modelName={modelDisplayName}
+            <StreamingBubble
+              streamingContentRef={streamingContentRef}
+              modelDisplayName={modelDisplayName}
               modelId={modelId}
-              isStreaming
             />
           )}
 

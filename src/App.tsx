@@ -8,6 +8,8 @@ import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import type { Panel } from './types';
 
+const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
+
 export default function App() {
   const store = useAppStore();
   const [panel, setPanel] = useState<Panel>('chat');
@@ -22,6 +24,17 @@ export default function App() {
     localStorage.setItem('notfirsttime', 'true');
     setShowWelcome(false);
   };
+
+  // Set default window size when running inside Tauri
+  useEffect(() => {
+    if (!isTauri()) return;
+    Promise.all([
+      import('@tauri-apps/api/window'),
+      import('@tauri-apps/api/dpi'),
+    ]).then(([{ getCurrentWindow }, { LogicalSize }]) => {
+      getCurrentWindow().setSize(new LogicalSize(1280, 820)).catch(() => {});
+    }).catch(() => {});
+  }, []);
 
   const toggleTheme = () => {
     const themes = ['light', 'dark', 'system'] as const;
@@ -339,6 +352,7 @@ export default function App() {
             conversation={store.activeConversation}
             isGenerating={store.isGenerating}
             streamingContent={store.streamingContent}
+            streamingContentRef={store.streamingContentRef}
             allModels={store.allProviderModels}
             onSend={handleSend}
             onModelChange={handleModelChange}

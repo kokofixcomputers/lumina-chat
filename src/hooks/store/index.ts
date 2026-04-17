@@ -38,12 +38,12 @@ export function useAppStore() {
     addMessage, setConversations, updateProvider,
     generateConversationTitle, generateFollowUps, setIsGenerating,
   });
-  const { streamingContent, abortController, stopGeneration, sendMessage } = sendSlice;
+  const { streamingContent, streamingContentRef, abortController, stopGeneration, sendMessage } = sendSlice;
 
   return {
     // state
     conversations, activeConvId, activeConversation,
-    settings, isGenerating, streamingContent, allProviderModels,
+    settings, isGenerating, streamingContent, streamingContentRef, allProviderModels,
     storageQuotaExceeded,
     // conversation actions
     setActiveConvId, newConversation, deleteConversation, updateConversationTitle,

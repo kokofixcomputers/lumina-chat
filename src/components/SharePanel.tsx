@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Share2, Link, Eye, EyeOff, Trash2, Upload, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Share2, Link, Eye, EyeOff, Trash2, Upload, Copy, Check, ExternalLink } from 'lucide-react';
 import type { Conversation } from '../types';
 
 interface SharePanelProps {
   conversation: Conversation | null;
   onShare: (options: ShareOptions) => Promise<void>;
+  onUnshare?: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -13,12 +14,14 @@ interface ShareOptions {
   expiryDays: number;
 }
 
-export default function SharePanel({ conversation, onShare, onClose }: SharePanelProps) {
+export default function SharePanel({ conversation, onShare, onUnshare, onClose }: SharePanelProps) {
   const [includeAttachments, setIncludeAttachments] = useState(true);
   const [expiryDays, setExpiryDays] = useState(7);
   const [isSharing, setIsSharing] = useState(false);
+  const [isUnsharing, setIsUnsharing] = useState(false);
   const [shareResult, setShareResult] = useState<{ code: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
 
   const existingShare = conversation?.shareInfo;
 
@@ -60,6 +63,53 @@ export default function SharePanel({ conversation, onShare, onClose }: SharePane
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       console.error('Failed to copy:', error);
+    }
+  };
+
+  const handleCopyUrl = async () => {
+    if (!shareResult) return;
+    
+    try {
+      const shareUrl = `${window.location.origin}?view=${shareResult.code}`;
+      await navigator.clipboard.writeText(shareUrl);
+      setUrlCopied(true);
+      setTimeout(() => setUrlCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+    }
+  };
+
+  const shareUrl = shareResult ? `${window.location.origin}?view=${shareResult.code}` : '';
+
+  const handleUnshare = async () => {
+    if (!shareResult) return;
+    
+    setIsUnsharing(true);
+    try {
+      const response = await fetch(`https://my-ai-chat.kokofixcomputers.workers.dev/share?code=${shareResult.code}`, {
+        method: 'DELETE'
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Clear share info from the conversation
+        if (conversation) {
+          // Call parent unshare handler if available
+          if (onUnshare) {
+            await onUnshare();
+          }
+          // Clear local state
+          setShareResult(null);
+        }
+      } else {
+        throw new Error(result.error || 'Failed to unshare conversation');
+      }
+    } catch (error) {
+      console.error('Unshare failed:', error);
+      alert('Failed to unshare conversation. Please try again.');
+    } finally {
+      setIsUnsharing(false);
     }
   };
 
@@ -148,7 +198,7 @@ export default function SharePanel({ conversation, onShare, onClose }: SharePane
                       className={`px-3 py-2 rounded-lg text-sm transition-colors ${
                         expiryDays === option.value
                           ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
-                          : 'bg-[rgb(var(--bg))] text-[rgb(var(--text))] border border-[rgb(var(--border))] hover:bg-[rgb(var(--muted))]'
+                          : 'bg-[rgb(var(--bg))] text-[rgb(var(--text))] border border-[rgb(var(--border))] hover:bg-[rgb(var(--border))]/50'
                       }`}
                     >
                       {option.label}
@@ -203,10 +253,32 @@ export default function SharePanel({ conversation, onShare, onClose }: SharePane
                 </p>
               </div>
 
+              <div className="bg-[rgb(var(--panel))] rounded-xl p-4 border border-[rgb(var(--border))]">
+                <div className="flex items-center gap-2 mb-3">
+                  <ExternalLink size={16} className="text-[rgb(var(--accent))]" />
+                  <span className="font-medium text-[rgb(var(--text))]">Share URL</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 bg-[rgb(var(--bg))] rounded-lg text-[rgb(var(--text))] font-mono text-sm border border-[rgb(var(--border))] break-all">
+                    {shareUrl}
+                  </code>
+                  <button
+                    onClick={handleCopyUrl}
+                    className="btn-icon"
+                    title="Copy URL"
+                  >
+                    {urlCopied ? <Check size={16} /> : <Copy size={16} />}
+                  </button>
+                </div>
+                <p className="text-xs text-[rgb(var(--muted))] mt-2">
+                  Direct link for viewing the shared conversation
+                </p>
+              </div>
+
               <div className="bg-[rgb(var(--accent))]/10 rounded-xl p-4 border border-[rgb(var(--accent))]/20">
                 <p className="text-sm text-[rgb(var(--text))]">
-                  Anyone with this code can view this conversation until it expires. 
-                  Share this code via messaging apps, email, or any other method.
+                  Anyone with this code or URL can view this conversation until it expires. 
+                  Share via messaging apps, email, or any other method.
                 </p>
               </div>
 
@@ -226,14 +298,21 @@ export default function SharePanel({ conversation, onShare, onClose }: SharePane
                   Update Share
                 </button>
                 <button
-                  onClick={async () => {
-                    // TODO: Implement unshare functionality
-                    setShareResult(null);
-                  }}
-                  className="flex-1 btn-secondary flex items-center justify-center gap-2 text-red-500 hover:text-red-600"
+                  onClick={handleUnshare}
+                  disabled={isUnsharing}
+                  className="flex-1 btn-secondary flex items-center justify-center gap-2 text-red-500 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Trash2 size={16} />
-                  Unshare
+                  {isUnsharing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" />
+                      Unsharing...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={16} />
+                      Unshare
+                    </>
+                  )}
                 </button>
               </div>
             </div>

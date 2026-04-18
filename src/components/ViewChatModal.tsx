@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Link, Download, Calendar, AlertCircle, Loader2 } from 'lucide-react';
 import type { Conversation } from '../types';
 
@@ -14,6 +14,21 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [shareInfo, setShareInfo] = useState<{ expiresAt: string } | null>(null);
+
+  // Handle URL parameter for direct viewing
+  useEffect(() => {
+    if (isOpen) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewCode = urlParams.get('view');
+      
+      if (viewCode && !code) {
+        setCode(viewCode);
+        handleLoadChat();
+        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+  }, [isOpen, code]);
 
   if (!isOpen) return null;
 

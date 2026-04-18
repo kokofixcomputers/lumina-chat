@@ -29,6 +29,18 @@ export default function App() {
     setShowWelcome(false);
   };
 
+  // Handle URL parameters for direct viewing
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewCode = urlParams.get('view');
+    
+    if (viewCode) {
+      // Auto-open ViewChatModal and load the shared conversation
+      setShowViewChatModal(true);
+      // We'll handle the actual loading in ViewChatModal
+    }
+  }, []);
+
   // Set default window size when running inside Tauri
   useEffect(() => {
     if (!isTauri()) return;
@@ -255,6 +267,18 @@ export default function App() {
     // Add the complete conversation to the store
     store.setConversations([newConv, ...store.conversations]);
     store.setActiveConvId(newConv.id);
+  };
+
+  const handleUnshare = async () => {
+    if (!store.activeConversation) return;
+    
+    // Remove share info from the conversation
+    const updatedConversations = store.conversations.map(conv => 
+      conv.id === store.activeConversation?.id 
+        ? { ...conv, shareInfo: undefined }
+        : conv
+    );
+    store.setConversations(updatedConversations);
   };
 
   const openProviders = () => setPanel('settings');
@@ -515,6 +539,7 @@ export default function App() {
             <SharePanel
               conversation={store.activeConversation}
               onShare={handleShare}
+              onUnshare={handleUnshare}
               onClose={() => setPanel('chat')}
             />
           )}

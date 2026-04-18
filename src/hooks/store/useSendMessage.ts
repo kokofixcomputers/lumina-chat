@@ -179,7 +179,15 @@ export function useSendMessage({
 
     for (const m of limitedMessages) {
       if (m.role === 'tool') {
-        apiMessages.push({ role: 'tool', tool_call_id: m.tool_call_id || '', content: m.content });
+        if (isAnthropicFormat) {
+          // Claude requires tool results as role: "user" with a tool_result content block
+          apiMessages.push({
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: m.tool_call_id || '', content: m.content }],
+          });
+        } else {
+          apiMessages.push({ role: 'tool', tool_call_id: m.tool_call_id || '', content: m.content });
+        }
         responsesApiMessages.push({ type: 'function_call_output', call_id: m.tool_call_id || '', output: m.content } as any);
         continue;
       }
@@ -195,7 +203,19 @@ export function useSendMessage({
         else responsesApiMessages.push({ type: 'message', role: m.role, content: m.content });
       } else {
         const msg: any = { role: m.role, content: m.content };
-        if (m.tool_calls) msg.tool_calls = m.tool_calls;
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          if (isAnthropicFormat) {
+            // Claude: tool calls go in content array, not tool_calls field
+            msg.content = m.tool_calls.map((tc: any) => ({
+              type: 'tool_use',
+              id: tc.id,
+              name: tc.function.name,
+              input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })(),
+            }));
+          } else {
+            msg.tool_calls = m.tool_calls;  // OpenAI style
+          }
+        }
         apiMessages.push(msg);
         responsesApiMessages.push({ type: 'message', role: m.role, content: m.content });
       }

@@ -192,13 +192,17 @@ export function IntegratedProviderCard({
       );
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
-      const models: ModelConfig[] = (data.data || []).map((m: any) => ({
-        id: m.id,
-        name: m.id,
-        contextLength: m.context_length || 4096,
-        supportsImages: false,
-        supportsStreaming: true,
-      }));
+      const models: ModelConfig[] = (data.data || []).map((m: any) => {
+        // Handle different context length field names from various providers
+        const contextLength = m.max_context_length || m.context_length || m.max_tokens || 4096;
+        return {
+          id: m.id,
+          name: m.id,
+          contextLength,
+          supportsImages: false,
+          supportsStreaming: true,
+        };
+      });
       onUpdate({ models });
     } catch (err) {
       onUpdate({ models: template.defaultModels });
@@ -387,13 +391,17 @@ export function ProviderCard({
       );
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
-      const models: ModelConfig[] = (data.data || []).map((m: any) => ({
-        id: m.id,
-        name: m.id,
-        contextLength: m.context_length || 4096,
-        supportsImages: false,
-        supportsStreaming: true,
-      }));
+      const models: ModelConfig[] = (data.data || []).map((m: any) => {
+        // Handle different context length field names from various providers
+        const contextLength = m.max_context_length || m.context_length || m.max_tokens || 4096;
+        return {
+          id: m.id,
+          name: m.id,
+          contextLength,
+          supportsImages: false,
+          supportsStreaming: true,
+        };
+      });
       onUpdate({ models });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to fetch models');

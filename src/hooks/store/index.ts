@@ -47,7 +47,7 @@ export function useAppStore() {
     storageQuotaExceeded,
     // conversation actions
     setActiveConvId, newConversation, deleteConversation, updateConversationTitle,
-    setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,
+    setConversations, setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,
     updateMessageVersions, setConversationMode, setConversationAttachments,
     setBuildMode, setConversationDevEnvSession,
     // settings actions

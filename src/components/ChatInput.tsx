@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Send, Paperclip, X, Loader2,
   Smile, Image as ImageIcon, Table, LayoutGrid,
@@ -7,6 +7,12 @@ import {
   Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, ImageIcon as ImgOut, Video
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
+import { 
+  calculateConversationTokens, 
+  getContextUsagePercentage, 
+  getContextStatusColor 
+} from '../utils/context';
+import type { Message } from '../types';
 
 interface Model {
   fullId: string;
@@ -42,6 +48,7 @@ interface ChatInputProps {
   buildMode?: boolean;
   onBuildModeChange?: (on: boolean) => void;
   onOpenBuildFS?: () => void;
+  conversation?: { messages: Message[] };
 }
 
 // Color per provider
@@ -83,6 +90,64 @@ function formatCtx(n?: number) {
   return String(n);
 }
 
+function ContextIndicator({ 
+  usedTokens, 
+  maxTokens 
+}: { 
+  usedTokens: number; 
+  maxTokens?: number; 
+}) {
+  if (!maxTokens) return null;
+  
+  const percentage = getContextUsagePercentage(usedTokens, maxTokens);
+  const color = getContextStatusColor(percentage);
+  const strokeWidth = 1.5;
+  const radius = 6;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  
+  return (
+    <div className="relative w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
+      <svg 
+        width={14} 
+        height={14} 
+        className="transform -rotate-90"
+        style={{ overflow: 'visible' }}
+      >
+        {/* Background circle */}
+        <circle
+          cx={7}
+          cy={7}
+          r={radius}
+          stroke="rgb(var(--border))"
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        {/* Progress circle */}
+        <circle
+          cx={7}
+          cy={7}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          className="transition-all duration-300 ease-out"
+        />
+      </svg>
+      {/* Center dot when nearly full */}
+      {percentage >= 95 && (
+        <div 
+          className="absolute w-1 h-1 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      )}
+    </div>
+  );
+}
+
 interface QandaQuestion {
   question: string;
   suggestedAnswers: string[];
@@ -113,6 +178,7 @@ export default function ChatInput({
   buildMode = false,
   onBuildModeChange,
   onOpenBuildFS,
+  conversation,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -539,6 +605,13 @@ export default function ChatInput({
   const displayModelName = prettifyModelNames ? modelInfo.displayName : modelId;
   const ModelIcon = typeof modelInfo.icon === 'string' ? null : modelInfo.icon;
 
+  // Calculate context usage (memoized to prevent unnecessary recalculations)
+  const { usedTokens, maxTokens } = useMemo(() => {
+    const used = conversation ? calculateConversationTokens(conversation.messages) : 0;
+    const max = currentModel?.contextLength;
+    return { usedTokens: used, maxTokens: max };
+  }, [conversation?.messages, currentModel?.contextLength]);
+
   // Group filtered models by provider
   const filteredModels = modelSearch.trim()
     ? allModels.filter(m =>
@@ -740,6 +813,12 @@ export default function ChatInput({
               <ChevronDown size={11} />
             </button>
           )}
+          {/* Separator divider */}
+          <div className="w-px h-4 bg-[rgb(var(--border))] mx-1" />
+          {/* Context indicator */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <ContextIndicator usedTokens={usedTokens} maxTokens={maxTokens} />
+          </div>
           <button
             ref={modelBtnRef}
             onClick={openModelPicker}

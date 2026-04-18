@@ -210,6 +210,7 @@ export default function ChatArea({
               onTranscribeAudio={onTranscribeAudio}
               buildMode={homeBuildMode}
               onBuildModeChange={onBuildModeChange}
+              conversation={{ messages: [] }}
             />
           </div>
 
@@ -327,6 +328,7 @@ export default function ChatArea({
         buildMode={conversation.buildMode}
         onBuildModeChange={onBuildModeChange ? (on) => onBuildModeChange(on) : undefined}
         onOpenBuildFS={() => setShowFS(s => !s)}
+        conversation={conversation}
       />
       </div>
       {showFS && conversation.id && (

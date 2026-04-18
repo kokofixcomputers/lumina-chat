@@ -6,6 +6,7 @@ import SettingsPanel from './components/SettingsPanel';
 import WelcomeScreen from './components/WelcomeScreen';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
+import { mergeConversations } from './utils/mergeConversations';
 import type { Panel } from './types';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
@@ -256,23 +257,28 @@ export default function App() {
                 if (key === 'settings' && str !== localStorage.getItem('lumina_settings')) {
                   localStorage.setItem('lumina_settings', str);
                   lastPushedSettings = str;
+                  store.updateSettings(decrypted);
                   changed = true;
                 }
                 if (key === 'conversations' && str !== localStorage.getItem('lumina_conversations')) {
                   localStorage.setItem('lumina_conversations', str);
                   lastPushedConversations = str;
+                  // Merge conversations instead of overwriting
+                  const { mergeConversationsSafely } = await import('./utils/syncUtils');
+                  const mergedConversations = mergeConversationsSafely(store.conversations, decrypted);
+                  store.setConversations(mergedConversations);
                   changed = true;
                 }
               }
-              if (changed) { window.location.reload(); return; }
-              // Nothing from server — push our local state up
+              // Changes applied live via store methods
+              // Nothing from server - push our local state up
               await push('settings', JSON.parse(lastPushedSettings || '{}'));
               await push('conversations', JSON.parse(lastPushedConversations || '[]'));
               ignoreNextUpdate = true;
               setTimeout(() => { ignoreNextUpdate = false; }, 2000);
             }
 
-            // Any update from another client — overwrite local, reload
+            // Any update from another client - merge intelligently
             if (msg.type === 'update') {
               if (ignoreNextUpdate) return;
               const decrypted = decryptData(msg.value, cloudSync.password);
@@ -281,12 +287,15 @@ export default function App() {
               if (msg.key === 'settings') {
                 localStorage.setItem('lumina_settings', str);
                 lastPushedSettings = str;
-                window.location.reload();
+                store.updateSettings(decrypted);
               }
               if (msg.key === 'conversations') {
                 localStorage.setItem('lumina_conversations', str);
                 lastPushedConversations = str;
-                window.location.reload();
+                // Merge conversations instead of overwriting
+                const { mergeConversationsSafely } = await import('./utils/syncUtils');
+                const mergedConversations = mergeConversationsSafely(store.conversations, decrypted);
+                store.setConversations(mergedConversations);
               }
             }
           } catch { /* ignore */ }
@@ -331,67 +340,70 @@ export default function App() {
     }
 
     // ── Old System: HTTP polling ───────────────────────────────────────────────
-    setSyncStatus('synced');
-    let lastConversations = localStorage.getItem('lumina_conversations');
-    let lastSettings = localStorage.getItem('lumina_settings');
-    let lastServerUpdate = parseInt(localStorage.getItem('lumina_last_server_update') || '0');
+    if (syncSystem === 'old') {
+      setSyncStatus('synced');
+      let lastConversations = localStorage.getItem('lumina_conversations');
+      let lastSettings = localStorage.getItem('lumina_settings');
+      let lastServerUpdate = parseInt(localStorage.getItem('lumina_last_server_update') || '0');
 
-    const syncWithServer = async () => {
-      try {
-        const { encryptData, decryptData } = await import('./utils/encryption');
-        const getResponse = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'get', email: cloudSync.email })
-        });
-        const getResult = await getResponse.json();
-        if (getResult.exists && getResult.updatedAt) {
-          const serverUpdateTime = new Date(getResult.updatedAt).getTime();
-          if (serverUpdateTime > lastServerUpdate + 5000) {
-            const decrypted = decryptData(getResult.data, cloudSync.password);
-            if (decrypted) {
-              localStorage.setItem('lumina_settings', JSON.stringify(decrypted.settings));
-              localStorage.setItem('lumina_conversations', JSON.stringify(decrypted.conversations));
-              localStorage.setItem('lumina_last_server_update', serverUpdateTime.toString());
-              window.location.reload();
-              return;
-            }
-          }
-        }
-        const currentConversations = localStorage.getItem('lumina_conversations');
-        const currentSettings = localStorage.getItem('lumina_settings');
-        if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
-          lastConversations = currentConversations;
-          lastSettings = currentSettings;
-          setSyncStatus('syncing');
-          const settings = JSON.parse(currentSettings || '{}');
-          const conversations = JSON.parse(currentConversations || '[]');
-          const encrypted = encryptData({ settings, conversations }, cloudSync.password);
-          const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
+      const syncWithServer = async () => {
+        try {
+          const { encryptData, decryptData } = await import('./utils/encryption');
+          const getResponse = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'save', email: cloudSync.email, data: encrypted })
+            body: JSON.stringify({ action: 'get', email: cloudSync.email })
           });
-          const result = await response.json();
-          if (result.success) {
-            setSyncStatus('synced');
-            lastServerUpdate = Date.now();
-            localStorage.setItem('lumina_last_server_update', lastServerUpdate.toString());
-          } else {
-            setSyncStatus('error');
+          const getResult = await getResponse.json();
+          if (getResult.exists && getResult.updatedAt) {
+            const serverUpdateTime = new Date(getResult.updatedAt).getTime();
+            if (serverUpdateTime > lastServerUpdate + 5000) {
+              const decrypted = decryptData(getResult.data, cloudSync.password);
+              if (decrypted) {
+                localStorage.setItem('lumina_settings', JSON.stringify(decrypted.settings));
+                localStorage.setItem('lumina_conversations', JSON.stringify(decrypted.conversations));
+                localStorage.setItem('lumina_last_server_update', serverUpdateTime.toString());
+                store.updateSettings(decrypted.settings);
+                store.setConversations(decrypted.conversations);
+                return;
+              }
+            }
           }
-        } else {
-          setSyncStatus('synced');
+          const currentConversations = localStorage.getItem('lumina_conversations');
+          const currentSettings = localStorage.getItem('lumina_settings');
+          if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
+            lastConversations = currentConversations;
+            lastSettings = currentSettings;
+            setSyncStatus('syncing');
+            const settings = JSON.parse(currentSettings || '{}');
+            const conversations = JSON.parse(currentConversations || '[]');
+            const encrypted = encryptData({ settings, conversations }, cloudSync.password);
+            const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'save', email: cloudSync.email, data: encrypted })
+            });
+            const result = await response.json();
+            if (result.success) {
+              setSyncStatus('synced');
+              lastServerUpdate = Date.now();
+              localStorage.setItem('lumina_last_server_update', lastServerUpdate.toString());
+            } else {
+              setSyncStatus('error');
+            }
+          } else {
+            setSyncStatus('synced');
+          }
+        } catch {
+          setSyncStatus('error');
         }
-      } catch {
-        setSyncStatus('error');
-      }
-    };
+      };
 
-    const interval = setInterval(syncWithServer, 10000);
-    syncWithServer();
-    return () => clearInterval(interval);
-  }, [store.settings.cloudSync]);
+      const interval = setInterval(syncWithServer, 10000);
+      syncWithServer();
+      return () => clearInterval(interval);
+    }
+  }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.syncSystem, store.settings.cloudSync?.email, store.settings.cloudSync?.password]);
 
   return (
     <>

@@ -303,9 +303,9 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
         <SliderField
           label="Max Tokens"
           value={ms.maxTokens}
-          min={256} max={8192} step={256}
+          min={0} max={8000} step={256}
           onChange={v => onUpdateModelSettings({ maxTokens: v })}
-          hint="Maximum tokens in the response"
+          hint="Maximum tokens in the response (0 = unlimited)"
         />
         <SliderField
           label="Top P"

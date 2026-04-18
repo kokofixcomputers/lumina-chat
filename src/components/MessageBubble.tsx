@@ -301,16 +301,59 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
                       <p className="text-[13px] font-medium text-[rgb(var(--text))] truncate">{artifact.original_path}</p>
                       <p className="text-[11px] text-[rgb(var(--muted))] mt-0.5">{artifact.message}</p>
                     </div>
-                    <a
-                      href={artifact.direct_download}
-                      download
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={async () => {
+                        const url = artifact.direct_download;
+                        const filename = artifact.original_path.split('/').pop() || artifact.original_path;
+
+                        // Tauri: use native save dialog
+                        if ((window as any).__TAURI_INTERNALS__) {
+                          try {
+                            const { save } = await import('@tauri-apps/plugin-dialog');
+                            const { writeFile } = await import('@tauri-apps/plugin-fs');
+                            const savePath = await save({ defaultPath: filename });
+                            if (!savePath) return;
+                            // Convert data URL or fetch remote to Uint8Array
+                            let bytes: Uint8Array;
+                            if (url.startsWith('data:')) {
+                              const base64 = url.split(',')[1];
+                              const binary = atob(base64);
+                              bytes = new Uint8Array(binary.length);
+                              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                            } else {
+                              const res = await fetch(url);
+                              bytes = new Uint8Array(await res.arrayBuffer());
+                            }
+                            await writeFile(savePath, bytes);
+                            return;
+                          } catch { /* fall through to browser download */ }
+                        }
+
+                        // Browser fallback
+                        if (url.startsWith('data:')) {
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = filename;
+                          a.click();
+                        } else {
+                          fetch(url)
+                            .then(r => r.blob())
+                            .then(blob => {
+                              const blobUrl = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = blobUrl;
+                              a.download = filename;
+                              a.click();
+                              URL.revokeObjectURL(blobUrl);
+                            })
+                            .catch(() => window.open(url, '_blank'));
+                        }
+                      }}
                       className="btn-secondary text-xs py-1.5 px-3 gap-1.5 shrink-0"
                     >
                       <Download size={12} />
                       Download
-                    </a>
+                    </button>
                   </div>
                 </div>
               ))}

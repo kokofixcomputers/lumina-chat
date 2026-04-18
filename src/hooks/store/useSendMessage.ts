@@ -4,6 +4,7 @@ import type { Conversation, Message, AppSettings, ModelProvider, ModelConfig } f
 import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../../tools';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { resolveFormat, applyVars, getByPath } from '../../components/ProvidersPanel';
+import { writeToVfs } from '../../tools/buildFs';
 
 interface SendMessageOptions {
   conversations: Conversation[];
@@ -100,6 +101,39 @@ export function useSendMessage({
     // ── resolve format ─────────────────────────────────────────────────────────
     const activeApiFormat = resolveFormat(settings.apiFormats || [], provider.apiFormatId);
     const buildMode = !!conv.buildMode;
+    const isAnthropicFormat = activeApiFormat?.id === 'anthropic';
+
+    // Download a file from Anthropic Files API and return as data URL
+    const downloadAnthropicFile = async (fileId: string): Promise<{ dataUrl: string; filename: string } | null> => {
+      try {
+        const baseUrl = provider.baseUrl.replace(/\/$/, '');
+        const authHeaders = { 'x-api-key': provider.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-beta': 'files-api-2025-04-14' };
+
+        // Get filename from metadata
+        const metaRes = await fetchWithProxyFallback(
+          `${baseUrl}/files/${fileId}`,
+          { headers: authHeaders },
+          !!provider.useProxy, undefined, provider.proxyMode,
+        );
+        const meta = metaRes.ok ? await metaRes.json() : {};
+        const filename: string = meta.filename || fileId;
+
+        // Download file content
+        const contentRes = await fetchWithProxyFallback(
+          `${baseUrl}/files/${fileId}/content`,
+          { headers: authHeaders },
+          !!provider.useProxy, undefined, provider.proxyMode,
+        );
+        if (!contentRes.ok) return null;
+        const blob = await contentRes.blob();
+        return new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ dataUrl: reader.result as string, filename });
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch { return null; }
+    };
 
     // ── fetch with retry ───────────────────────────────────────────────────────
     const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
@@ -246,6 +280,10 @@ export function useSendMessage({
           const call = toolCallsMap.get(parsed.index);
           if (call) call.function.arguments += parsed.delta.partial_json;
         }
+        // Anthropic code execution output text
+        if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
+          delta = parsed.delta.text;
+        }
       } catch (e) {
         if (e instanceof Error && !e.message.includes('JSON')) throw e;
       }
@@ -261,11 +299,12 @@ export function useSendMessage({
     };
 
     // ── stream reader ──────────────────────────────────────────────────────────
-    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[] }> => {
+    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[]; codeExecFileIds: string[] }> => {
       const decoder = new TextDecoder();
       let buffer = '';
       let assistantContent = '';
       const toolCallsMap = new Map<number | string, any>();
+      const codeExecFileIds: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -278,11 +317,26 @@ export function useSendMessage({
           if (!line.startsWith('data:')) continue;
           const raw = decodeHtml(line.slice(line.indexOf('data:') + 6).trim());
           if (isSentinel(raw)) continue;
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'bash_code_execution_tool_result') {
+              // Actual structure: content_block.content.content[].file_id
+              const resultObj = parsed.content_block?.content;
+              const items: any[] = Array.isArray(resultObj)
+                ? resultObj
+                : Array.isArray(resultObj?.content)
+                  ? resultObj.content
+                  : [];
+              for (const item of items) {
+                if (item.file_id) codeExecFileIds.push(item.file_id);
+              }
+            }
+          } catch { /* ignore */ }
           const { delta } = parseSseChunk(raw, toolCallsMap);
           if (delta) { assistantContent += delta; updateStreaming(assistantContent); tokenCount++; }
         }
       }
-      return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()) };
+      return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()), codeExecFileIds };
     };
 
     // ── responses API stream reader ────────────────────────────────────────────
@@ -450,11 +504,69 @@ export function useSendMessage({
         const result = await readChatStream(reader);
         assistantContent = result.content;
         toolCalls = result.toolCalls;
+        // Download any files generated by code execution
+        if (isAnthropicFormat && buildMode && result.codeExecFileIds.length > 0) {
+          for (const fileId of result.codeExecFileIds) {
+            const downloaded = await downloadAnthropicFile(fileId);
+            if (downloaded) {
+              const isImage = downloaded.dataUrl.startsWith('data:image/');
+              // Save into VFS so it shows in the Files tab
+              writeToVfs(convId, downloaded.filename, downloaded.dataUrl);
+              addMessage(convId, {
+                id: uuidv4(), role: 'tool', content: downloaded.filename,
+                timestamp: Date.now(), tool_name: 'code_execution', tool_status: 'success',
+                images: isImage ? [downloaded.dataUrl] : undefined,
+                artifacts: !isImage ? [{ url: downloaded.dataUrl, direct_download: downloaded.dataUrl, original_path: downloaded.filename, file_hash: fileId, message: 'Generated by code execution' }] : undefined,
+              });
+            }
+          }
+        }
       } else {
         const data = await response.json();
         assistantContent = activeApiFormat.responseTextPath ? getByPath(data, activeApiFormat.responseTextPath) : (data.choices?.[0]?.message?.content || '');
         toolCalls = data.choices?.[0]?.message?.tool_calls || [];
         tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
+
+        // Handle Anthropic code execution results
+        if (isAnthropicFormat && buildMode && Array.isArray(data.content)) {
+          for (const block of data.content) {
+            if (block.type === 'bash_code_execution_tool_result' || block.type === 'tool_result') {
+              const resultContent = Array.isArray(block.content) ? block.content : [];
+              for (const item of resultContent) {
+                // Collect file IDs from code execution output
+                if (item.type === 'file' && item.file_id) {
+                  const downloaded = await downloadAnthropicFile(item.file_id);
+                  if (downloaded) {
+                    const execMsgId = uuidv4();
+                    const isImage = downloaded.dataUrl.startsWith('data:image/');
+                    // Save into VFS so it shows in the Files tab
+                    writeToVfs(convId, downloaded.filename, downloaded.dataUrl);
+                    addMessage(convId, {
+                      id: execMsgId,
+                      role: 'tool',
+                      content: downloaded.filename,
+                      timestamp: Date.now(),
+                      tool_name: 'code_execution',
+                      tool_status: 'success',
+                      images: isImage ? [downloaded.dataUrl] : undefined,
+                      artifacts: !isImage ? [{
+                        url: downloaded.dataUrl,
+                        direct_download: downloaded.dataUrl,
+                        original_path: downloaded.filename,
+                        file_hash: item.file_id,
+                        message: `Generated by code execution`,
+                      }] : undefined,
+                    });
+                  }
+                }
+                // Capture stdout/stderr as assistant content if no text yet
+                if (item.type === 'text' && item.text && !assistantContent) {
+                  assistantContent = item.text;
+                }
+              }
+            }
+          }
+        }
       }
 
       const endTime = Date.now();
@@ -520,8 +632,30 @@ export function useSendMessage({
       try { Object.assign(headers, JSON.parse(activeApiFormat.extraHeaders)); } catch { /* ignore */ }
       if ((settings as any).serpApiKey) headers['x-serpapi-key'] = (settings as any).serpApiKey;
 
+      const isAnthropic = activeApiFormat?.id === 'anthropic';
+      const useCodeExecution = isAnthropic && buildMode;
+
+      // Inject Anthropic code execution beta header + tool when in build mode
+      if (useCodeExecution) {
+        headers['anthropic-beta'] = 'files-api-2025-04-14';
+      }
+
       const isStreaming = settings.modelSettings.stream;
-      const customBodyStr = !useResponsesApi ? buildCustomBody(isStreaming) : null;
+      let customBodyStr = !useResponsesApi ? buildCustomBody(isStreaming) : null;
+
+      // Inject code_execution tool into Anthropic body
+      if (useCodeExecution && customBodyStr) {
+        try {
+          const parsed = JSON.parse(customBodyStr);
+          const existingTools: any[] = parsed.tools || [];
+          const hasCodeExec = existingTools.some((t: any) => t.type?.startsWith('code_execution'));
+          if (!hasCodeExec) {
+            parsed.tools = [...existingTools, { type: 'code_execution_20260120', name: 'code_execution' }];
+          }
+          customBodyStr = JSON.stringify(parsed);
+        } catch { /* ignore */ }
+      }
+
       const bodyToSend = useResponsesApi ? responsesApiBody : customBodyStr !== null ? JSON.parse(customBodyStr) : requestBody;
 
       const response = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(bodyToSend), signal: controller.signal });

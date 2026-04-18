@@ -1,7 +1,7 @@
 import React from 'react';
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Trash2, Eye, EyeOff, Download, Plus } from 'lucide-react';
-import type { ModelConfig, ModelProvider } from '../../types';
+import type { ModelConfig, ModelProvider, ProviderApiFormat } from '../../types';
 import { getModelInfo } from '../../utils/models';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { BUILTIN_FORMATS, resolveFormat } from '../ProvidersPanel';
@@ -145,15 +145,20 @@ export function IntegratedProviderCard({
   existingProvider,
   onAdd,
   onUpdate,
+  apiFormats = [],
 }: {
   template: IntegratedProviderTemplate;
   existingProvider?: ModelProvider;
   onAdd: () => void;
   onUpdate: (patch: Partial<ModelProvider>) => void;
+  apiFormats?: ProviderApiFormat[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [fetching, setFetching] = useState(false);
+
+  const activeFormat = resolveFormat(apiFormats, existingProvider?.apiFormatId);
+  const allFormats = [...BUILTIN_FORMATS, ...apiFormats];
 
   const buildBaseUrl = () => {
     let url = template.baseUrlTemplate;
@@ -172,11 +177,12 @@ export function IntegratedProviderCard({
 
     setFetching(true);
     try {
-      const modelsUrl = `${baseUrl}/models`;
+      const modelsUrl = `${baseUrl.replace(/\/$/, '')}${activeFormat.modelsPath || '/models'}`;
       const headers: Record<string, string> = {};
-      if (template.requireAuth && existingProvider.apiKey) {
-        headers['Authorization'] = `Bearer ${existingProvider.apiKey}`;
+      if (existingProvider.apiKey) {
+        headers[activeFormat.authHeader] = `${activeFormat.authPrefix}${existingProvider.apiKey}`;
       }
+      try { Object.assign(headers, JSON.parse(activeFormat.extraHeaders)); } catch { /* ignore */ }
       const response = await fetchWithProxyFallback(
         modelsUrl,
         { headers },
@@ -302,6 +308,17 @@ export function IntegratedProviderCard({
             </div>
           ))}
           <br />
+          <div className="form-group mb-0">
+            <label className="form-label text-xs">API Format</label>
+            <select
+              className="input text-sm"
+              value={existingProvider.apiFormatId || 'openai'}
+              onChange={e => onUpdate({ apiFormatId: e.target.value })}
+            >
+              {allFormats.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            <p className="form-help">Controls how requests are structured and authenticated</p>
+          </div>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs text-[rgb(var(--muted))]">Proxy</span>

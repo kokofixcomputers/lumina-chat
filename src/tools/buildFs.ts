@@ -153,3 +153,13 @@ export function getVfs(convId: string): Record<string, string> {
 export function clearVfs(convId: string) {
   sessionStorage.removeItem(`vfs_${convId}`);
 }
+
+/** Write a file directly into the VFS for a specific conversation (e.g. binary files from code execution) */
+export function writeToVfs(convId: string, path: string, content: string) {
+  try {
+    const raw = sessionStorage.getItem(`vfs_${convId}`);
+    const fs: Record<string, string> = raw ? JSON.parse(raw) : {};
+    fs[path] = content;
+    sessionStorage.setItem(`vfs_${convId}`, JSON.stringify(fs));
+  } catch { /* ignore */ }
+}

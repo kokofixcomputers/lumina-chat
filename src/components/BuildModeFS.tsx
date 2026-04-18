@@ -95,7 +95,7 @@ function FileNode({ node, fs, onSelect, selected }: {
       <FileText size={13} className="text-[rgb(var(--muted))] shrink-0" />
       <span className="truncate">{node.name}</span>
       <span className="ml-auto text-[10px] text-[rgb(var(--muted))] shrink-0">
-        {formatBytes(fs[node.path]?.length ?? 0)}
+        {fs[node.path]?.startsWith('data:') ? '📎' : formatBytes(fs[node.path]?.length ?? 0)}
       </span>
     </button>
   );
@@ -107,22 +107,32 @@ function formatBytes(n: number) {
 }
 
 async function downloadZip(fs: Record<string, string>, convId: string) {
-  // Use fflate if available, otherwise fall back to a simple text bundle
   try {
     const { strToU8, zipSync } = await import('fflate');
     const files: Record<string, Uint8Array> = {};
     Object.entries(fs).forEach(([path, content]) => {
-      if (!path.endsWith('/.keep')) {
+      if (path.endsWith('/.keep')) return;
+      if (content.startsWith('data:')) {
+        // Binary file stored as data URL — decode base64
+        try {
+          const base64 = content.split(',')[1];
+          if (base64) {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            files[path] = bytes;
+          }
+        } catch { /* skip corrupt entries */ }
+      } else {
         files[path] = strToU8(content);
       }
     });
     const zipped = zipSync(files);
-    const blob = new Blob([zipped], { type: 'application/zip' });
+    const blob = new Blob([zipped.buffer as ArrayBuffer]);
     triggerDownload(blob, `build-${convId.slice(0, 8)}.zip`);
   } catch {
-    // Fallback: download as a single text file listing
     const lines = Object.entries(fs)
-      .filter(([p]) => !p.endsWith('/.keep'))
+      .filter(([p, c]) => !p.endsWith('/.keep') && !c.startsWith('data:'))
       .map(([path, content]) => `=== ${path} ===\n${content}`)
       .join('\n\n');
     const blob = new Blob([lines], { type: 'text/plain' });
@@ -141,6 +151,14 @@ function triggerDownload(blob: Blob, filename: string) {
 
 function downloadFile(path: string, content: string) {
   const name = path.split('/').pop() ?? path;
+  // If it's a data URL (binary file from code execution), use it directly
+  if (content.startsWith('data:')) {
+    const a = document.createElement('a');
+    a.href = content;
+    a.download = name;
+    a.click();
+    return;
+  }
   const blob = new Blob([content], { type: 'text/plain' });
   triggerDownload(blob, name);
 }
@@ -227,9 +245,19 @@ export default function BuildModeFS({ convId, onClose }: BuildModeFSProps) {
                 </button>
               </div>
             </div>
-            <pre className="flex-1 overflow-auto p-3 text-xs font-mono text-[rgb(var(--text))] bg-[rgb(var(--bg))] whitespace-pre-wrap break-all leading-relaxed">
-              {selectedContent}
-            </pre>
+            {selectedContent.startsWith('data:image/') ? (
+              <div className="flex-1 overflow-auto p-3 bg-[rgb(var(--bg))] flex items-center justify-center">
+                <img src={selectedContent} alt={selected} className="max-w-full max-h-full object-contain rounded" />
+              </div>
+            ) : selectedContent.startsWith('data:') ? (
+              <div className="flex-1 flex items-center justify-center p-4 bg-[rgb(var(--bg))]">
+                <p className="text-xs text-[rgb(var(--muted))] text-center">Binary file — click download to save</p>
+              </div>
+            ) : (
+              <pre className="flex-1 overflow-auto p-3 text-xs font-mono text-[rgb(var(--text))] bg-[rgb(var(--bg))] whitespace-pre-wrap break-all leading-relaxed">
+                {selectedContent}
+              </pre>
+            )}
           </div>
         )}
       </div>

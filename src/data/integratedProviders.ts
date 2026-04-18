@@ -4,6 +4,7 @@ export interface IntegratedProviderTemplate {
   description?: string;
   baseUrlTemplate: string;
   requireAuth: boolean;
+  defaultApiFormatId?: string;
   customFields?: Array<{ name: string; id: string; placeholder?: string; blur?: boolean }>;
   defaultModels: Array<{
     id: string;
@@ -34,6 +35,7 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
     description: 'Claude models via native Anthropic API',
     baseUrlTemplate: 'https://api.anthropic.com/v1',
     requireAuth: true,
+    defaultApiFormatId: 'anthropic',
     defaultModels: [
       { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', contextLength: 200000, supportsImages: true, supportsStreaming: true },
       { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', contextLength: 200000, supportsImages: true, supportsStreaming: true },

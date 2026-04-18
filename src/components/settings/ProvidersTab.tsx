@@ -56,6 +56,7 @@ export default function ProvidersTab({
                 const existing = settings.providers.find(p => p.id === template.id);
                 if (existing) onUpdateProvider(existing.id, patch);
               }}
+              apiFormats={settings.apiFormats || []}
             />
           ))}
         </div>

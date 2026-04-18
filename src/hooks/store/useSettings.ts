@@ -51,7 +51,7 @@ export function useSettings() {
       models: template.defaultModels,
       isIntegrated: true,
       customFieldValues: {},
-      apiFormatId: template.id === 'anthropic' ? 'anthropic' : undefined,
+      apiFormatId: template.defaultApiFormatId,
     };
     setSettings(prev => ({ ...prev, providers: [...prev.providers, newProvider] }));
   }, []);

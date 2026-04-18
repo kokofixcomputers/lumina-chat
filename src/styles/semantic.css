@@ -141,6 +141,11 @@
            transition-colors cursor-pointer;
   }
 
+  .toolbar-btn:disabled {
+    @apply opacity-40 cursor-not-allowed
+           hover:bg-transparent hover:text-[rgb(var(--muted))];
+  }
+
   .send-btn {
     @apply ml-auto w-8 h-8 rounded-full flex items-center justify-center
            bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]

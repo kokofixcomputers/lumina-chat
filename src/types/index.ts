@@ -44,6 +44,11 @@ export interface Conversation {
   devEnvSession?: string;
   hotelSearchKey?: string;
   buildMode?: boolean;
+  shareInfo?: {
+    code: string;
+    expiresAt: string;
+    createdAt: string;
+  };
 }
 
 export interface ModelProvider {

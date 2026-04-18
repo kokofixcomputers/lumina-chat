@@ -86,6 +86,8 @@ interface ChatAreaProps {
   onVersionChange?: (msgId: string, versionIndex: number) => void;
   onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
   onBuildModeChange?: (on: boolean) => void;
+  onOpenBuildFS?: () => void;
+  onOpenShare?: () => void;
   homeBuildMode?: boolean;
 }
 
@@ -115,6 +117,8 @@ export default function ChatArea({
   onAttachmentsChange,
   onGenerateTitle,
   onGenerateFollowUps,
+  onOpenShare,
+  onOpenBuildFS,
   homeMode = 'chat',
   homeAttachments = [],
   prettifyModelNames = true,
@@ -199,6 +203,9 @@ export default function ChatArea({
               selectedModelId={selectedModelId}
               onModelChange={onModelChange}
               onOpenProviders={onOpenProviders}
+              onRetry={onRetry}
+              onGenerateTitle={onGenerateTitle}
+              onGenerateFollowUps={onGenerateFollowUps}
               mode={homeMode}
               onModeChange={onModeChange}
               attachments={homeAttachments}
@@ -211,6 +218,8 @@ export default function ChatArea({
               onTranscribeAudio={onTranscribeAudio}
               buildMode={homeBuildMode}
               onBuildModeChange={onBuildModeChange}
+              onOpenBuildFS={onOpenBuildFS}
+              onOpenShare={onOpenShare}
               conversation={{ messages: [] }}
             />
           </div>

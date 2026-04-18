@@ -5,11 +5,21 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "CHAT_USER",
+        "name": "LUMINA_CHAT_USER_DO",
         "class_name": "UserStore"
       }
     ]
   },
+  "kv_namespaces": [
+    {
+      "binding": "LUMINA_CHAT_USER_KV",
+      "id": "45e7dd1536fb4a18b23e08ded2f56bed"
+    },
+    {
+      "binding": "LUMINA_CHAT_SHARED",
+      "id": "deade54a9c954009be06feff6af9622b"
+    }
+  ],
   "migrations": [
     {
       "tag": "v1",

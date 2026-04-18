@@ -4,7 +4,8 @@ import {
   Smile, Image as ImageIcon, Table, LayoutGrid,
   Type, List, Eraser, MoreHorizontal, ChevronDown,
   Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
-  Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, ImageIcon as ImgOut, Video
+  Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, ImageIcon as ImgOut, Video,
+  Share2
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
 import { 
@@ -48,6 +49,7 @@ interface ChatInputProps {
   buildMode?: boolean;
   onBuildModeChange?: (on: boolean) => void;
   onOpenBuildFS?: () => void;
+  onOpenShare?: () => void;
   conversation?: { messages: Message[] };
 }
 
@@ -178,6 +180,7 @@ export default function ChatInput({
   buildMode = false,
   onBuildModeChange,
   onOpenBuildFS,
+  onOpenShare,
   conversation,
 }: ChatInputProps) {
   const [text, setText] = useState('');
@@ -712,19 +715,26 @@ export default function ChatInput({
           <button title="Generate Title" className="toolbar-btn" onClick={onGenerateTitle}><Type size={15} /></button>
           <button title="Generate Follow-ups" className="toolbar-btn" onClick={onGenerateFollowUps}><MessageSquarePlus size={15} /></button>
           <div className="w-px h-4 bg-[rgb(var(--border))] mx-1" />
-          <button title="Attach" className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
-          <button title="Clear" className="toolbar-btn" onClick={() => setText('')}><Eraser size={15} /></button>
-          {onRetry && <button title="Retry" className="toolbar-btn" onClick={onRetry}><RotateCcw size={15} /></button>}
+          <button 
+            className="toolbar-btn" 
+            onClick={onOpenShare}
+            disabled={!conversation?.messages || conversation.messages.length === 0}
+            title={!conversation?.messages || conversation.messages.length === 0 ? "No conversation to share" : "Share conversation"}
+          >
+            <Share2 size={15} />
+          </button>
+          <button className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
+          <button className="toolbar-btn" onClick={() => setText('')}><Eraser size={15} /></button>
+          {onRetry && <button className="toolbar-btn" onClick={onRetry}><RotateCcw size={15} /></button>}
           <button
-            title={isRecording ? 'Stop recording' : isTranscribing ? 'Transcribing…' : 'Voice input'}
             onClick={handleMicClick}
             disabled={isTranscribing}
             className={`toolbar-btn transition-colors ${
               isRecording
                 ? 'text-yellow-400 animate-pulse'
                 : isTranscribing
-                ? 'text-yellow-300 opacity-60'
-                : ''
+                ? 'text-orange-400'
+                : 'text-[rgb(var(--muted))]'
             }`}
           >
             <Mic size={15} />
@@ -774,7 +784,6 @@ export default function ChatInput({
                     ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
                     : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                 }`}
-                title="Toggle Build Mode — gives AI access to a virtual filesystem"
               >
                 <span>⚒</span>
                 Build
@@ -783,7 +792,6 @@ export default function ChatInput({
                 <button
                   onClick={onOpenBuildFS}
                   className="px-2 py-0.5 rounded-lg text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-all"
-                  title="Browse virtual filesystem"
                 >
                   Files
                 </button>
@@ -912,15 +920,15 @@ export default function ChatInput({
                         ) : null}
                         <span className="flex-1 font-medium truncate">{displayName}</span>
                         <div className="flex items-center gap-1 shrink-0 ml-2">
-                          {mInfo.capabilities?.image_input && <Eye size={13} className="text-sky-500" title="Vision" />}
-                          {mInfo.capabilities?.audio_input && <Mic size={13} className="text-violet-500" title="Audio input" />}
-                          {mInfo.capabilities?.audio_output && <Volume2 size={13} className="text-purple-500" title="Audio output" />}
-                          {mInfo.capabilities?.image_output && <ImgOut size={13} className="text-pink-500" title="Image output" />}
-                          {mInfo.capabilities?.video_output && <Video size={13} className="text-rose-500" title="Video output" />}
-                          {mInfo.capabilities?.realtime && <Radio size={13} className="text-green-500" title="Realtime" />}
-                          {mInfo.capabilities?.deep_research && <BookOpen size={13} className="text-amber-500" title="Deep research" />}
-                          {mInfo.capabilities?.reasoning && <Brain size={13} className="text-blue-500" title="Reasoning" />}
-                          {mInfo.capabilities?.embeddings && <FlaskConical size={13} className="text-teal-500" title="Embeddings" />}
+                          {mInfo.capabilities?.image_input && <Eye size={13} className="text-sky-500" />}
+                          {mInfo.capabilities?.audio_input && <Mic size={13} className="text-violet-500" />}
+                          {mInfo.capabilities?.audio_output && <Volume2 size={13} className="text-purple-500" />}
+                          {mInfo.capabilities?.image_output && <ImgOut size={13} className="text-pink-500" />}
+                          {mInfo.capabilities?.video_output && <Video size={13} className="text-rose-500" />}
+                          {mInfo.capabilities?.realtime && <Radio size={13} className="text-green-500" />}
+                          {mInfo.capabilities?.deep_research && <BookOpen size={13} className="text-amber-500" />}
+                          {mInfo.capabilities?.reasoning && <Brain size={13} className="text-blue-500" />}
+                          {mInfo.capabilities?.embeddings && <FlaskConical size={13} className="text-teal-500" />}
                           {isSelected && <Check size={13} className="text-[rgb(var(--accent))]" />}
                         </div>
                       </button>

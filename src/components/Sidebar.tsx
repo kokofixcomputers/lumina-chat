@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
-  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw
+  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
 
@@ -15,6 +15,7 @@ interface SidebarProps {
   onUpdateTitle: (id: string, title: string) => void;
   onOpenSettings: () => void;
   onOpenProviders: () => void;
+  onOpenViewChat: () => void;
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
@@ -31,6 +32,8 @@ export default function Sidebar({
   onUpdateTitle,
   onOpenSettings,
   onOpenProviders,
+  onOpenViewChat,
+  onToggleTheme,
   isOpen,
   onClose,
   syncStatus = 'disabled',
@@ -142,16 +145,12 @@ export default function Sidebar({
         <span className="text-[13px] font-medium truncate flex-1 select-none">You</span>
         <Cloud 
           size={16} 
-          className={`shrink-0 ${
-            syncStatus === 'synced' ? 'text-green-500' :
-            syncStatus === 'syncing' ? 'text-blue-500 animate-pulse' :
+          className={`w-2 h-2 rounded-full ${
+            syncStatus === 'synced' ? 'bg-green-500' :
+            syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' :
             syncStatus === 'error' ? 'text-red-500' :
             'text-gray-400'
           }`}
-          title={syncStatus === 'synced' ? 'Synced to cloud' :
-                 syncStatus === 'syncing' ? 'Syncing...' :
-                 syncStatus === 'error' ? 'Sync failed' :
-                 'Cloud sync disabled'}
         />
         <button onClick={onClose} className="md:hidden btn-icon w-6 h-6">
           <X size={16} />
@@ -187,6 +186,10 @@ export default function Sidebar({
         <button className="sidebar-item w-full" onClick={() => { onGoHome(); onClose(); }}>
           <Home size={15} />
           <span>New Chat</span>
+        </button>
+        <button className="sidebar-item w-full" onClick={onOpenViewChat}>
+          <Link size={15} />
+          <span>View Chat</span>
         </button>
       </div>
 

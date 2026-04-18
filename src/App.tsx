@@ -4,6 +4,8 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import SettingsPanel from './components/SettingsPanel';
 import WelcomeScreen from './components/WelcomeScreen';
+import ShareModal from './components/ShareModal';
+import ViewChatModal from './components/ViewChatModal';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { mergeConversations } from './utils/mergeConversations';
@@ -20,6 +22,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showViewChatModal, setShowViewChatModal] = useState(false);
 
   const handleGetStarted = () => {
     localStorage.setItem('notfirsttime', 'true');
@@ -193,6 +197,63 @@ export default function App() {
       localStorage.setItem('lumina_conversations', JSON.stringify(data.conversations));
       window.location.reload();
     }
+  };
+
+  const handleShare = async (options: { includeAttachments: boolean; expiryDays: number }) => {
+    const conversation = store.activeConversation;
+    if (!conversation) return;
+    
+    try {
+      const conversationToShare = {
+        ...conversation,
+        messages: options.includeAttachments 
+          ? conversation.messages 
+          : conversation.messages.map(msg => ({
+              ...msg,
+              images: undefined // Remove attachments if not included
+            }))
+      };
+      
+      const response = await fetch('https://my-ai-chat.kokofixcomputers.workers.dev/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation: conversationToShare,
+          expiryDays: options.expiryDays
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Store share info in conversation metadata
+        const updatedConversations = store.conversations.map(conv => 
+          conv.id === conversation.id 
+            ? { ...conv, shareInfo: { code: result.code, expiresAt: result.expiresAt } }
+            : conv
+        );
+        store.setConversations(updatedConversations);
+        setShowShareModal(false);
+      } else {
+        throw new Error(result.error || 'Failed to share conversation');
+      }
+    } catch (error) {
+      console.error('Share failed:', error);
+      alert('Failed to share conversation. Please try again.');
+    }
+  };
+
+  const handleLoadSharedConversation = (conversation: any) => {
+    // Create a new conversation with the shared data
+    const newConv = {
+      ...conversation,
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    store.newConversation(newConv.mode, newConv.attachments || []);
+    store.setActiveConvId(newConv.id);
   };
 
   const openProviders = () => setPanel('settings');
@@ -391,6 +452,7 @@ export default function App() {
           onUpdateTitle={store.updateConversationTitle}
           onOpenSettings={() => setPanel(p => p === 'settings' ? 'chat' : 'settings')}
           onOpenProviders={openProviders}
+          onOpenViewChat={() => setShowViewChatModal(true)}
           onToggleTheme={toggleTheme}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
@@ -428,6 +490,7 @@ export default function App() {
             onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
             onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
             onVersionChange={handleVersionChange}
+            onOpenShare={() => setShowShareModal(true)}
           />
 
           {panel === 'settings' && (
@@ -448,6 +511,25 @@ export default function App() {
           )}
         </div>
       </div>
+      
+      {/* Modals */}
+      {showShareModal && store.activeConversation && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          conversation={store.activeConversation}
+          onShare={handleShare}
+          existingShare={store.activeConversation.shareInfo}
+        />
+      )}
+      
+      {showViewChatModal && (
+        <ViewChatModal
+          isOpen={showViewChatModal}
+          onClose={() => setShowViewChatModal(false)}
+          onLoadConversation={handleLoadSharedConversation}
+        />
+      )}
     </>
   );
 }

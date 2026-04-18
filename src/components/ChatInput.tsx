@@ -211,6 +211,35 @@ export default function ChatInput({
   const reasoningMenuRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
 
+  // Calculate context usage (memoized to prevent unnecessary recalculations)
+  const { usedTokens, maxTokens } = useMemo(() => {
+    const used = conversation ? calculateConversationTokens(conversation.messages) : 0;
+    const max = allModels.find(m => m.fullId === selectedModelId)?.contextLength;
+    return { usedTokens: used, maxTokens: max };
+  }, [conversation?.messages, selectedModelId, allModels]);
+
+  const currentModel = allModels.find(m => m.fullId === selectedModelId);
+  const canAttachImages = currentModel?.supportsImages ?? false;
+  const modelId = currentModel ? currentModel.fullId.slice(currentModel.fullId.indexOf('/') + 1) : '';
+  const modelInfo = getModelInfo(modelId);
+  const displayModelName = prettifyModelNames ? modelInfo.displayName : modelId;
+  const ModelIcon = typeof modelInfo.icon === 'string' ? null : modelInfo.icon;
+
+  // Group filtered models by provider
+  const filteredModels = modelSearch.trim()
+    ? allModels.filter(m =>
+        m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+        m.providerName.toLowerCase().includes(modelSearch.toLowerCase())
+      )
+    : allModels;
+
+  const grouped = filteredModels.reduce<Record<string, Model[]>>((acc, m) => {
+    const key = m.providerName;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(m);
+    return acc;
+  }, {});
+
   const openModelPicker = () => {
     if (!modelBtnRef.current) return;
     const rect = modelBtnRef.current.getBoundingClientRect();
@@ -598,35 +627,7 @@ export default function ChatInput({
     );
   }
 
-  const currentModel = allModels.find(m => m.fullId === selectedModelId);
-  const canAttachImages = currentModel?.supportsImages ?? false;
-  const modelId = currentModel ? currentModel.fullId.slice(currentModel.fullId.indexOf('/') + 1) : '';
-  const modelInfo = getModelInfo(modelId);
-  const displayModelName = prettifyModelNames ? modelInfo.displayName : modelId;
-  const ModelIcon = typeof modelInfo.icon === 'string' ? null : modelInfo.icon;
-
-  // Calculate context usage (memoized to prevent unnecessary recalculations)
-  const { usedTokens, maxTokens } = useMemo(() => {
-    const used = conversation ? calculateConversationTokens(conversation.messages) : 0;
-    const max = currentModel?.contextLength;
-    return { usedTokens: used, maxTokens: max };
-  }, [conversation?.messages, currentModel?.contextLength]);
-
-  // Group filtered models by provider
-  const filteredModels = modelSearch.trim()
-    ? allModels.filter(m =>
-        m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
-        m.providerName.toLowerCase().includes(modelSearch.toLowerCase())
-      )
-    : allModels;
-
-  const grouped = filteredModels.reduce<Record<string, Model[]>>((acc, m) => {
-    const key = m.providerName;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(m);
-    return acc;
-  }, {});
-
+  
   return (
     <div 
       className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2 relative"

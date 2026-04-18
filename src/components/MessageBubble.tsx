@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Copy, Check, RotateCcw, Edit2, Trash2, X, Bot, Download, Loader2, CheckCircle, XCircle, ChevronDown, ChevronRight, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { Copy, Check, RotateCcw, Edit2, Trash2, X, Bot, Download, Loader2, CheckCircle, XCircle, ChevronDown, ChevronRight, ChevronLeft, ChevronRight as ChevronRightIcon, Eye } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '../types';
@@ -13,6 +13,25 @@ function CopyBtn({ text }: { text: string }) {
       className="btn-icon w-6 h-6"
     >
       {done ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+}
+
+function PreviewBtn({ code, language }: { code: string; language?: string }) {
+  const handlePreview = () => {
+    // Show preview sidebar
+    window.dispatchEvent(new CustomEvent('showPreview', { 
+      detail: { code, language, title: `Preview (${language || 'code'})` } 
+    }));
+  };
+  
+  return (
+    <button
+      onClick={handlePreview}
+      className="btn-icon w-6 h-6"
+      title="Preview"
+    >
+      <Eye size={12} />
     </button>
   );
 }
@@ -112,7 +131,10 @@ function renderContent(content: string) {
         <div key={k++} className="code-block max-w-full">
           <div className="code-block-header">
             <span>{line.slice(3).trim() || 'code'}</span>
-            <CopyBtn text={code} />
+            <div className="flex gap-1">
+              <PreviewBtn code={code} language={lang} />
+              <CopyBtn text={code} />
+            </div>
           </div>
           <div className="code-block-body overflow-x-auto">
             <SyntaxHighlighter language={lang || 'text'} style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>

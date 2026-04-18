@@ -38,26 +38,7 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
             </div>
             <section>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Sync Configuration</h3>
-              <div className="form-group">
-                <label className="form-label">Sync System</label>
-                <div className="flex gap-2">
-                  {(['old', 'new'] as const).map(sys => (
-                    <button
-                      key={sys}
-                      onClick={() => onUpdateSettings({ cloudSync: { enabled: autoSyncEnabled, email: syncEmail, password: syncPassword, syncSystem: sys } })}
-                      className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all border ${
-                        (settings.cloudSync?.syncSystem ?? 'old') === sys
-                          ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] border-transparent'
-                          : 'border-[rgb(var(--border))] text-[rgb(var(--text))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      {sys === 'old' ? 'Old System' : 'New System'}
-                    </button>
-                  ))}
-                </div>
-                <p className="form-help">New System uses a live WebSocket connection for real-time sync.</p>
-              </div>
-              <div className="form-group">
+                            <div className="form-group">
                 <div className="flex items-center justify-between">
                   <label className="form-label mb-0">Enable Auto-Sync</label>
                   <button

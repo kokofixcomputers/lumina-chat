@@ -3,6 +3,7 @@ import { Settings, Bot } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import BuildModeFS from './BuildModeFS';
+import PreviewSidebar from './PreviewSidebar';
 
 // Memoized bubble — only re-renders when its own message object changes
 const MemoMessageBubble = memo(MessageBubble);
@@ -334,6 +335,7 @@ export default function ChatArea({
       {showFS && conversation.id && (
         <BuildModeFS convId={conversation.id} onClose={() => setShowFS(false)} />
       )}
+      <PreviewSidebar />
     </div>
   );
 }

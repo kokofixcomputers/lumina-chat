@@ -214,33 +214,30 @@ export default function App() {
       return;
     }
 
-    const syncSystem = cloudSync.syncSystem ?? 'old';
+    // ── WebSocket Sync System ──────────────────────────────────────────────────
+    setSyncStatus('syncing');
+    const wsUrl = `wss://my-ai-chat.kokofixcomputers.workers.dev/ws?userId=${encodeURIComponent(cloudSync.email)}`;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let dead = false;
+    let reconnectDelay = 3000;
+    let lastPushedSettings = localStorage.getItem('lumina_settings');
+    let lastPushedConversations = localStorage.getItem('lumina_conversations');
+    let ignoreNextUpdate = false; // suppress echo after our own push
 
-    // ── New System: WebSocket ──────────────────────────────────────────────────
-    if (syncSystem === 'new') {
-      setSyncStatus('syncing');
-      const wsUrl = `wss://my-ai-chat.kokofixcomputers.workers.dev/ws?userId=${encodeURIComponent(cloudSync.email)}`;
-      let ws: WebSocket | null = null;
-      let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-      let dead = false;
-      let reconnectDelay = 3000;
-      let lastPushedSettings = localStorage.getItem('lumina_settings');
-      let lastPushedConversations = localStorage.getItem('lumina_conversations');
-      let ignoreNextUpdate = false; // suppress echo after our own push
+    const push = async (key: string, value: unknown) => {
+      if (ws?.readyState !== WebSocket.OPEN) return;
+      const { encryptData } = await import('./utils/encryption');
+      ws.send(JSON.stringify({ type: 'set', key, value: encryptData(value, cloudSync.password) }));
+    };
 
-      const push = async (key: string, value: unknown) => {
-        if (ws?.readyState !== WebSocket.OPEN) return;
-        const { encryptData } = await import('./utils/encryption');
-        ws.send(JSON.stringify({ type: 'set', key, value: encryptData(value, cloudSync.password) }));
-      };
-
-      const connect = () => {
+    const connect = () => {
         if (dead) return;
         ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => { setSyncStatus('synced'); reconnectDelay = 3000; };
+      ws.onopen = () => { setSyncStatus('synced'); reconnectDelay = 3000; };
 
-        ws.onmessage = async (event) => {
+      ws.onmessage = async (event) => {
           try {
             const msg = JSON.parse(event.data);
             const { decryptData } = await import('./utils/encryption');
@@ -301,8 +298,8 @@ export default function App() {
           } catch { /* ignore */ }
         };
 
-        ws.onerror = () => setSyncStatus('error');
-        ws.onclose = () => {
+      ws.onerror = () => setSyncStatus('error');
+      ws.onclose = () => {
           setSyncStatus('error');
           if (!dead) {
             reconnectTimer = setTimeout(connect, reconnectDelay);
@@ -337,73 +334,8 @@ export default function App() {
         clearInterval(pushInterval);
         ws?.close();
       };
-    }
 
-    // ── Old System: HTTP polling ───────────────────────────────────────────────
-    if (syncSystem === 'old') {
-      setSyncStatus('synced');
-      let lastConversations = localStorage.getItem('lumina_conversations');
-      let lastSettings = localStorage.getItem('lumina_settings');
-      let lastServerUpdate = parseInt(localStorage.getItem('lumina_last_server_update') || '0');
-
-      const syncWithServer = async () => {
-        try {
-          const { encryptData, decryptData } = await import('./utils/encryption');
-          const getResponse = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get', email: cloudSync.email })
-          });
-          const getResult = await getResponse.json();
-          if (getResult.exists && getResult.updatedAt) {
-            const serverUpdateTime = new Date(getResult.updatedAt).getTime();
-            if (serverUpdateTime > lastServerUpdate + 5000) {
-              const decrypted = decryptData(getResult.data, cloudSync.password);
-              if (decrypted) {
-                localStorage.setItem('lumina_settings', JSON.stringify(decrypted.settings));
-                localStorage.setItem('lumina_conversations', JSON.stringify(decrypted.conversations));
-                localStorage.setItem('lumina_last_server_update', serverUpdateTime.toString());
-                store.updateSettings(decrypted.settings);
-                store.setConversations(decrypted.conversations);
-                return;
-              }
-            }
-          }
-          const currentConversations = localStorage.getItem('lumina_conversations');
-          const currentSettings = localStorage.getItem('lumina_settings');
-          if (currentConversations !== lastConversations || currentSettings !== lastSettings) {
-            lastConversations = currentConversations;
-            lastSettings = currentSettings;
-            setSyncStatus('syncing');
-            const settings = JSON.parse(currentSettings || '{}');
-            const conversations = JSON.parse(currentConversations || '[]');
-            const encrypted = encryptData({ settings, conversations }, cloudSync.password);
-            const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'save', email: cloudSync.email, data: encrypted })
-            });
-            const result = await response.json();
-            if (result.success) {
-              setSyncStatus('synced');
-              lastServerUpdate = Date.now();
-              localStorage.setItem('lumina_last_server_update', lastServerUpdate.toString());
-            } else {
-              setSyncStatus('error');
-            }
-          } else {
-            setSyncStatus('synced');
-          }
-        } catch {
-          setSyncStatus('error');
-        }
-      };
-
-      const interval = setInterval(syncWithServer, 10000);
-      syncWithServer();
-      return () => clearInterval(interval);
-    }
-  }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.syncSystem, store.settings.cloudSync?.email, store.settings.cloudSync?.password]);
+  }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.email, store.settings.cloudSync?.password]);
 
   return (
     <>

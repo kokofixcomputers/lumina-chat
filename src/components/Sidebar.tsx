@@ -145,9 +145,9 @@ export default function Sidebar({
         <span className="text-[13px] font-medium truncate flex-1 select-none">You</span>
         <Cloud 
           size={16} 
-          className={`w-2 h-2 rounded-full ${
-            syncStatus === 'synced' ? 'bg-green-500' :
-            syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' :
+          className={`shrink-0 ${
+            syncStatus === 'synced' ? 'text-green-500' :
+            syncStatus === 'syncing' ? 'text-blue-500 animate-pulse' :
             syncStatus === 'error' ? 'text-red-500' :
             'text-gray-400'
           }`}

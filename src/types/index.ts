@@ -162,4 +162,4 @@ export interface AppSettings {
   };
 }
 
-export type Panel = 'chat' | 'settings' | 'providers';
+export type Panel = 'chat' | 'settings' | 'share' | 'providers';

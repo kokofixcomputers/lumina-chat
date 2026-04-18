@@ -4,7 +4,7 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import SettingsPanel from './components/SettingsPanel';
 import WelcomeScreen from './components/WelcomeScreen';
-import ShareModal from './components/ShareModal';
+import SharePanel from './components/SharePanel';
 import ViewChatModal from './components/ViewChatModal';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
@@ -22,7 +22,6 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
-  const [showShareModal, setShowShareModal] = useState(false);
   const [showViewChatModal, setShowViewChatModal] = useState(false);
 
   const handleGetStarted = () => {
@@ -50,6 +49,8 @@ export default function App() {
   const togglePanel = () => {
     setPanel(p => p === 'chat' ? 'settings' : 'chat');
   };
+
+  const openSharePanel = () => setPanel('share');
 
   const handleSend = (content: string, images: string[]) => {
     let convId = store.activeConvId;
@@ -233,7 +234,6 @@ export default function App() {
             : conv
         );
         store.setConversations(updatedConversations);
-        setShowShareModal(false);
       } else {
         throw new Error(result.error || 'Failed to share conversation');
       }
@@ -248,11 +248,12 @@ export default function App() {
     const newConv = {
       ...conversation,
       id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     };
     
-    store.newConversation(newConv.mode, newConv.attachments || []);
+    // Add the complete conversation to the store
+    store.setConversations([newConv, ...store.conversations]);
     store.setActiveConvId(newConv.id);
   };
 
@@ -490,7 +491,7 @@ export default function App() {
             onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
             onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
             onVersionChange={handleVersionChange}
-            onOpenShare={() => setShowShareModal(true)}
+            onOpenShare={openSharePanel}
           />
 
           {panel === 'settings' && (
@@ -509,18 +510,49 @@ export default function App() {
               onClose={() => setPanel('chat')}
             />
           )}
+
+          {panel === 'share' && (
+            <SharePanel
+              conversation={store.activeConversation}
+              onShare={handleShare}
+              onClose={() => setPanel('chat')}
+            />
+          )}
         </div>
       </div>
       
       {/* Modals */}
-      {showShareModal && store.activeConversation && (
-        <ShareModal
-          isOpen={showShareModal}
-          onClose={() => setShowShareModal(false)}
-          conversation={store.activeConversation}
-          onShare={handleShare}
-          existingShare={store.activeConversation.shareInfo}
-        />
+      {showWelcome && <WelcomeScreen onGetStarted={handleGetStarted} />}
+      {store.storageQuotaExceeded && (
+        <>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" />
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
+            <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <h3 className="text-base font-semibold">Storage quota exceeded</h3>
+              <p className="text-sm text-[rgb(var(--muted))]">Please select an option to continue saving your conversations.</p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => store.resolveStorageQuota('evict')}
+                  className="w-full btn-primary justify-center"
+                >
+                  Remove oldest 3 conversations
+                </button>
+                <button
+                  onClick={() => store.resolveStorageQuota('retry')}
+                  className="w-full btn-secondary justify-center"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={() => store.resolveStorageQuota('ignore')}
+                  className="w-full btn-secondary justify-center text-red-500 hover:text-red-600"
+                >
+                  Ignore
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
       
       {showViewChatModal && (

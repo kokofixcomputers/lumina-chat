@@ -338,6 +338,7 @@ export default function ChatArea({
         buildMode={conversation.buildMode}
         onBuildModeChange={onBuildModeChange ? (on) => onBuildModeChange(on) : undefined}
         onOpenBuildFS={() => setShowFS(s => !s)}
+        onOpenShare={onOpenShare}
         conversation={conversation}
       />
       </div>

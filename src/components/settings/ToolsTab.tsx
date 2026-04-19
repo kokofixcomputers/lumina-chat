@@ -1,4 +1,5 @@
 import type { AppSettings } from '../../types';
+import { toolsConfig, apiKeysConfig, getApiKeyColor } from '../../config/toolsConfig';
 
 interface ToolsTabProps {
   settings: AppSettings;
@@ -12,50 +13,39 @@ export default function ToolsTab({ settings, onUpdateSettings }: ToolsTabProps) 
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Enable / Disable Tools</h3>
         <p className="text-sm text-[rgb(var(--muted))] mb-4">Disabled tools are excluded from every request before they are loaded.</p>
         <div className="space-y-2">
-          {[
-            { name: 'get_current_time', label: 'get_current_time', desc: 'Get the current date and time', requiresKey: null },
-            { name: 'calculate', label: 'calculate', desc: 'Perform mathematical calculations', requiresKey: null },
-            { name: 'chart', label: 'chart', desc: 'Generate dynamic charts using Chart.js', requiresKey: null },
-            { name: 'exec_python', label: 'exec_python', desc: 'Execute Python code using Pyodide (numpy, pandas, matplotlib)', requiresKey: null },
-            { name: 'google_search', label: 'google_search', desc: 'Search Google for information', requiresKey: 'serper' },
-            { name: 'amazon_search', label: 'amazon_search', desc: 'Search Amazon products in real-time', requiresKey: 'serper' },
-            { name: 'city_search', label: 'city_search', desc: 'Search for cities (use with hotel_search)', requiresKey: 'serper' },
-            { name: 'hotel_search', label: 'hotel_search', desc: 'Search hotels in a city', requiresKey: 'serper' },
-            { name: 'hotel_search_page', label: 'hotel_search_page', desc: 'Fetch next page of hotel results', requiresKey: 'serper' },
-            { name: 'web_request', label: 'web_request', desc: 'Fetch and scrape content from a URL', requiresKey: 'scrapingbee' },
-            { name: 'qanda', label: 'qanda', desc: 'Ask the user clarifying questions', requiresKey: null },
-            { name: 'create_dev_env', label: 'create_dev_env', desc: 'Create Alpine Linux dev environment', requiresKey: null },
-            { name: 'command_dev_env', label: 'command_dev_env', desc: 'Execute commands in dev environment', requiresKey: null },
-            { name: 'artifact_dev_env', label: 'artifact_dev_env', desc: 'Download files from dev environment', requiresKey: null },
-          ].map(({ name, label, desc, requiresKey }) => {
-            const disabled = (settings.disabledTools || []).includes(name);
+          {toolsConfig.map((tool) => {
+            const disabled = (settings.disabledTools || []).includes(tool.name);
+            const hasApiKey = tool.requiresApiKey ? settings[tool.requiresApiKey.key as keyof AppSettings] : true;
+            
             return (
-              <div key={name} className="flex items-center justify-between py-2 border-b border-[rgb(var(--border))] last:border-0">
+              <div key={tool.name} className="flex items-center justify-between py-2 border-b border-[rgb(var(--border))] last:border-0">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-mono">{label}</p>
-                    {requiresKey && (
-                      <span className={`px-1.5 py-0.5 text-[10px] rounded ${
-                        requiresKey === 'serper' 
-                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' 
-                          : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                      }`}>
-                        {requiresKey === 'serper' ? 'Serper' : 'ScrapingBee'}
+                    <p className="text-sm font-mono">{tool.label}</p>
+                    {tool.requiresApiKey && (
+                      <span className={`px-1.5 py-0.5 text-[10px] rounded ${getApiKeyColor(tool.requiresApiKey.color)}`}>
+                        {tool.requiresApiKey.serviceName}
+                      </span>
+                    )}
+                    {tool.requiresApiKey && !hasApiKey && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                        No Key
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-[rgb(var(--muted))]">{desc}</p>
+                  <p className="text-xs text-[rgb(var(--muted))]">{tool.description}</p>
                 </div>
                 <button
                   onClick={() => {
                     const current = settings.disabledTools || [];
                     onUpdateSettings({
                       disabledTools: disabled
-                        ? current.filter(t => t !== name)
-                        : [...current, name],
+                        ? current.filter(t => t !== tool.name)
+                        : [...current, tool.name],
                     });
                   }}
                   className={`toggle ${!disabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+                  disabled={tool.requiresApiKey && !hasApiKey}
                 >
                   <span className={`toggle-thumb ${!disabled ? 'translate-x-5' : 'translate-x-1'}`} />
                 </button>
@@ -175,49 +165,49 @@ export default function ToolsTab({ settings, onUpdateSettings }: ToolsTabProps) 
         </p>
 
         <div className="space-y-4">
-          <div className="form-group">
-            <label className="form-label">Serper API Key</label>
-            <input
-              type="password"
-              value={settings.serperApiKey || ''}
-              onChange={e => onUpdateSettings({ serperApiKey: e.target.value })}
-              className="input text-sm font-mono"
-              placeholder="Enter your Serper API key"
-            />
-            <p className="form-help">
-              API key for Google Search functionality. Get your key at{' '}
-              <a 
-                href="https://serper.dev" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                serper.dev
-              </a>
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">ScrapingBee API Key</label>
-            <input
-              type="password"
-              value={settings.scrapingBeeApiKey || ''}
-              onChange={e => onUpdateSettings({ scrapingBeeApiKey: e.target.value })}
-              className="input text-sm font-mono"
-              placeholder="Enter your ScrapingBee API key"
-            />
-            <p className="form-help">
-              API key for web scraping functionality. Get your key at{' '}
-              <a 
-                href="https://www.scrapingbee.com" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                scrapingbee.com
-              </a>
-            </p>
-          </div>
+          {apiKeysConfig.map((apiKeyConfig) => {
+            const keyValue = settings[apiKeyConfig.key as keyof AppSettings] as string || '';
+            const toolsUsingKey = toolsConfig.filter(tool => tool.requiresApiKey?.key === apiKeyConfig.key);
+            
+            return (
+              <div key={apiKeyConfig.key} className="form-group">
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="form-label mb-0">{apiKeyConfig.label}</label>
+                  <span className={`px-1.5 py-0.5 text-[10px] rounded ${getApiKeyColor(apiKeyConfig.color)}`}>
+                    {apiKeyConfig.serviceName}
+                  </span>
+                </div>
+                <input
+                  type="password"
+                  value={keyValue}
+                  onChange={e => onUpdateSettings({ [apiKeyConfig.key]: e.target.value })}
+                  className="input text-sm font-mono"
+                  placeholder={apiKeyConfig.placeholder}
+                />
+                <p className="form-help">
+                  {apiKeyConfig.description}. {apiKeyConfig.helpText && (
+                    <>
+                      Get your key at{' '}
+                      <a 
+                        href={apiKeyConfig.helpUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {apiKeyConfig.helpUrl.replace('https://www.', '').replace('https://', '')}
+                      </a>
+                    </>
+                  )}
+                  {toolsUsingKey.length > 0 && (
+                    <>
+                      {' '}Used by:{' '}
+                      {toolsUsingKey.map(tool => tool.label).join(', ')}
+                    </>
+                  )}
+                </p>
+              </div>
+            );
+          })}
         </div>
       </section>
     </div>

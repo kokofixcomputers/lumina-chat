@@ -13,6 +13,7 @@ import localAgentTools from './localAgent';
 import { buildFsTools } from './buildFs';
 import { memoryTools } from './memories';
 import chart from './chart';
+import { execPythonTool } from './execPython';
 
 const tools: Tool[] = [
   getCurrentTime,
@@ -24,6 +25,7 @@ const tools: Tool[] = [
   webRequest,
   qanda,
   chart,
+  execPythonTool,
   ...devEnvTools,
   ...localAgentTools,
 ];

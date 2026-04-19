@@ -16,6 +16,7 @@ export default function ToolsTab({ settings, onUpdateSettings }: ToolsTabProps) 
             { name: 'get_current_time', label: 'get_current_time', desc: 'Get the current date and time' },
             { name: 'calculate', label: 'calculate', desc: 'Perform mathematical calculations' },
             { name: 'chart', label: 'chart', desc: 'Generate dynamic charts using Chart.js' },
+            { name: 'exec_python', label: 'exec_python', desc: 'Execute Python code using Pyodide (numpy, pandas, matplotlib)' },
             { name: 'google_search', label: 'google_search', desc: 'Search Google for information' },
             { name: 'amazon_search', label: 'amazon_search', desc: 'Search Amazon products in real-time' },
             { name: 'city_search', label: 'city_search', desc: 'Search for cities (use with hotel_search)' },

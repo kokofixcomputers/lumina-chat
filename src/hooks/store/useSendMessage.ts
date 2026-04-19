@@ -450,7 +450,21 @@ export function useSendMessage({
           } else {
             setConversations(prev => prev.map(c => {
               if (c.id !== convId) return c;
-              const messages = c.messages.map(m => m.id === loadingMsgId ? { ...m, content: JSON.stringify(result, null, 2), tool_status: 'success' as const } : m);
+              
+              let messageUpdate: any = { content: JSON.stringify(result, null, 2), tool_status: 'success' as const };
+              
+              // Handle plot images from exec_python tool
+              if (toolCall.function.name === 'exec_python' && result.plotImages && result.plotImages.length > 0) {
+                console.log('Processing plot images from exec_python:', result.plotImages.length);
+                const plotDataUrls = result.plotImages.map((base64: string) => `data:image/png;base64,${base64}`);
+                console.log('Created plot data URLs:', plotDataUrls.length);
+                messageUpdate.images = plotDataUrls;
+              } else {
+                console.log('No plot images found in result, tool:', toolCall.function.name);
+                console.log('Result keys:', Object.keys(result));
+              }
+              
+              const messages = c.messages.map(m => m.id === loadingMsgId ? { ...m, ...messageUpdate } : m);
               const updates: any = { messages };
               if (toolCall.function.name === 'create_dev_env' && result.success && result.session) updates.devEnvSession = result.session;
               if (result._hotelSearchKey) updates.hotelSearchKey = result._hotelSearchKey;

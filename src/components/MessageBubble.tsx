@@ -4,6 +4,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '../types';
 import { getModelInfo } from '../utils/models';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
 import ChartComponent from './ChartComponent';
 
 function CopyBtn({ text }: { text: string }) {
@@ -347,19 +349,43 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
                   <button
                     onClick={async () => {
                       try {
+                        // Try Tauri file save first
                         const response = await fetch(img);
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `image-${Date.now()}.png`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      } catch {
-                        const a = document.createElement('a');
-                        a.href = img;
-                        a.download = `image-${Date.now()}.png`;
-                        a.click();
+                        const arrayBuffer = await response.arrayBuffer();
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        
+                        // Use Tauri dialog to pick save location
+                        const filePath = await save({
+                          filters: [
+                            {
+                              name: 'PNG Images',
+                              extensions: ['png']
+                            }
+                          ],
+                          defaultPath: `plot-${Date.now()}.png`
+                        });
+                        
+                        if (filePath) {
+                          await writeFile(filePath, uint8Array);
+                        }
+                      } catch (error) {
+                        // Fallback to browser download if Tauri fails
+                        console.error('Tauri save failed, using browser fallback:', error);
+                        try {
+                          const response = await fetch(img);
+                          const blob = await response.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `plot-${Date.now()}.png`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch {
+                          const a = document.createElement('a');
+                          a.href = img;
+                          a.download = `plot-${Date.now()}.png`;
+                          a.click();
+                        }
                       }
                     }}
                     className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-[rgb(var(--panel))] border border-[rgb(var(--border))] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"

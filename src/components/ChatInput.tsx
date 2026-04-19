@@ -202,6 +202,7 @@ export default function ChatInput({
   const [reasoningMenuPos, setReasoningMenuPos] = useState({ top: 0, left: 0 });
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [showContextWarning, setShowContextWarning] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -220,6 +221,17 @@ export default function ChatInput({
     const max = allModels.find(m => m.fullId === selectedModelId)?.contextLength;
     return { usedTokens: used, maxTokens: max };
   }, [conversation?.messages, selectedModelId, allModels]);
+
+  // Show context warning when usage is high
+  useEffect(() => {
+    if (!maxTokens) {
+      setShowContextWarning(false);
+      return;
+    }
+    
+    const percentage = getContextUsagePercentage(usedTokens, maxTokens);
+    setShowContextWarning(percentage >= 90);
+  }, [usedTokens, maxTokens]);
 
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
   const canAttachImages = currentModel?.supportsImages ?? false;
@@ -639,6 +651,26 @@ export default function ChatInput({
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
     >
+      {/* Context Limit Warning */}
+      {showContextWarning && (
+        <div className="mb-3 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-2 text-amber-600 dark:text-amber-400 text-xs">
+          <span className="shrink-0 mt-0.5">!</span>
+          <div className="flex-1">
+            <div className="font-medium mb-0.5">Context limit may be full</div>
+            <div className="text-amber-600/70 dark:text-amber-400/70">
+              You may be unable to continue chatting with the assistant. This calculation may be inaccurate.
+            </div>
+          </div>
+          <button
+            onClick={() => setShowContextWarning(false)}
+            className="shrink-0 p-0.5 rounded hover:bg-amber-500/20 transition-colors"
+            title="Dismiss"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      
       {isDragging && (
         <div className="absolute inset-0 bg-[rgb(var(--accent))]/10 border-2 border-dashed border-[rgb(var(--accent))] rounded-2xl flex items-center justify-center z-50 pointer-events-none">
           <div className="text-[rgb(var(--accent))] font-semibold text-sm flex items-center gap-2">

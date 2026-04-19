@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '../types';
 import { getModelInfo } from '../utils/models';
+import ChartComponent from './ChartComponent';
 
 function CopyBtn({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -109,6 +110,26 @@ function getVisibleStepText(raw: string | undefined | null): string {
   return cleaned;
 }
 
+function parseChartConfig(chartText: string) {
+  try {
+    // Extract JSON from the chart block
+    const jsonMatch = chartText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    
+    const config = JSON.parse(jsonMatch[0]);
+    
+    // Validate required fields
+    if (!config.type || !config.data || !config.data.labels || !config.data.datasets) {
+      return null;
+    }
+    
+    return config;
+  } catch (error) {
+    console.error('Error parsing chart config:', error);
+    return null;
+  }
+}
+
 
 function renderContent(content: string) {
   const isDark = document.documentElement.classList.contains('dark');
@@ -127,22 +148,52 @@ function renderContent(content: string) {
       i++;
       while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
       const code = codeLines.join('\n');
-      out.push(
-        <div key={k++} className="code-block max-w-full">
-          <div className="code-block-header">
-            <span>{line.slice(3).trim() || 'code'}</span>
-            <div className="flex gap-1">
-              <PreviewBtn code={code} language={lang} />
-              <CopyBtn text={code} />
+      
+      // Check if this is a chart block
+      if (lang === 'chart') {
+        const chartConfig = parseChartConfig(code);
+        if (chartConfig) {
+          out.push(
+            <div key={k++} className="my-4 p-4 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl">
+              <ChartComponent config={chartConfig} className="w-full" />
+            </div>
+          );
+        } else {
+          // If chart parsing fails, show as regular code
+          out.push(
+            <div key={k++} className="code-block max-w-full">
+              <div className="code-block-header">
+                <span>chart (invalid config)</span>
+                <div className="flex gap-1">
+                  <CopyBtn text={code} />
+                </div>
+              </div>
+              <div className="code-block-body overflow-x-auto">
+                <SyntaxHighlighter language="json" style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
+                  {code}
+                </SyntaxHighlighter>
+              </div>
+            </div>
+          );
+        }
+      } else {
+        out.push(
+          <div key={k++} className="code-block max-w-full">
+            <div className="code-block-header">
+              <span>{lang || 'code'}</span>
+              <div className="flex gap-1">
+                <PreviewBtn code={code} language={lang} />
+                <CopyBtn text={code} />
+              </div>
+            </div>
+            <div className="code-block-body overflow-x-auto">
+              <SyntaxHighlighter language={lang || 'text'} style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
+                {code}
+              </SyntaxHighlighter>
             </div>
           </div>
-          <div className="code-block-body overflow-x-auto">
-            <SyntaxHighlighter language={lang || 'text'} style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
-              {code}
-            </SyntaxHighlighter>
-          </div>
-        </div>
-      );
+        );
+      }
       i++; continue;
     }
 

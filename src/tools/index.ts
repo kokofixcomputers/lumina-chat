@@ -12,6 +12,7 @@ import qanda from './qanda';
 import localAgentTools from './localAgent';
 import { buildFsTools } from './buildFs';
 import { memoryTools } from './memories';
+import chart from './chart';
 
 const tools: Tool[] = [
   getCurrentTime,
@@ -22,6 +23,7 @@ const tools: Tool[] = [
   ...hotelSearchTools,
   webRequest,
   qanda,
+  chart,
   ...devEnvTools,
   ...localAgentTools,
 ];

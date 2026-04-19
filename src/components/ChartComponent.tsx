@@ -136,7 +136,7 @@ const ChartComponent = memo(({ config, className = "" }: ChartComponentProps) =>
   }), [config]);
 
   const chartData = useMemo(() => ({
-    labels: config.data.labels,
+    labels: config.data.labels || [],
     datasets: config.data.datasets.map(dataset => ({
       ...dataset,
       backgroundColor: dataset.backgroundColor || [

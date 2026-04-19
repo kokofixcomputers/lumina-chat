@@ -46,13 +46,23 @@ export function mergeConversations(local: Conversation[], remote: Conversation[]
         } else if (remoteMsg.timestamp > existingMsg.timestamp) {
           // Newer version of message - replace
           messageMap.set(remoteMsg.id, { ...remoteMsg });
+        } else if (remoteMsg.timestamp === existingMsg.timestamp && remoteMsg.id !== existingMsg.id) {
+          // Same timestamp but different IDs - these are different messages added simultaneously
+          // Keep both by using a composite key or adding as separate
+          messageMap.set(remoteMsg.id, { ...remoteMsg });
         }
-        // If timestamps are equal, keep existing (avoid conflicts)
+        // If timestamps are equal and same ID, keep existing (avoid conflicts)
       }
       
-      // Sort messages by timestamp
+      // Sort messages by timestamp, then by ID to ensure consistent ordering
       merged.messages = Array.from(messageMap.values())
-        .sort((a, b) => a.timestamp - b.timestamp);
+        .sort((a, b) => {
+          if (a.timestamp !== b.timestamp) {
+            return a.timestamp - b.timestamp;
+          }
+          // If timestamps are equal, sort by ID to ensure consistent ordering
+          return a.id.localeCompare(b.id);
+        });
       
       // Update metadata
       merged.updatedAt = Math.max(existing.updatedAt, remoteConv.updatedAt);

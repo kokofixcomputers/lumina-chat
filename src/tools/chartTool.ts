@@ -1,7 +1,7 @@
 interface ChartToolConfig {
   type: 'line' | 'bar' | 'pie' | 'doughnut' | 'radar' | 'polarArea' | 'bubble' | 'scatter';
   data: {
-    labels: string[];
+    labels?: string[];
     datasets: Array<{
       label: string;
       data: number[] | Array<{ x: number; y: number }>;
@@ -265,7 +265,6 @@ ${JSON.stringify(config, null, 2)}
     const config: ChartToolConfig = {
       type: 'scatter',
       data: {
-        labels: [],
         datasets: [{
           label: 'Dataset',
           data: data as any, // Scatter chart data format is different

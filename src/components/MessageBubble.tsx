@@ -119,7 +119,12 @@ function parseChartConfig(chartText: string) {
     const config = JSON.parse(jsonMatch[0]);
     
     // Validate required fields
-    if (!config.type || !config.data || !config.data.labels || !config.data.datasets) {
+    if (!config.type || !config.data || !config.data.datasets) {
+      return null;
+    }
+    
+    // Labels are required for most charts except scatter
+    if (config.type !== 'scatter' && !config.data.labels) {
       return null;
     }
     

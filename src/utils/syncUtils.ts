@@ -26,14 +26,29 @@ export function mergeConversationsSafely(local: Conversation[], remote: Conversa
       // Add newer messages from remote
       conv.messages.forEach(msg => {
         const existingMsg = messageMap.get(msg.id);
-        if (!existingMsg || msg.timestamp > existingMsg.timestamp) {
+        if (!existingMsg) {
+          // New message - add it
+          messageMap.set(msg.id, msg);
+        } else if (msg.timestamp > existingMsg.timestamp) {
+          // Newer version of message - replace
+          messageMap.set(msg.id, msg);
+        } else if (msg.timestamp === existingMsg.timestamp && msg.id !== existingMsg.id) {
+          // Same timestamp but different IDs - these are different messages added simultaneously
+          // Keep both by using the different ID as the key
           messageMap.set(msg.id, msg);
         }
+        // If timestamps are equal and same ID, keep existing (avoid conflicts)
       });
       
       // Update with merged messages
       existing.messages = Array.from(messageMap.values())
-        .sort((a, b) => a.timestamp - b.timestamp);
+        .sort((a, b) => {
+          if (a.timestamp !== b.timestamp) {
+            return a.timestamp - b.timestamp;
+          }
+          // If timestamps are equal, sort by ID to ensure consistent ordering
+          return a.id.localeCompare(b.id);
+        });
     }
   }
   

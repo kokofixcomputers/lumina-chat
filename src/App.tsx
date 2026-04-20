@@ -132,9 +132,8 @@ export default function App() {
     
     if (userMsgIdx === -1) return;
     
-    // Capture user message and assistant message data before deletion
-    const userMsg = { ...messages[userMsgIdx] };
-    const assistantMsg = { ...messages[lastAssistantIdx] };
+    const userMsg = messages[userMsgIdx];
+    const assistantMsg = messages[lastAssistantIdx];
     const convId = store.activeConvId;
     
     // Store the current assistant message as a version
@@ -150,13 +149,14 @@ export default function App() {
       });
     }
     
-    // Update the assistant message with version info before deleting
-    store.updateMessageVersions(convId, messages[lastAssistantIdx].id, versions, versions.length);
+    // Store version info globally to apply to new assistant message
+    (window as any).pendingRetryVersionInfo = { convId, versions, currentVersionIndex: versions.length };
+    console.log('Stored pending retry version info:', (window as any).pendingRetryVersionInfo);
     
-    // Delete from user message onwards (removes user + assistant + any tool messages)
-    store.deleteMessagesFrom(convId, messages[userMsgIdx].id);
+    // Delete from user message onwards to remove assistant and avoid duplicates
+    store.deleteMessagesFrom(convId, userMsg.id);
     
-    // Resend user message after a brief delay to ensure state update
+    // Resend user message after a brief delay to regenerate assistant response
     setTimeout(() => {
       if (convMode === 'image') {
         store.generateImage(userMsg.content, convId);
@@ -220,7 +220,19 @@ export default function App() {
 
   const handleVersionChange = (msgId: string, versionIndex: number) => {
     if (!store.activeConvId) return;
-    store.updateMessageVersions(store.activeConvId, msgId, [], versionIndex);
+    
+    // Find the message and preserve its versions
+    const message = store.activeConversation.messages.find(m => m.id === msgId);
+    console.log('Version change - Message found:', message);
+    console.log('Version change - Message versions:', message?.versions);
+    console.log('Version change - Requested index:', versionIndex);
+    
+    if (message && message.versions) {
+      store.updateMessageVersions(store.activeConvId, msgId, message.versions, versionIndex);
+      console.log('Version change - Updated with versions preserved');
+    } else {
+      console.log('Version change - No message or versions found');
+    }
   };
 
   const handleModelChange = (modelId: string) => {

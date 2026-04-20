@@ -99,7 +99,30 @@ export function useConversations(defaultProviderModelId: string) {
   const addMessage = useCallback((convId: string, msg: Message) => {
     setConversations(prev => prev.map(c => {
       if (c.id !== convId) return c;
-      const messages = [...c.messages, msg];
+      
+      let updatedMsg = msg;
+      
+      // Check if this is an assistant message and there's pending retry version info
+      if (msg.role === 'assistant' && (window as any).pendingRetryVersionInfo) {
+        const pendingInfo = (window as any).pendingRetryVersionInfo;
+        if (pendingInfo.convId === convId) {
+          // Apply the version info to this new assistant message
+          updatedMsg = {
+            ...msg,
+            versions: pendingInfo.versions,
+            currentVersionIndex: pendingInfo.currentVersionIndex
+          };
+          
+          // Clear the pending info after applying
+          delete (window as any).pendingRetryVersionInfo;
+          
+          console.log('Applied retry version info to new assistant message:', updatedMsg);
+          console.log('Updated message versions:', updatedMsg.versions);
+          console.log('Updated message currentVersionIndex:', updatedMsg.currentVersionIndex);
+        }
+      }
+      
+      const messages = [...c.messages, updatedMsg];
       const title = c.messages.length === 0 && msg.role === 'user'
         ? msg.content.slice(0, 50) + (msg.content.length > 50 ? '...' : '')
         : c.title;

@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react';
-import { Copy, Check, RotateCcw, Edit2, Trash2, X, Bot, Download, Loader2, CheckCircle, XCircle, ChevronDown, ChevronRight, ChevronLeft, ChevronRight as ChevronRightIcon, Eye } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import {
+  Copy, Edit2, Trash2, RotateCcw, Check, AlertCircle,
+  User, Bot, Wrench, Sparkles, ChevronDown, ChevronUp,
+  Eye, Loader2, CheckCircle, XCircle, ChevronRight, Download, X, ChevronLeft
+} from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import type { Message } from '../types';
 import { getModelInfo } from '../utils/models';
-import { save } from '@tauri-apps/plugin-dialog';
+import type { Message } from '../types';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { save } from '@tauri-apps/plugin-dialog';
 import ChartComponent from './ChartComponent';
 
 function CopyBtn({ text }: { text: string }) {
@@ -244,10 +248,10 @@ function renderContent(content: string) {
       }
     }
 
-    if (line.startsWith('### ')) { out.push(<h3 key={k++} className="text-[14px] font-semibold mt-4 mb-1">{line.slice(4)}</h3>); }
-    else if (line.startsWith('#### ')) { out.push(<h4 key={k++} className="text-[13px] font-semibold mt-4 mb-1">{line.slice(5)}</h4>); }
-    else if (line.startsWith('## ')) { out.push(<h2 key={k++} className="text-[15px] font-semibold mt-4 mb-1">{line.slice(3)}</h2>); }
-    else if (line.startsWith('# ')) { out.push(<h1 key={k++} className="text-[16px] font-semibold mt-4 mb-2">{line.slice(2)}</h1>); }
+    if (line.startsWith('### ')) { out.push(<h3 key={k++} className="text-[14px] font-semibold mt-4 mb-1">{parseInline(line.slice(4))}</h3>); }
+    else if (line.startsWith('#### ')) { out.push(<h4 key={k++} className="text-[13px] font-semibold mt-4 mb-1">{parseInline(line.slice(5))}</h4>); }
+    else if (line.startsWith('## ')) { out.push(<h2 key={k++} className="text-[15px] font-semibold mt-4 mb-1">{parseInline(line.slice(3))}</h2>); }
+    else if (line.startsWith('# ')) { out.push(<h1 key={k++} className="text-[16px] font-semibold mt-4 mb-2">{parseInline(line.slice(2))}</h1>); }
     else if (line.match(/^[-*] /)) { out.push(<li key={k++} className="ml-5 list-disc text-[13.5px] leading-relaxed">{parseInline(line.slice(2))}</li>); }
     else if (line.match(/^\d+\. /)) { out.push(<li key={k++} className="ml-5 list-decimal text-[13.5px] leading-relaxed">{parseInline(line.replace(/^\d+\. /, ''))}</li>); }
     else if (line === '') { out.push(<div key={k++} className="h-2.5" />); }
@@ -289,7 +293,8 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
   const displayMessage = hasVersions && currentVersionIndex < versions.length 
     ? versions[currentVersionIndex] 
     : message;
-
+  
+  
   const handleVersionChange = (newIndex: number) => {
     setCurrentVersionIndex(newIndex);
     onVersionChange?.(newIndex);
@@ -563,31 +568,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
                 {isStreaming && (
                   <span className="inline-block w-2 h-2 rounded-full bg-current align-middle ml-0.5 animate-pulse" />
                 )}
-                {/* Version navigation */}
-                {hasVersions && (
-                  <div className="flex items-center gap-2 mt-3 mb-1">
-                    <button
-                      onClick={() => handleVersionChange(Math.max(0, currentVersionIndex - 1))}
-                      disabled={currentVersionIndex === 0}
-                      className="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="Previous version"
-                    >
-                      <ChevronLeft size={14} />
-                    </button>
-                    <span className="text-[11px] text-[rgb(var(--muted))] font-medium px-2">
-                      {currentVersionIndex + 1} / {versions.length + 1}
-                    </span>
-                    <button
-                      onClick={() => handleVersionChange(Math.min(versions.length, currentVersionIndex + 1))}
-                      disabled={currentVersionIndex === versions.length}
-                      className="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="Next version"
-                    >
-                      <ChevronRightIcon size={14} />
-                    </button>
-                  </div>
-                )}
-                {/* Model tag below */}
+                                {/* Model tag below */}
                 {modelName && (
                   <p className="mt-2 text-[11px] text-[rgb(var(--muted))] flex items-center gap-1.5">
                     <span className="w-1 h-1 rounded-full bg-[rgb(var(--muted))] inline-block" />
@@ -616,6 +597,30 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
           <div className="flex items-center gap-0.5 mt-2">
             {!isUser && <CopyBtn text={message.content} />}
             {!isUser && onRetry && <button className="toolbar-btn" title="Retry" onClick={onRetry}><RotateCcw size={15} /></button>}
+            {/* Compact retry navigation */}
+            {!isUser && hasVersions && (
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => handleVersionChange(Math.max(0, currentVersionIndex - 1))}
+                  disabled={currentVersionIndex === 0}
+                  className="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Previous retry"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <span className="text-[10px] text-[rgb(var(--muted))] px-1 font-medium">
+                  {currentVersionIndex + 1}/{versions.length + 1}
+                </span>
+                <button
+                  onClick={() => handleVersionChange(Math.min(versions.length, currentVersionIndex + 1))}
+                  disabled={currentVersionIndex === versions.length}
+                  className="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Next retry"
+                >
+                  <ChevronRight size={12} />
+                </button>
+              </div>
+            )}
             {isUser && onEdit && <button className="toolbar-btn" title="Edit" onClick={() => setIsEditing(true)}><Edit2 size={15} /></button>}
             {onDelete && <button className="toolbar-btn" title="Delete" onClick={onDelete}><Trash2 size={15} /></button>}
           </div>

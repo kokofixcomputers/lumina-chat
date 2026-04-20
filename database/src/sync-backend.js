@@ -308,33 +308,43 @@ export class SyncBackend {
     }
     
     const action = syncMsg.data;
+    console.log(`[SYNC] Received ${action.type} from user ${ws.userId}`, action.data?.conversationId || '');
     
     // Apply action to user data and clean up old data
     const applied = await this._applyActionToUserData(ws.userId, action, ws);
+    console.log(`[SYNC] Applied ${action.type}:`, applied);
     
     if (applied) {
       // Store action for history/replay
       const stored = await this.storeSyncAction(ws.userId, action);
+      console.log(`[SYNC] Stored ${action.type}:`, stored);
       
       if (stored) {
         // Broadcast only the specific action to all authenticated connections for this user (except sender)
         const userConnections = this.authenticatedConnections.get(ws.userId);
+        console.log(`[SYNC] Broadcasting ${action.type} to ${userConnections?.size || 0} connections (excluding sender)`);
+        
         if (userConnections) {
           const broadcast = JSON.stringify({
             type: 'sync_action',
             data: action
           });
           
+          let broadcastCount = 0;
           for (const connection of userConnections) {
             if (connection !== ws && connection.readyState === 1) { // WebSocket.OPEN = 1
               try {
                 connection.send(broadcast);
+                broadcastCount++;
+                console.log(`[SYNC] Broadcast ${action.type} to connection`);
               } catch (error) {
+                console.error('[SYNC] Broadcast failed:', error);
                 // Connection dead, remove it
                 userConnections.delete(connection);
               }
             }
           }
+          console.log(`[SYNC] Successfully broadcast ${action.type} to ${broadcastCount} connections`);
         }
         
         // Send acknowledgment

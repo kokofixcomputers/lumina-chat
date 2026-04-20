@@ -400,6 +400,7 @@ export default function App() {
         },
         onSyncAction: (action) => {
           // Handle incoming sync actions from remote
+          console.log('[CLIENT] Received sync action:', action.type, action.data);
           switch (action.type) {
             case 'create_conversation':
               store.setConversations([{ ...action.data, messages: [] }, ...store.conversations]);
@@ -448,6 +449,23 @@ export default function App() {
                 ));
               }
               break;
+            case 'update_followup': {
+              const { conversationId, messageId, followUps } = action.data;
+              const followupConv = store.conversations.find(c => c.id === conversationId);
+              if (followupConv) {
+                const updatedConv = {
+                  ...followupConv,
+                  messages: followupConv.messages.map(m => 
+                    m.id === messageId ? { ...m, followUps } : m
+                  ),
+                  updatedAt: action.timestamp
+                };
+                store.setConversations(store.conversations.map(c => 
+                  c.id === conversationId ? updatedConv : c
+                ));
+              }
+              break;
+            }
             // Handle other action types as needed
           }
           // Update storage monitor's snapshot so it doesn't see remote changes as local changes
@@ -573,6 +591,20 @@ export default function App() {
                   deletedMessages.forEach((message: any) => {
                     console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
                     syncManager.sendDeleteMessage(change.conversation.id, message.id);
+                  });
+                  
+                  // Check for follow-up changes in existing messages
+                  const oldMsgMap = new Map((oldConv.messages || []).map((m: any) => [m.id, m]));
+                  (newConv.messages || []).forEach((newMsg: any) => {
+                    const oldMsg = oldMsgMap.get(newMsg.id) as { followUps?: string[] } | undefined;
+                    if (oldMsg) {
+                      const oldFollowUps = oldMsg.followUps || [];
+                      const newFollowUps = (newMsg.followUps as string[]) || [];
+                      if (JSON.stringify(oldFollowUps) !== JSON.stringify(newFollowUps)) {
+                        console.log('Sending update_followup for message:', newMsg.id);
+                        syncManager.sendUpdateFollowup(change.conversation.id, newMsg.id, newFollowUps);
+                      }
+                    }
                   });
                 }
               } else if (change.type === 'deleted') {

@@ -1,11 +1,14 @@
+import { universalFetch } from './tauriFetch';
+
 /**
  * Wraps fetch with automatic CORS-proxy fallback via /api/proxy.
+ * In Tauri, proxy is always disabled and universal fetch is used.
  *
  * proxyMode:
- *   'on'   — always use proxy
- *   'off'  — never use proxy (direct only)
- *   'auto' — try direct first; on TypeError (CORS/network) fall back to proxy.
- *            Only calls onProxySuccess if the proxy request actually succeeds.
+ *   'on'   - always use proxy (ignored in Tauri)
+ *   'off'  - never use proxy (direct only)
+ *   'auto' - try direct first; on TypeError (CORS/network) fall back to proxy (ignored in Tauri).
+ *           Only calls onProxySuccess if the proxy request actually succeeds.
  */
 export async function fetchWithProxyFallback(
   url: string,
@@ -14,6 +17,14 @@ export async function fetchWithProxyFallback(
   onProxySuccess?: () => void,
   proxyMode?: 'auto' | 'on' | 'off',
 ): Promise<Response> {
+  // Check if we're in Tauri - if so, always use universal fetch without proxy
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  
+  if (isTauri) {
+    // In Tauri, proxy is disabled and we use universal fetch
+    return universalFetch(url, options);
+  }
+
   const mode = proxyMode ?? (useProxy ? 'on' : 'auto');
 
   if (mode === 'on') {
@@ -21,12 +32,12 @@ export async function fetchWithProxyFallback(
   }
 
   if (mode === 'off') {
-    return fetch(url, options);
+    return universalFetch(url, options);
   }
 
   // mode === 'auto': try direct, fall back to proxy on network error
   try {
-    return await fetch(url, options);
+    return await universalFetch(url, options);
   } catch (err) {
     if (!(err instanceof TypeError)) throw err;
     // Direct failed — try proxy, but only persist success if it works

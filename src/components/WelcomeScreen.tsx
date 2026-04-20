@@ -40,43 +40,46 @@ export default function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
 
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 dark:from-[rgb(14,14,16)] dark:via-blue-950/10 dark:to-purple-950/5 flex items-center justify-center p-4 z-50 animate-fade-in">
-      <div className="max-w-2xl w-full bg-[rgb(var(--panel))] rounded-3xl p-8 md:p-12 shadow-[0_8px_40px_rgba(0,0,0,0.12)] border border-[rgb(var(--border))] animate-scale-in">
-        <div className="text-center space-y-6">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 mb-4">
-            <Sparkles size={40} className="text-[rgb(var(--text))]" />
+      <div className="max-w-2xl w-full bg-[rgb(var(--panel))] rounded-3xl p-6 md:p-12 shadow-[0_8px_40px_rgba(0,0,0,0.12)] border border-[rgb(var(--border))] animate-scale-in max-h-[90vh] overflow-y-auto">
+        <div className="text-center space-y-4 md:space-y-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 mb-2 md:mb-4">
+            <Sparkles size={32} className="text-[rgb(var(--text))]" />
           </div>
           
-          <h1 className="text-4xl md:text-5xl font-bold text-[rgb(var(--text))]">
+          <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-[rgb(var(--text))]">
             Welcome to Lumina Chat
           </h1>
           
-          <p className={`text-lg text-[rgb(var(--muted))] max-w-xl mx-auto transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}>
+          <p className={`text-base md:text-lg text-[rgb(var(--muted))] max-w-xl mx-auto transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}>
             {TAGLINES[taglineIndex]}
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6">
-            <div className="bg-[rgb(var(--bg))] rounded-2xl p-4 border border-[rgb(var(--border))] animate-slide-in-up" style={{ animationDelay: '0.05s' }}>
-              <MessageSquare size={24} className="text-[rgb(var(--text))] mb-2 mx-auto" />
-              <p className="text-sm text-[rgb(var(--text))] font-medium">Multi-Provider</p>
-              <p className="text-xs text-[rgb(var(--muted))] mt-1">Connect to OpenAI, Anthropic, and more</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 pt-4 md:pt-6">
+            <div className="bg-[rgb(var(--bg))] rounded-xl md:rounded-2xl p-3 md:p-4 border border-[rgb(var(--border))] animate-slide-in-up" style={{ animationDelay: '0.05s' }}>
+              <MessageSquare size={20} className="text-[rgb(var(--text))] mb-2 mx-auto" />
+              <p className="text-xs md:text-sm text-[rgb(var(--text))] font-medium">Multi-Provider</p>
+              <p className="text-xs text-[rgb(var(--muted))] mt-1 hidden md:block">Connect to OpenAI, Anthropic, and more</p>
+              <p className="text-xs text-[rgb(var(--muted))] mt-1 md:hidden">OpenAI, Anthropic, more</p>
             </div>
             
-            <div className="bg-[rgb(var(--bg))] rounded-2xl p-4 border border-[rgb(var(--border))] animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
-              <Zap size={24} className="text-[rgb(var(--text))] mb-2 mx-auto" />
-              <p className="text-sm text-[rgb(var(--text))] font-medium">Function Calling</p>
-              <p className="text-xs text-[rgb(var(--muted))] mt-1">Tools, search, and image generation</p>
+            <div className="bg-[rgb(var(--bg))] rounded-xl md:rounded-2xl p-3 md:p-4 border border-[rgb(var(--border))] animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
+              <Zap size={20} className="text-[rgb(var(--text))] mb-2 mx-auto" />
+              <p className="text-xs md:text-sm text-[rgb(var(--text))] font-medium">Function Calling</p>
+              <p className="text-xs text-[rgb(var(--muted))] mt-1 hidden md:block">Tools, search, and image generation</p>
+              <p className="text-xs text-[rgb(var(--muted))] mt-1 md:hidden">Tools, search, images</p>
             </div>
             
-            <div className="bg-[rgb(var(--bg))] rounded-2xl p-4 border border-[rgb(var(--border))] animate-slide-in-up" style={{ animationDelay: '0.15s' }}>
-              <Shield size={24} className="text-[rgb(var(--text))] mb-2 mx-auto" />
-              <p className="text-sm text-[rgb(var(--text))] font-medium">Privacy First</p>
-              <p className="text-xs text-[rgb(var(--muted))] mt-1">All data stored locally on your device</p>
+            <div className="bg-[rgb(var(--bg))] rounded-xl md:rounded-2xl p-3 md:p-4 border border-[rgb(var(--border))] animate-slide-in-up" style={{ animationDelay: '0.15s' }}>
+              <Shield size={20} className="text-[rgb(var(--text))] mb-2 mx-auto" />
+              <p className="text-xs md:text-sm text-[rgb(var(--text))] font-medium">Privacy First</p>
+              <p className="text-xs text-[rgb(var(--muted))] mt-1 hidden md:block">All data stored locally on your device</p>
+              <p className="text-xs text-[rgb(var(--muted))] mt-1 md:hidden">Local data storage</p>
             </div>
           </div>
 
           <button
             onClick={onGetStarted}
-            className="mt-8 px-8 py-3 bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-full font-semibold text-lg hover:opacity-90 transition-all shadow-[0_2px_16px_rgba(0,0,0,0.15)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.2)]"
+            className="mt-6 md:mt-8 px-6 md:px-8 py-3 bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-full font-semibold text-base md:text-lg hover:opacity-90 transition-all shadow-[0_2px_16px_rgba(0,0,0,0.15)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.2)]"
           >
             Let's Go!
           </button>

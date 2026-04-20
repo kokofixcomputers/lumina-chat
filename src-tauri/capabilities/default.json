@@ -13,6 +13,14 @@
     "dialog:allow-save",
     "fs:default",
     "fs:allow-write-text-file",
-    "fs:allow-write-file"
+    "fs:allow-write-file",
+    "http:default",
+    "http:allow-fetch",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "https://**" }
+      ]
+    }
   ]
 }

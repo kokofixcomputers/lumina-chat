@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Conversation, Message, AppSettings, ModelProvider, ModelConfig } from '../../types';
 import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../../tools';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
+import { universalFetch, universalStreamingFetch, processSSEStream } from '../../utils/tauriFetch';
 import { resolveFormat, applyVars, getByPath } from '../../components/ProvidersPanel';
 import { writeToVfs } from '../../tools/buildFs';
 import { generateUniqueTimestamp } from '../../utils/timestamp';
@@ -153,9 +154,9 @@ export function useSendMessage({
     };
 
     // ── fetch with retry ───────────────────────────────────────────────────────
-    const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
+    const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3, useUniversal = false): Promise<Response> => {
       for (let attempt = 0; attempt < maxRetries; attempt++) {
-        const response = await fetchWithProxyFallback(url, options, !!provider?.useProxy,
+        const response = useUniversal ? await universalFetch(url, options) : await fetchWithProxyFallback(url, options, !!provider?.useProxy,
           () => { if (provider) updateProvider(provider.id, { useProxy: true }); },
           provider?.proxyMode,
         );
@@ -339,6 +340,77 @@ export function useSendMessage({
     const isSentinel = (data: string) => {
       if (data === sentinel) return true;
       try { return JSON.parse(data)?.type === sentinel; } catch { return false; }
+    };
+
+    // Read responses stream from AsyncIterable (for Tauri)
+    const readResponsesStreamFromAsyncIterable = async (stream: AsyncIterable<Uint8Array>): Promise<{ content: string; toolCalls: any[] }> => {
+      let assistantContent = '';
+      const toolCallsMap = new Map<number | string, any>();
+      const toolCalls: any[] = [];
+      
+      for await (const data of processSSEStream(stream)) {
+        const dataStr = typeof data === 'string' ? data : String(data);
+        const parsed = parseSseChunk(dataStr, new Map());
+        const { delta, toolCallsMap: updatedToolCallsMap } = parsed;
+        
+        // Update tool calls map
+        for (const [index, call] of updatedToolCallsMap.entries()) {
+          toolCallsMap.set(index, call);
+        }
+        
+        if (delta) {
+          assistantContent += delta;
+          setStreamingContent(prev => prev + delta);
+        }
+      }
+      
+      // Convert tool calls map to array
+      for (const call of toolCallsMap.values()) {
+        if (call.function && call.function.arguments) {
+          try {
+            call.function.arguments = JSON.parse(call.function.arguments);
+          } catch { /* ignore */ }
+        }
+        toolCalls.push(call);
+      }
+      
+      return { content: assistantContent, toolCalls };
+    };
+
+    // Read stream from AsyncIterable (for Tauri)
+    const readChatStreamFromAsyncIterable = async (stream: AsyncIterable<Uint8Array>): Promise<{ content: string; toolCalls: any[]; codeExecFileIds: string[] }> => {
+      let assistantContent = '';
+      const toolCallsMap = new Map<number | string, any>();
+      const toolCalls: any[] = [];
+      const codeExecFileIds: string[] = [];
+      
+      for await (const data of processSSEStream(stream)) {
+        const dataStr = typeof data === 'string' ? data : String(data);
+        const parsed = parseSseChunk(dataStr, new Map());
+        const { delta, toolCallsMap: updatedToolCallsMap } = parsed;
+        
+        // Update tool calls map
+        for (const [index, call] of updatedToolCallsMap.entries()) {
+          toolCallsMap.set(index, call);
+        }
+        
+        if (delta) {
+          assistantContent += delta;
+          setStreamingContent(prev => prev + delta);
+        }
+      }
+      
+      // Convert tool calls map to array
+      for (const call of toolCallsMap.values()) {
+        if (call.function && call.function.arguments) {
+          try {
+            call.function.arguments = JSON.parse(call.function.arguments);
+          } catch { /* ignore */ }
+        }
+        toolCalls.push(call);
+      }
+      
+      return { content: assistantContent, toolCalls, codeExecFileIds };
     };
 
     // ── stream reader ──────────────────────────────────────────────────────────
@@ -540,6 +612,7 @@ export function useSendMessage({
 
       if (useResponsesApi && response.ok) {
         if (settings.modelSettings.stream) {
+          // Response already has stream from universal fetch
           const reader = response.body?.getReader();
           if (!reader) throw new Error('No response body');
           const result = await readResponsesStream(reader);
@@ -557,9 +630,10 @@ export function useSendMessage({
           tokenCount = data.usage?.output_tokens || assistantContent.split(/\s+/).length;
         }
       } else if (settings.modelSettings.stream) {
+        // Response already has stream from universal fetch
         const reader = response.body?.getReader();
         if (!reader) throw new Error('No response body');
-        const result = await readChatStream(reader);
+        const result = await readChatStream(reader as ReadableStreamDefaultReader<Uint8Array>);
         assistantContent = result.content;
         toolCalls = result.toolCalls;
         // Download any files generated by code execution
@@ -717,7 +791,7 @@ export function useSendMessage({
 
       const bodyToSend = useResponsesApi ? responsesApiBody : customBodyStr !== null ? JSON.parse(customBodyStr) : requestBody;
 
-      const response = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(bodyToSend), signal: controller.signal });
+      const response = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(bodyToSend), signal: controller.signal }, 3, true); // Use universal fetch for Tauri
 
       if (!response.ok) {
         if (useResponsesApi && response.status === 404) {

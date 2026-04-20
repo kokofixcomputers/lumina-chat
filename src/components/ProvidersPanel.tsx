@@ -214,25 +214,36 @@ function ProviderCard({ provider, apiFormats, onUpdate, onDelete }: {
                 {allFormats.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </div>
-            <div className="form-group mb-0">
-              <label className="form-label text-xs">Proxy</label>
-              <div className="flex rounded-lg overflow-hidden border border-[rgb(var(--border))] w-fit text-xs font-medium">
-                {(['off', 'auto', 'on'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => onUpdate({ proxyMode: mode })}
-                    className={`px-3 py-1.5 capitalize transition-colors ${
-                      (provider.proxyMode ?? 'auto') === mode
-                        ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
-                        : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    {mode === 'auto' ? 'Default' : mode === 'on' ? 'On' : 'Off'}
-                  </button>
-                ))}
+            {/* Hide proxy settings in Tauri - not needed with HTTP plugin */}
+            {typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window) ? (
+              <div className="form-group mb-0">
+                <label className="form-label text-xs">Proxy</label>
+                <div className="flex rounded-lg overflow-hidden border border-[rgb(var(--border))] w-fit text-xs font-medium">
+                  {(['off', 'auto', 'on'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => onUpdate({ proxyMode: mode })}
+                      className={`px-3 py-1.5 capitalize transition-colors ${
+                        (provider.proxyMode ?? 'auto') === mode
+                          ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                          : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      {mode === 'auto' ? 'Default' : mode === 'on' ? 'On' : 'Off'}
+                    </button>
+                  ))}
+                </div>
+                <p className="form-help">Default lets the app auto-detect. On always routes through the CORS proxy. Off disables it.</p>
               </div>
-              <p className="form-help">Default lets the app auto-detect. On always routes through the CORS proxy. Off disables it.</p>
-            </div>
+            ) : (
+              <div className="form-group mb-0">
+                <label className="form-label text-xs">Connection</label>
+                <div className="px-3 py-1.5 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded w-fit">
+                  Direct (Tauri HTTP Plugin)
+                </div>
+                <p className="form-help">Using Tauri HTTP plugin for direct connections without CORS limitations.</p>
+              </div>
+            )}
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">

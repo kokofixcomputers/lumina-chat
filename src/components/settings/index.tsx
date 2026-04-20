@@ -1,4 +1,4 @@
-import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain } from 'lucide-react';
+import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain, Share2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { ModelProvider } from '../../types';
 import { setSyncStatus } from '../../utils/syncStatus';
@@ -10,6 +10,8 @@ import DirectModelsTab from './DirectModelsTab';
 import DataTab from './DataTab';
 import CloudSyncTab from './CloudSyncTab';
 import ToolsTab from './ToolsTab';
+import ExtensionsTab from './ExtensionsTab';
+import SharesTab from './SharesTab';
 import WorkflowsTab from './WorkflowsTab';
 import LocalAgentTab from './LocalAgentTab';
 import MemoriesTab from './MemoriesTab';
@@ -124,6 +126,8 @@ export default function SettingsPanel({
     cloudsync: 'Cloud Sync',
     workflows: 'Workflows',
     tools: 'Tools',
+    extensions: 'Extensions',
+    shares: 'Shared Conversations',
     memories: 'Memories',
     localagent: 'Local Agent',
     about: 'About',
@@ -142,16 +146,16 @@ export default function SettingsPanel({
         <div className="side-panel flex-row w-full h-full md:max-w-[80vw] md:h-[80vh] md:rounded-2xl shadow-2xl relative overflow-hidden animate-scale-in">
 
           {/* Sidebar */}
-          <div className={`w-56 border-r border-[rgb(var(--border))] flex flex-col shrink-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:bg-[rgb(var(--panel))] max-md:shadow-2xl max-md:transition-transform ${
+          <div className={`w-56 border-r border-[rgb(var(--border))] flex flex-col shrink-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:bg-[rgb(var(--panel))] max-md:shadow-2xl max-md:transition-transform max-h-[80vh] md:max-h-full ${
             sidebarOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
           }`}>
-            <div className="px-4 py-4 border-b border-[rgb(var(--border))] flex items-center justify-between">
+            <div className="px-4 py-4 border-b border-[rgb(var(--border))] flex items-center justify-between shrink-0">
               <h2 className="font-semibold text-base">Settings</h2>
               <button onClick={() => setSidebarOpen(false)} className="md:hidden btn-icon">
                 <X size={18} />
               </button>
             </div>
-            <div className="flex-1 p-2">
+            <div className="flex-1 p-2 overflow-y-auto">
               {navBtn('general', 'General', <SettingsIcon size={16} />)}
               {navBtn('providers', 'Model Providers', <Database size={16} />)}
               {navBtn('apiformats', 'API Formats', <Settings2 size={16} />)}
@@ -160,6 +164,8 @@ export default function SettingsPanel({
               {navBtn('cloudsync', 'Cloud Sync', <Cloud size={16} />)}
               {navBtn('workflows', 'Workflows', <SettingsIcon size={16} />)}
               {navBtn('tools', 'Tools', <SettingsIcon size={16} />)}
+              {navBtn('extensions', 'Extensions', <SettingsIcon size={16} />)}
+              {navBtn('shares', 'Shares', <Share2 size={16} />)}
               {navBtn('memories', 'Memories', <Brain size={16} />)}
               {navBtn('localagent', 'Local Agent', <Database size={16} />)}
               {navBtn('about', 'About', <Info size={16} />)}
@@ -251,6 +257,13 @@ export default function SettingsPanel({
               />
             )}
 
+            {activeTab === 'extensions' && (
+              <ExtensionsTab
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
+              />
+            )}
+
             {activeTab === 'workflows' && (
               <WorkflowsTab
                 settings={settings}
@@ -269,6 +282,13 @@ export default function SettingsPanel({
                 setAgentPort={setAgentPort}
                 setAgentProtocol={setAgentProtocol}
                 setAgentEnabled={setAgentEnabled}
+              />
+            )}
+
+            {activeTab === 'shares' && (
+              <SharesTab
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
               />
             )}
 

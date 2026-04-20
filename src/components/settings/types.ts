@@ -8,10 +8,12 @@ export type TabType =
   | 'directmodels'
   | 'data'
   | 'cloudsync'
-  | 'tools'
   | 'workflows'
-  | 'localagent'
+  | 'tools'
+  | 'extensions'
+  | 'shares'
   | 'memories'
+  | 'localagent'
   | 'about';
 
 export interface SettingsPanelProps {

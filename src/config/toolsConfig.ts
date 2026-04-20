@@ -7,7 +7,7 @@ export interface ToolConfig {
     serviceName: string;
     color: 'blue' | 'green' | 'purple' | 'orange';
   };
-  category?: 'search' | 'development' | 'data' | 'utility' | 'communication';
+  category?: 'search' | 'development' | 'data' | 'utility' | 'communication' | 'extension';
 }
 
 export const toolsConfig: ToolConfig[] = [
@@ -126,6 +126,30 @@ export const toolsConfig: ToolConfig[] = [
     category: 'development'
   }
 ];
+
+// Function to get extension tools dynamically
+export function getExtensionToolsConfig(): ToolConfig[] {
+  try {
+    const { extensionToolRegistry } = require('../extensions/extensionToolRegistry');
+    const extensionTools = extensionToolRegistry.getDynamicTools();
+    
+    return extensionTools.map(tool => {
+      const toolName = tool.definition.function.name;
+      const parts = toolName.split('_');
+      const toolDisplayName = parts[parts.length - 1];
+      const extensionId = parts.slice(0, -1).join('_');
+      
+      return {
+        name: toolName,
+        label: toolName,
+        description: tool.definition.function.description,
+        category: 'extension' as const
+      };
+    });
+  } catch {
+    return [];
+  }
+}
 
 export const apiKeysConfig = [
   {

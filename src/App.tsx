@@ -9,6 +9,9 @@ import ViewChatModal from './components/ViewChatModal';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { mergeConversations } from './utils/mergeConversations';
+import { extensionLoader } from './extensions/extensionLoader';
+import { handleDeepLinkOrShare, registerDeepLinkProtocol } from './utils/deepLink';
+import { registerDeepLinkHandler, checkForDeepLinkOnStartup } from './utils/tauriDeepLink';
 import type { Panel } from './types';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
@@ -29,21 +32,44 @@ export default function App() {
     setShowWelcome(false);
   };
 
-  // Handle URL parameters for direct viewing
+  // Initialize extensions on app startup
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const viewCode = urlParams.get('view');
-    
-    if (viewCode) {
-      // Auto-open ViewChatModal and load the shared conversation
-      setShowViewChatModal(true);
-      // We'll handle the actual loading in ViewChatModal
-    }
+    extensionLoader.initializeExtensions().catch(error => {
+      console.error('Failed to initialize extensions:', error);
+    });
   }, []);
+
+  // Handle deep links and shared conversations
+  useEffect(() => {
+    handleDeepLinkOrShare((conversation) => {
+      // Add the shared conversation to the app
+      store.setConversations(prev => [conversation, ...prev]);
+      // Switch to chat panel
+      setPanel('chat');
+    }).then(result => {
+      if (result.loaded && result.error) {
+        console.error('Share loading error:', result.error);
+      }
+    });
+  }, [store]);
 
   // Set default window size when running inside Tauri
   useEffect(() => {
     if (!isTauri()) return;
+    
+    // Register deep link protocol
+    registerDeepLinkProtocol();
+    
+    // Register Tauri deep link handler
+    registerDeepLinkHandler().catch(error => {
+      console.error('Failed to register Tauri deep link handler:', error);
+    });
+    
+    // Check for deep link on startup
+    checkForDeepLinkOnStartup().catch(error => {
+      console.error('Failed to check for deep link on startup:', error);
+    });
+    
     Promise.all([
       import('@tauri-apps/api/window'),
       import('@tauri-apps/api/dpi'),

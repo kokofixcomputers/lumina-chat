@@ -14,6 +14,7 @@ import { buildFsTools } from './buildFs';
 import { memoryTools } from './memories';
 import chart from './chart';
 import { execPythonTool } from './execPython';
+import { extensionToolRegistry } from '../extensions/extensionToolRegistry';
 
 const tools: Tool[] = [
   getCurrentTime,
@@ -45,16 +46,25 @@ export function getAllTools(includeImageGen = false, buildMode = false): Tool[] 
     } catch {}
   }
 
-  const baseTools = includeImageGen
-    ? [...tools.filter(t => !t.definition.function.name.startsWith('local_agent_')), generateImage]
-    : tools.filter(t => !t.definition.function.name.startsWith('local_agent_'));
-
-  const withBuild = buildMode ? [...baseTools, ...buildFsTools] : baseTools;
-  const withMemory = memoriesEnabled ? [...withBuild, ...memoryTools] : withBuild;
-  const filteredTools = withMemory.filter(t => !disabledTools.includes(t.definition.function.name));
+  // Get dynamic extension tools
+  const extensionTools = extensionToolRegistry.getDynamicTools();
+  
+  let filteredTools = [...tools, ...extensionTools].filter(t => !disabledTools.includes(t.definition.function.name));
 
   if (localAgentEnabled) {
-    return [...filteredTools, ...localAgentTools.filter(t => !disabledTools.includes(t.definition.function.name))];
+    filteredTools = filteredTools.filter(t => !t.definition.function.name.startsWith('local_agent_') || localAgentEnabled);
+  }
+
+  if (!memoriesEnabled) {
+    filteredTools = filteredTools.filter(t => !t.definition.function.name.startsWith('memory_'));
+  }
+
+  if (includeImageGen) {
+    filteredTools.push(generateImage);
+  }
+
+  if (buildMode) {
+    filteredTools.push(...buildFsTools);
   }
 
   return filteredTools;
@@ -75,7 +85,8 @@ export function getToolByName(name: string, buildMode = false): Tool | undefined
 
   if (disabledTools.includes(name)) return undefined;
 
-  const allTools = [...tools, generateImage, ...(buildMode ? buildFsTools : []), ...memoryTools];
+  const extensionTools = extensionToolRegistry.getDynamicTools();
+  const allTools = [...tools, ...extensionTools, generateImage, ...(buildMode ? buildFsTools : []), ...memoryTools];
 
   if (name.startsWith('local_agent_') && !localAgentEnabled) return undefined;
 

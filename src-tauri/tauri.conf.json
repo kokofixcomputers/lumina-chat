@@ -33,5 +33,34 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "deepLink": {
+      "all": false,
+      "windows": [
+        {
+          "protocols": [
+            {
+              "name": "Lumina Chat Deep Link",
+              "schemes": ["lumina"],
+              "role": "Viewer"
+            }
+          ]
+        }
+      ],
+      "macOS": {
+        "bundleId": "cc.kokodev.luminachat",
+        "schemes": ["lumina"]
+      },
+      "linux": {
+        "mimeTypes": [
+          {
+            "comment": "Lumina Chat Deep Link",
+            "glob": ["lumina:*"],
+            "mimeType": "x-scheme-handler/lumina"
+          }
+        ]
+      }
+    }
   }
 }

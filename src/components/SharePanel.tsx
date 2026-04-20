@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Share2, Link, Eye, EyeOff, Trash2, Upload, Copy, Check, ExternalLink } from 'lucide-react';
 import type { Conversation } from '../types';
+import { openDeepLink } from '../utils/deepLink';
 
 interface SharePanelProps {
   conversation: Conversation | null;
@@ -80,6 +81,7 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
   };
 
   const shareUrl = shareResult ? `${window.location.origin}?view=${shareResult.code}` : '';
+  const deepLinkUrl = shareResult ? `lumina://view?code=${shareResult.code}` : '';
 
   const handleUnshare = async () => {
     if (!shareResult) return;
@@ -272,6 +274,39 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
                 </div>
                 <p className="text-xs text-[rgb(var(--muted))] mt-2">
                   Direct link for viewing the shared conversation
+                </p>
+              </div>
+
+              {/* Deep Link URL */}
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <ExternalLink size={16} className="text-purple-600 dark:text-purple-400" />
+                  <span className="font-medium text-[rgb(var(--text))]">Deep Link</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 bg-[rgb(var(--bg))] rounded-lg text-[rgb(var(--text))] font-mono text-sm border border-[rgb(var(--border))] break-all">
+                    {deepLinkUrl}
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(deepLinkUrl);
+                      // You could add a copied state here if needed
+                    }}
+                    className="btn-icon"
+                    title="Copy Deep Link"
+                  >
+                    <Copy size={16} />
+                  </button>
+                  <button
+                    onClick={() => openDeepLink(shareResult!.code)}
+                    className="btn-icon"
+                    title="Open in App"
+                  >
+                    <ExternalLink size={16} />
+                  </button>
+                </div>
+                <p className="text-xs text-[rgb(var(--muted))] mt-2">
+                  Opens directly in the Lumina app (if installed)
                 </p>
               </div>
 

@@ -1,5 +1,5 @@
 import type { AppSettings } from '../../types';
-import { toolsConfig, apiKeysConfig, getApiKeyColor } from '../../config/toolsConfig';
+import { toolsConfig, apiKeysConfig, getApiKeyColor, getExtensionToolsConfig } from '../../config/toolsConfig';
 
 interface ToolsTabProps {
   settings: AppSettings;
@@ -13,7 +13,7 @@ export default function ToolsTab({ settings, onUpdateSettings }: ToolsTabProps) 
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Enable / Disable Tools</h3>
         <p className="text-sm text-[rgb(var(--muted))] mb-4">Disabled tools are excluded from every request before they are loaded.</p>
         <div className="space-y-2">
-          {toolsConfig.map((tool) => {
+          {[...toolsConfig, ...getExtensionToolsConfig()].map((tool) => {
             const disabled = (settings.disabledTools || []).includes(tool.name);
             const hasApiKey = tool.requiresApiKey ? settings[tool.requiresApiKey.key as keyof AppSettings] : true;
             
@@ -22,6 +22,11 @@ export default function ToolsTab({ settings, onUpdateSettings }: ToolsTabProps) 
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-mono">{tool.label}</p>
+                    {tool.category === 'extension' && (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                        Extension
+                      </span>
+                    )}
                     {tool.requiresApiKey && (
                       <span className={`px-1.5 py-0.5 text-[10px] rounded ${getApiKeyColor(tool.requiresApiKey.color)}`}>
                         {tool.requiresApiKey.serviceName}

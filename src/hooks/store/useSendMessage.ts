@@ -768,6 +768,11 @@ export function useSendMessage({
       const isAnthropic = activeApiFormat?.id === 'anthropic';
       const useCodeExecution = isAnthropic && buildMode;
 
+      // Add Anthropic dangerous direct browser access header for CORS
+      if (isAnthropic) {
+        headers['anthropic-dangerous-direct-browser-access'] = 'true';
+      }
+
       // Inject Anthropic code execution beta header + tool when in build mode
       if (useCodeExecution) {
         headers['anthropic-beta'] = 'files-api-2025-04-14';

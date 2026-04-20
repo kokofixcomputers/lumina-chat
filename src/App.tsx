@@ -458,6 +458,11 @@ export default function App() {
 
       const { getSyncManager } = await import('./utils/syncManager');
       const syncManager = getSyncManager();
+      
+      if (!syncManager.isConnected()) {
+        console.log('Sync manager not connected, skipping hook setup');
+        return;
+      }
 
       // Override store methods to send sync actions
       const originalSendMessage = store.sendMessage.bind(store);
@@ -486,15 +491,23 @@ export default function App() {
       };
 
       const originalNewConversation = store.newConversation.bind(store);
-      store.newConversation = (title?: string) => {
-        const convId = originalNewConversation(title);
+      store.newConversation = (mode?: 'chat' | 'image', attachments?: string[]) => {
+        const convId = originalNewConversation(mode, attachments);
         
-        // Send sync action for new conversation
+        // Send sync action for new conversation immediately
         if (syncManager.isConnected() && convId) {
-          const conv = store.conversations.find(c => c.id === convId);
-          if (conv) {
-            syncManager.sendCreateConversation(conv);
-          }
+          // Create the conversation object to send
+          const convData = {
+            id: convId,
+            title: 'New conversation',
+            mode: mode || 'chat',
+            modelId: store.settings.defaultProviderModelId,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: [],
+            attachments: attachments || []
+          };
+          syncManager.sendCreateConversation(convData);
         }
         
         return convId;

@@ -270,11 +270,12 @@ interface MessageBubbleProps {
   onRetry?: () => void;
   onEdit?: (newContent: string) => void;
   onDelete?: () => void;
+  onContinue?: () => void;
   onFollowUpClick?: (followUp: string) => void;
   onVersionChange?: (versionIndex: number) => void;
 }
 
-export default function MessageBubble({ message, modelName, modelId, isStreaming, onRetry, onEdit, onDelete, onFollowUpClick, onVersionChange }: MessageBubbleProps) {
+export default function MessageBubble({ message, modelName, modelId, isStreaming, onRetry, onEdit, onDelete, onContinue, onFollowUpClick, onVersionChange }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const isTool = message.role === 'tool';
   const [isEditing, setIsEditing] = useState(false);
@@ -597,6 +598,12 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
           <div className="flex items-center gap-0.5 mt-2">
             {!isUser && <CopyBtn text={message.content} />}
             {!isUser && onRetry && <button className="toolbar-btn" title="Retry" onClick={onRetry}><RotateCcw size={15} /></button>}
+            {/* Continue button for incomplete responses */}
+            {!isUser && onContinue && message.finishReason && message.finishReason !== 'stop' && message.finishReason !== 'function_call' && message.finishReason !== 'tool_calls' && (
+              <button className="toolbar-btn" title="Continue response" onClick={onContinue}>
+                <ChevronRight size={15} />
+              </button>
+            )}
             {/* Compact retry navigation */}
             {!isUser && hasVersions && (
               <div className="flex items-center gap-0.5">

@@ -242,7 +242,7 @@ export default function SharesTab({ settings, onUpdateSettings }: SharesTabProps
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-medium text-[rgb(var(--muted))]">Share URL:</span>
                       <code className="flex-1 px-2 py-1 bg-[rgb(var(--bg))] rounded text-xs font-mono text-[rgb(var(--text))] border border-[rgb(var(--border))] truncate">
-                        {window.location.origin}?view={shareInfo.code}
+                        https://lumina-chat-rho.vercel.app?view={shareInfo.code}
                       </code>
                       <button
                         onClick={() => handleCopyUrl(shareInfo.code)}
@@ -275,16 +275,6 @@ export default function SharesTab({ settings, onUpdateSettings }: SharesTabProps
             })}
           </div>
         )}
-      </section>
-
-      <section className="bg-[rgb(var(--accent))]/10 rounded-xl p-4 border border-[rgb(var(--accent))]/20">
-        <h4 className="font-medium text-[rgb(var(--text))] mb-2">About Shared Conversations</h4>
-        <ul className="text-sm text-[rgb(var(--text))] space-y-1">
-          <li>· Shared conversations are publicly accessible via their share code</li>
-          <li>· Shares automatically expire after the specified time</li>
-          <li>· Deleting a share removes public access immediately</li>
-          <li>· Expired shares should be deleted for security</li>
-        </ul>
       </section>
     </div>
   );

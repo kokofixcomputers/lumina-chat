@@ -1,10 +1,10 @@
 # Chat Extension System Documentation
 
-Welcome to the Chat Extension System! This documentation will guide you through creating custom tools that extend the functionality of the chat application.
+Welcome to the Chat Extension System! This documentation will guide you through creating custom tools and integrations that extend the functionality of the chat application.
 
 ## Overview
 
-Extensions allow you to add custom tools to the chat application using JavaScript. Each extension can provide multiple tools that the AI assistant can use to perform specific tasks.
+Extensions allow you to add custom tools and integrations to the chat application using JavaScript. Each extension can provide multiple tools that the AI assistant can use to perform specific tasks, and can also register external service integrations.
 
 ## Security Features
 
@@ -561,13 +561,220 @@ ctx.log('Debug: Current value:', currentValue);
 
 Check the browser console for extension logs and errors.
 
+## Integration System
+
+Extensions can also register external service integrations that allow the AI assistant to interact with third-party APIs and services.
+
+### What are Integrations?
+
+Integrations are connections to external services like GitHub, Slack, Notion, etc. They provide:
+- **Authentication**: Handle API keys, OAuth tokens, and other credentials
+- **API Clients**: Pre-built clients for common external services
+- **Tools**: AI-callable functions that use the integration
+- **UI Components**: Configuration interfaces in the settings panel
+
+### Built-in GitHub Integration
+
+The application includes a built-in GitHub integration that demonstrates the integration system:
+
+#### Features:
+- **PAT Token Authentication**: Secure Personal Access Token validation
+- **Repository Access**: List, search, and view repositories
+- **File Operations**: Read file contents and browse directory structures
+- **Issue Management**: Access and manage repository issues
+
+#### Available Tools:
+- `github_list_repos`: List all repositories for the authenticated user
+- `github_get_repo`: Get detailed information about a specific repository
+- `github_list_files`: List files and directories in a repository
+- `github_get_file`: Get the content of a specific file from a repository
+- `github_search_repos`: Search for repositories based on criteria
+- `github_get_issues`: Get issues from a repository
+
+### Creating Custom Integrations
+
+Extensions can register their own integrations using the integration registry:
+
+```javascript
+// Register a custom integration
+api.registerIntegration({
+  id: 'my-service',
+  name: 'My Service',
+  description: 'Connect to My Service API',
+  icon: 'MS',
+  authType: 'api_key',
+  validateToken: async (token) => {
+    // Validate the API key
+    const response = await fetch('https://api.myservice.com/user', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      const user = await response.json();
+      return { valid: true, username: user.name };
+    }
+    return { valid: false, error: 'Invalid API key' };
+  },
+  tools: [
+    {
+      name: 'myservice_get_data',
+      label: 'Get Data',
+      description: 'Retrieve data from My Service',
+      requiresAuth: true,
+      enabled: false,
+      handler: async (settings, params) => {
+        const apiKey = settings.integrations?.['my-service']?.apiKey;
+        const response = await fetch('https://api.myservice.com/data', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        return response.json();
+      }
+    }
+  ]
+});
+```
+
+### Integration Properties
+
+#### IntegrationDefinition
+```typescript
+interface IntegrationDefinition {
+  id: string;                    // Unique identifier
+  name: string;                  // Display name
+  description: string;           // User-facing description
+  icon: string;                  // Icon/text for UI
+  authType: 'api_key' | 'oauth' | 'none';  // Authentication type
+  configureComponent?: React.ComponentType<any>;  // Custom UI component
+  validateToken?: (token: string) => Promise<{ valid: boolean; username?: string; error?: string }>;
+  tools: IntegrationTool[];      // Tools provided by this integration
+}
+```
+
+#### IntegrationTool
+```typescript
+interface IntegrationTool {
+  name: string;                  // Tool identifier
+  label: string;                 // Display label
+  description: string;            // Tool description
+  requiresAuth: boolean;          // Whether authentication is required
+  enabled: boolean;              // Whether tool is enabled
+  handler?: (settings: AppSettings, ...args: any[]) => Promise<any>;  // Tool implementation
+}
+```
+
+### Authentication Types
+
+#### API Key Authentication
+```javascript
+authType: 'api_key',
+validateToken: async (token) => {
+  // Validate the API key
+  const response = await fetch('https://api.example.com/validate', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  return response.ok 
+    ? { valid: true, username: 'user123' }
+    : { valid: false, error: 'Invalid token' };
+}
+```
+
+#### OAuth Authentication
+```javascript
+authType: 'oauth',
+// OAuth flow is handled by the application
+// Token is stored and validated automatically
+```
+
+#### No Authentication
+```javascript
+authType: 'none',
+// No authentication required
+// Tools are always enabled
+```
+
+### Settings Storage
+
+Integration configurations are stored in the application settings:
+
+```typescript
+interface AppSettings {
+  integrations?: {
+    github?: {
+      configured: boolean;
+      patToken: string;
+      username: string;
+    };
+    'my-service'?: {
+      configured: boolean;
+      apiKey: string;
+      username: string;
+    };
+    // Extensions can add their own integrations
+    [key: string]: any;
+  };
+}
+```
+
+### Best Practices
+
+1. **Security**: Always validate tokens and handle errors gracefully
+2. **Rate Limiting**: Respect API rate limits and implement caching
+3. **Error Handling**: Provide clear error messages for users
+4. **User Experience**: Show loading states and progress indicators
+5. **Documentation**: Document your integration's API requirements
+
+### Example: Slack Integration
+
+```javascript
+api.registerIntegration({
+  id: 'slack',
+  name: 'Slack',
+  description: 'Send messages and notifications to Slack channels',
+  icon: 'SL',
+  authType: 'api_key',
+  validateToken: async (token) => {
+    const response = await fetch('https://slack.com/api/auth.test', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await response.json();
+    return data.ok 
+      ? { valid: true, username: data.user }
+      : { valid: false, error: data.error };
+  },
+  tools: [
+    {
+      name: 'slack_send_message',
+      label: 'Send Message',
+      description: 'Send a message to a Slack channel',
+      requiresAuth: true,
+      enabled: false,
+      handler: async (settings, channel, message) => {
+        const token = settings.integrations?.slack?.apiKey;
+        const response = await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            channel,
+            text: message
+          })
+        });
+        return response.json();
+      }
+    }
+  ]
+});
+```
+
 ## Support
 
 For help with extension development:
 
 1. Check this documentation first
 2. Look at example extensions
-3. Test in the development environment
-4. Report issues with detailed error messages
+3. Check the browser console for errors
+4. Review the extension source code for reference implementations
+5. Test integrations thoroughly before deploying
 
 Happy coding!

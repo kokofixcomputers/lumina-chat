@@ -13,6 +13,7 @@ export interface Message {
   timestamp: number;
   model?: string;
   isError?: boolean;
+  finishReason?: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' | 'stopped';
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -159,6 +160,14 @@ export interface AppSettings {
     enabled: boolean;
     port: string;
     protocol: 'ws' | 'wss';
+  };
+  integrations?: {
+    github?: {
+      configured: boolean;
+      patToken: string;
+      username: string;
+    };
+    [key: string]: any; // Allow extensions to add their own integrations
   };
 }
 

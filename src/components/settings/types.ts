@@ -14,6 +14,7 @@ export type TabType =
   | 'shares'
   | 'memories'
   | 'localagent'
+  | 'integrations'
   | 'about';
 
 export interface SettingsPanelProps {

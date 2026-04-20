@@ -176,6 +176,31 @@ export default function App() {
     store.deleteMessagesFrom(store.activeConvId, msgId);
   };
 
+  const handleContinue = (msgId: string) => {
+    if (!store.activeConvId || !store.activeConversation) return;
+    
+    const message = store.activeConversation.messages.find(m => m.id === msgId);
+    if (!message || message.role !== 'assistant') return;
+    
+    // Find the user message that prompted this assistant response
+    const msgIndex = store.activeConversation.messages.findIndex(m => m.id === msgId);
+    let userMsg = null;
+    for (let i = msgIndex - 1; i >= 0; i--) {
+      if (store.activeConversation.messages[i].role === 'user') {
+        userMsg = store.activeConversation.messages[i];
+        break;
+      }
+    }
+    
+    if (!userMsg) return;
+    
+    // Create a continue prompt that includes the previous context
+    const continuePrompt = `Continue as if it were the same message, do not re-do the markdown or etc the messages are merged automatically. Continue from where you left off: "${message.content.slice(-200)}"`;
+    
+    // Send the continue message
+    store.sendMessage(continuePrompt, [], store.activeConvId);
+  };
+
   const handleModeChange = (mode: 'chat' | 'image') => {
     if (store.activeConvId) {
       store.setConversationMode(store.activeConvId, mode);
@@ -538,6 +563,7 @@ export default function App() {
             onStopGeneration={store.stopGeneration}
             onEditMessage={handleEditMessage}
             onDeleteMessage={handleDeleteMessage}
+            onContinue={handleContinue}
             onModeChange={handleModeChange}
             onAttachmentsChange={handleAttachmentsChange}
             onBuildModeChange={handleBuildModeChange}

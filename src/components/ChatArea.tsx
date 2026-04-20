@@ -72,6 +72,7 @@ interface ChatAreaProps {
   onStopGeneration?: () => void;
   onEditMessage?: (msgId: string, newContent: string) => void;
   onDeleteMessage?: (msgId: string) => void;
+  onContinue?: (msgId: string) => void;
   onModeChange?: (mode: 'chat' | 'image') => void;
   onAttachmentsChange?: (attachments: string[]) => void;
   onGenerateTitle?: () => void;
@@ -113,6 +114,7 @@ export default function ChatArea({
   onStopGeneration,
   onEditMessage,
   onDeleteMessage,
+  onContinue,
   onModeChange,
   onAttachmentsChange,
   onGenerateTitle,
@@ -280,6 +282,7 @@ export default function ChatArea({
               onRetry={msg.role === 'assistant' && idx === conversation.messages.length - 1 ? onRetry : undefined}
               onEdit={msg.role === 'user' && onEditMessage ? (newContent) => onEditMessage(msg.id, newContent) : undefined}
               onDelete={onDeleteMessage ? () => onDeleteMessage(msg.id) : undefined}
+              onContinue={msg.role === 'assistant' && onContinue ? () => onContinue(msg.id) : undefined}
               onFollowUpClick={onSend ? (followUp) => onSend(followUp, []) : undefined}
               onVersionChange={onVersionChange ? (versionIndex) => onVersionChange(msg.id, versionIndex) : undefined}
             />

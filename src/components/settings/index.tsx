@@ -1,4 +1,4 @@
-import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain, Share2 } from 'lucide-react';
+import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain, Share2, Puzzle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { ModelProvider } from '../../types';
 import { setSyncStatus } from '../../utils/syncStatus';
@@ -13,6 +13,7 @@ import ToolsTab from './ToolsTab';
 import ExtensionsTab from './ExtensionsTab';
 import SharesTab from './SharesTab';
 import WorkflowsTab from './WorkflowsTab';
+import IntegrationsTab from './IntegrationsTab';
 import LocalAgentTab from './LocalAgentTab';
 import MemoriesTab from './MemoriesTab';
 import AboutTab from './AboutTab';
@@ -130,6 +131,7 @@ export default function SettingsPanel({
     shares: 'Shared Conversations',
     memories: 'Memories',
     localagent: 'Local Agent',
+    integrations: 'Integrations',
     about: 'About',
   };
 
@@ -168,6 +170,7 @@ export default function SettingsPanel({
               {navBtn('shares', 'Shares', <Share2 size={16} />)}
               {navBtn('memories', 'Memories', <Brain size={16} />)}
               {navBtn('localagent', 'Local Agent', <Database size={16} />)}
+              {navBtn('integrations', 'Integrations', <Puzzle size={16} />)}
               {navBtn('about', 'About', <Info size={16} />)}
             </div>
           </div>
@@ -304,6 +307,13 @@ export default function SettingsPanel({
                   onUpdateSettings({ memories: next });
                 }}
                 onDelete={i => onUpdateSettings({ memories: (settings.memories || []).filter((_, idx) => idx !== i) })}
+              />
+            )}
+
+            {activeTab === 'integrations' && (
+              <IntegrationsTab
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
               />
             )}
 

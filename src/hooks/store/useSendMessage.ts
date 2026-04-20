@@ -55,8 +55,23 @@ export function useSendMessage({
       setAbortController(null);
       setIsGenerating(false);
       clearStreaming();
+      
+      // Update the last assistant message with finishReason 'stopped'
+      setConversations(prev => prev.map(c => {
+        const messages = c.messages;
+        const lastAssistantIdx = messages.findIndex(m => m.role === 'assistant');
+        if (lastAssistantIdx !== -1) {
+          const updatedMessages = [...messages];
+          updatedMessages[lastAssistantIdx] = {
+            ...updatedMessages[lastAssistantIdx],
+            finishReason: 'stopped' as const
+          };
+          return { ...c, messages: updatedMessages, updatedAt: Date.now() };
+        }
+        return c;
+      }));
     }
-  }, [abortController, setIsGenerating]);
+  }, [abortController, setIsGenerating, setConversations]);
 
   const sendMessage = useCallback(async (content: string, images: string[], convId: string) => {
     // ── rate-limit helper ──────────────────────────────────────────────────────
@@ -98,6 +113,7 @@ export function useSendMessage({
     setAbortController(controller);
     const startTime = Date.now();
     let tokenCount = 0;
+    let finishReason: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' | undefined;
 
     // ── resolve format ─────────────────────────────────────────────────────────
     const activeApiFormat = resolveFormat(settings.apiFormats || [], provider.apiFormatId);
@@ -270,12 +286,18 @@ export function useSendMessage({
     };
 
     // ── SSE streaming parser helper ────────────────────────────────────────────
-    const parseSseChunk = (data: string, toolCallsMap: Map<number | string, any>): { delta: string; toolCallsMap: Map<number | string, any> } => {
+    const parseSseChunk = (data: string, toolCallsMap: Map<number | string, any>): { delta: string; toolCallsMap: Map<number | string, any>; finishReason?: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' } => {
       let delta = '';
+      let chunkFinishReason: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' | undefined;
       try {
         const parsed = JSON.parse(data);
         if (parsed.error) throw new Error(parsed.error);
         if (parsed.choices?.[0]?.finish_reason === 'error') throw new Error('Stream error');
+        
+        // Capture finish reason
+        if (parsed.choices?.[0]?.finish_reason) {
+          chunkFinishReason = parsed.choices[0].finish_reason;
+        }
         delta = (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta')
           ? ''
           : activeApiFormat.streamingChunkPath
@@ -308,7 +330,7 @@ export function useSendMessage({
       } catch (e) {
         if (e instanceof Error && !e.message.includes('JSON')) throw e;
       }
-      return { delta, toolCallsMap };
+      return { delta, toolCallsMap, finishReason: chunkFinishReason };
     };
 
     const decodeHtml = (s: string) => s.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&apos;/g, "'");
@@ -353,8 +375,9 @@ export function useSendMessage({
               }
             }
           } catch { /* ignore */ }
-          const { delta } = parseSseChunk(raw, toolCallsMap);
+          const { delta, finishReason: chunkFinishReason } = parseSseChunk(raw, toolCallsMap);
           if (delta) { assistantContent += delta; updateStreaming(assistantContent); tokenCount++; }
+          if (chunkFinishReason) { finishReason = chunkFinishReason; }
         }
       }
       return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()), codeExecFileIds };
@@ -560,6 +583,7 @@ export function useSendMessage({
         const data = await response.json();
         assistantContent = activeApiFormat.responseTextPath ? getByPath(data, activeApiFormat.responseTextPath) : (data.choices?.[0]?.message?.content || '');
         toolCalls = data.choices?.[0]?.message?.tool_calls || [];
+        finishReason = data.choices?.[0]?.finish_reason || 'stop';
         tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
 
         // Handle Anthropic code execution results
@@ -610,7 +634,7 @@ export function useSendMessage({
       const requestsAnotherTool = /\{"status"\s*:\s*"request_another_tool"\}\s*$/.test(assistantContent);
       const isStep = /\{"status"\s*:\s*"step"\}(\s*\{"status"\s*:\s*"request_another_tool"\})?\s*$/.test(assistantContent);
 
-      const assistantMsg: Message = { id: uuidv4(), role: 'assistant', content: assistantContent, timestamp: generateUniqueTimestamp(), model: model?.id, tool_calls: toolCalls.length > 0 ? toolCalls : undefined, tokens: tokenCount > 0 ? tokenCount : undefined, tokensPerSecond, isStep, requestsAnotherTool };
+      const assistantMsg: Message = { id: uuidv4(), role: 'assistant', content: assistantContent, timestamp: generateUniqueTimestamp(), model: model?.id, finishReason, tool_calls: toolCalls.length > 0 ? toolCalls : undefined, tokens: tokenCount > 0 ? tokenCount : undefined, tokensPerSecond, isStep, requestsAnotherTool };
 
       if (assistantContent || toolCalls.length > 0) addMessage(convId, assistantMsg);
 

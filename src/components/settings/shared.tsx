@@ -1,6 +1,6 @@
 import React from 'react';
 import { useState } from 'react';
-import { Database, Settings as SettingsIcon, Eye, Globe, Shield, Key } from 'lucide-react';
+import { Download, ChevronDown, Trash2, Eye, EyeOff, Plus, ChevronRight } from 'lucide-react';
 import { isTauri } from '../../utils/tauri';
 import type { ModelConfig, ModelProvider, ProviderApiFormat } from '../../types';
 import { getModelInfo } from '../../utils/models';

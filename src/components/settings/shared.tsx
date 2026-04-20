@@ -1,6 +1,7 @@
 import React from 'react';
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Trash2, Eye, EyeOff, Download, Plus } from 'lucide-react';
+import { Database, Settings as SettingsIcon, Eye, Globe, Shield, Key } from 'lucide-react';
+import { isTauri } from '../../utils/tauri';
 import type { ModelConfig, ModelProvider, ProviderApiFormat } from '../../types';
 import { getModelInfo } from '../../utils/models';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
@@ -325,7 +326,7 @@ export function IntegratedProviderCard({
           </div>
           <div className="flex items-center justify-between mb-2">
             {/* Hide proxy settings in Tauri - not needed with HTTP plugin */}
-            {typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window) ? (
+            {!isTauri ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-[rgb(var(--muted))]">Proxy</span>
                 <div className="flex rounded-lg overflow-hidden border border-[rgb(var(--border))] text-xs font-medium">
@@ -346,10 +347,10 @@ export function IntegratedProviderCard({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-[rgb(var(--muted))]">Connection</span>
-                <span className="px-2.5 py-1 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded">
-                  Direct (Tauri)
-                </span>
+                <span className="text-xs text-[rgb(var(--muted))]">Proxy</span>
+                  <span className="px-2.5 py-1 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded">
+                    Proxy is not required in the desktop app
+                  </span>
               </div>
             )}
             <div className="flex items-center gap-2">
@@ -513,7 +514,7 @@ export function ProviderCard({
               <p className="form-help">Controls how requests are structured and authenticated</p>
             </div>
             {/* Hide proxy settings in Tauri - not needed with HTTP plugin */}
-            {typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window) ? (
+            {!isTauri ? (
               <div className="form-group mb-0">
                 <label className="form-label text-xs">Proxy</label>
                 <div className="flex rounded-lg overflow-hidden border border-[rgb(var(--border))] w-fit text-xs font-medium">
@@ -535,9 +536,9 @@ export function ProviderCard({
               </div>
             ) : (
               <div className="form-group mb-0">
-                <label className="form-label text-xs">Connection</label>
+                <label className="form-label text-xs">Proxy</label>
                 <div className="px-3 py-1.5 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded w-fit">
-                  Direct (Tauri HTTP Plugin)
+                  Proxy is not required in the desktop app
                 </div>
                 <p className="form-help">Using Tauri HTTP plugin for direct connections without CORS limitations.</p>
               </div>

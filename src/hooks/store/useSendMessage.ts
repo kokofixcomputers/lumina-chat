@@ -4,6 +4,7 @@ import type { Conversation, Message, AppSettings, ModelProvider, ModelConfig } f
 import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../../tools';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { universalFetch, universalStreamingFetch, processSSEStream } from '../../utils/tauriFetch';
+import { isTauri } from '../../utils/tauri';
 import { resolveFormat, applyVars, getByPath } from '../../components/ProvidersPanel';
 import { writeToVfs } from '../../tools/buildFs';
 import { generateUniqueTimestamp } from '../../utils/timestamp';

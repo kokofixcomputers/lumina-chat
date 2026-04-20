@@ -11,7 +11,7 @@ export default function ToolsTab({ settings, onUpdateSettings }: ToolsTabProps) 
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-2xl">
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Enable / Disable Tools</h3>
-        <p className="text-sm text-[rgb(var(--muted))] mb-4">Disabled tools are excluded from every request before they are loaded.</p>
+        <p className="text-sm text-[rgb(var(--muted))] mb-4">Disabled tools are excluded from every request before they are loaded. Removing tools can save credits.</p>
         <div className="space-y-2">
           {[...toolsConfig, ...getExtensionToolsConfig()].map((tool) => {
             const disabled = (settings.disabledTools || []).includes(tool.name);

@@ -1,5 +1,7 @@
+import React, { useState, useEffect } from 'react';
 import { Database, Settings as SettingsIcon, Eye } from 'lucide-react';
 import { TAGLINES } from './shared';
+import { tauriUtils } from '../../utils/tauri';
 
 interface AboutTabProps {
   taglineIndex: number;
@@ -9,6 +11,20 @@ interface AboutTabProps {
 export default function AboutTab({ taglineIndex, fade }: AboutTabProps) {
   const commitSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA;
   const shortSha = commitSha?.slice(0, 7);
+  
+  // Get Tauri version if running in Tauri
+  const [tauriVersion, setTauriVersion] = useState<string>('');
+  
+  React.useEffect(() => {
+    const checkVersion = async () => {
+      const version = await tauriUtils.getVersion();
+      if (version) {
+        setTauriVersion(version);
+      }
+    };
+    
+    checkVersion();
+  }, []);
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-4xl mx-auto">
@@ -85,6 +101,7 @@ export default function AboutTab({ taglineIndex, fade }: AboutTabProps) {
 
         <div className="text-sm text-[rgb(var(--muted))]">
           <p>Build {shortSha}</p>
+          {tauriVersion && <p>Desktop App {tauriVersion}</p>}
         </div>
       </div>
     </div>

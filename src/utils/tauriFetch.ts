@@ -36,8 +36,7 @@ async function getResponseBody(response: any): Promise<string> {
   }
 }
 
-// Check if we're running in Tauri
-export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+import { isTauri } from './tauri';
 
 // Universal fetch function that uses Tauri HTTP plugin in Tauri, browser fetch otherwise
 export async function universalFetch(url: string, options: RequestInit = {}): Promise<Response> {

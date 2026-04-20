@@ -356,135 +356,160 @@ export default function App() {
     return subscribeSyncStatus(setSyncStatus);
   }, []);
 
+  // Initialize sync manager for continuous operation
   useEffect(() => {
-    const cloudSync = store.settings.cloudSync;
-    if (!cloudSync?.enabled || !cloudSync?.email || !cloudSync?.password) {
-      setSyncStatus('disabled');
-      return;
-    }
+    const initSync = async () => {
+      const cloudSync = store.settings.cloudSync;
+      if (!cloudSync?.enabled || !cloudSync?.email || !cloudSync?.password) {
+        return;
+      }
 
-    // ── WebSocket Sync System ──────────────────────────────────────────────────
-    setSyncStatus('syncing');
-    const wsUrl = `wss://my-ai-chat.kokofixcomputers.workers.dev/ws?userId=${encodeURIComponent(cloudSync.email)}`;
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let dead = false;
-    let reconnectDelay = 3000;
-    let lastPushedSettings = localStorage.getItem('lumina_settings');
-    let lastPushedConversations = localStorage.getItem('lumina_conversations');
-    let ignoreNextUpdate = false; // suppress echo after our own push
+      const { getSyncManager } = await import('./utils/syncManager');
+      
+      const syncManager = getSyncManager({
+        onConnectionChange: (connected) => {
+          // Update global sync status
+          if (connected) {
+            setSyncStatus('synced');
+          } else {
+            setSyncStatus('error');
+          }
+        },
+        onAuthSuccess: (id, isNew) => {
+          console.log('Sync authenticated:', isNew ? 'New user' : 'Existing user');
+          setSyncStatus('synced');
+        },
+        onAuthError: (error) => {
+          console.error('Sync auth error:', error);
+          setSyncStatus('error');
+        },
+        onInitialState: (data) => {
+          // Import initial data from server
+          if (data.conversations) {
+            const { mergeConversationsSafely } = require('./utils/syncUtils');
+            const mergedConversations = mergeConversationsSafely(store.conversations, data.conversations);
+            store.setConversations(mergedConversations);
+          }
+          if (data.settings) {
+            store.updateSettings(data.settings);
+          }
+        },
+        onSyncAction: (action) => {
+          // Handle incoming sync actions
+          switch (action.type) {
+            case 'create_conversation':
+              store.setConversations([{ ...action.data, messages: [] }, ...store.conversations]);
+              break;
+            case 'create_message':
+              const conv = store.conversations.find(c => c.id === action.data.conversationId);
+              if (conv) {
+                const updatedConv = {
+                  ...conv,
+                  messages: [...conv.messages, action.data.message],
+                  updatedAt: action.timestamp
+                };
+                store.setConversations(store.conversations.map(c => 
+                  c.id === action.data.conversationId ? updatedConv : c
+                ));
+              }
+              break;
+            case 'delete_message':
+              // Handle message deletion
+              break;
+            case 'delete_conversation':
+              store.setConversations(store.conversations.filter(c => c.id !== action.data.conversationId));
+              break;
+            case 'update_title':
+              const titleConv = store.conversations.find(c => c.id === action.data.conversationId);
+              if (titleConv) {
+                const updatedConv = {
+                  ...titleConv,
+                  title: action.data.title,
+                  updatedAt: action.timestamp
+                };
+                store.setConversations(store.conversations.map(c => 
+                  c.id === action.data.conversationId ? updatedConv : c
+                ));
+              }
+              break;
+            // Handle other action types as needed
+          }
+        }
+      });
 
-    const push = async (key: string, value: unknown) => {
-      if (ws?.readyState !== WebSocket.OPEN) return;
-      const { encryptData } = await import('./utils/encryption');
-      ws.send(JSON.stringify({ type: 'set', key, value: encryptData(value, cloudSync.password) }));
+      // Auto-connect
+      syncManager.connect({ 
+        username: cloudSync.email, 
+        password: cloudSync.password 
+      });
     };
 
-    const connect = () => {
-        if (dead) return;
-        ws = new WebSocket(wsUrl);
+    initSync();
 
-      ws.onopen = () => { setSyncStatus('synced'); reconnectDelay = 3000; };
-
-      ws.onmessage = async (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            const { decryptData } = await import('./utils/encryption');
-
-            // On connect the server sends init with all stored data — overwrite local
-            if (msg.type === 'init') {
-              const data = msg.data as Record<string, string>;
-              let changed = false;
-              for (const [key, encVal] of Object.entries(data)) {
-                if (key === 'greeting') continue;
-                const decrypted = decryptData(encVal, cloudSync.password);
-                if (!decrypted) continue;
-                const str = JSON.stringify(decrypted);
-                if (key === 'settings' && str !== localStorage.getItem('lumina_settings')) {
-                  localStorage.setItem('lumina_settings', str);
-                  lastPushedSettings = str;
-                  store.updateSettings(decrypted);
-                  changed = true;
-                }
-                if (key === 'conversations' && str !== localStorage.getItem('lumina_conversations')) {
-                  localStorage.setItem('lumina_conversations', str);
-                  lastPushedConversations = str;
-                  // Merge conversations instead of overwriting
-                  const { mergeConversationsSafely } = await import('./utils/syncUtils');
-                  const mergedConversations = mergeConversationsSafely(store.conversations, decrypted);
-                  store.setConversations(mergedConversations);
-                  changed = true;
-                }
-              }
-              // Changes applied live via store methods
-              // Nothing from server - push our local state up
-              await push('settings', JSON.parse(lastPushedSettings || '{}'));
-              await push('conversations', JSON.parse(lastPushedConversations || '[]'));
-              ignoreNextUpdate = true;
-              setTimeout(() => { ignoreNextUpdate = false; }, 2000);
-            }
-
-            // Any update from another client - merge intelligently
-            if (msg.type === 'update') {
-              if (ignoreNextUpdate) return;
-              const decrypted = decryptData(msg.value, cloudSync.password);
-              if (!decrypted) return;
-              const str = JSON.stringify(decrypted);
-              if (msg.key === 'settings') {
-                localStorage.setItem('lumina_settings', str);
-                lastPushedSettings = str;
-                store.updateSettings(decrypted);
-              }
-              if (msg.key === 'conversations') {
-                localStorage.setItem('lumina_conversations', str);
-                lastPushedConversations = str;
-                // Merge conversations instead of overwriting
-                const { mergeConversationsSafely } = await import('./utils/syncUtils');
-                const mergedConversations = mergeConversationsSafely(store.conversations, decrypted);
-                store.setConversations(mergedConversations);
-              }
-            }
-          } catch { /* ignore */ }
-        };
-
-      ws.onerror = () => setSyncStatus('error');
-      ws.onclose = () => {
-          setSyncStatus('error');
-          if (!dead) {
-            reconnectTimer = setTimeout(connect, reconnectDelay);
-            reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-          }
-        };
-      };
-
-      // Push local changes every 3s if something changed
-      const pushInterval = setInterval(async () => {
-        if (ws?.readyState !== WebSocket.OPEN) return;
-        const curSettings = localStorage.getItem('lumina_settings');
-        const curConversations = localStorage.getItem('lumina_conversations');
-        if (curSettings !== lastPushedSettings) {
-          lastPushedSettings = curSettings;
-          ignoreNextUpdate = true;
-          setTimeout(() => { ignoreNextUpdate = false; }, 2000);
-          await push('settings', JSON.parse(curSettings || '{}'));
-        }
-        if (curConversations !== lastPushedConversations) {
-          lastPushedConversations = curConversations;
-          ignoreNextUpdate = true;
-          setTimeout(() => { ignoreNextUpdate = false; }, 2000);
-          await push('conversations', JSON.parse(curConversations || '[]'));
-        }
-      }, 3000);
-
-      connect();
-      return () => {
-        dead = true;
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        clearInterval(pushInterval);
-        ws?.close();
-      };
-
+    return () => {
+      // Don't destroy on unmount - let it continue running
+    };
   }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.email, store.settings.cloudSync?.password]);
+
+  // Hook into store methods to send sync actions
+  useEffect(() => {
+    const initSyncHooks = async () => {
+      if (!store.settings.cloudSync?.enabled) return;
+
+      const { getSyncManager } = await import('./utils/syncManager');
+      const syncManager = getSyncManager();
+
+      // Override store methods to send sync actions
+      const originalSendMessage = store.sendMessage.bind(store);
+      store.sendMessage = async (content: string, images: string[], convId: string) => {
+        const result = await originalSendMessage(content, images, convId);
+        
+        // Send sync action for new message
+        if (syncManager.isConnected()) {
+          const lastMessage = store.activeConversation?.messages[store.activeConversation.messages.length - 1];
+          if (lastMessage) {
+            syncManager.sendCreateMessage(convId, lastMessage);
+          }
+        }
+        
+        return result;
+      };
+
+      const originalUpdateConversationTitle = store.updateConversationTitle.bind(store);
+      store.updateConversationTitle = (id: string, title: string) => {
+        originalUpdateConversationTitle(id, title);
+        
+        // Send sync action for title update
+        if (syncManager.isConnected()) {
+          syncManager.sendUpdateTitle(id, title);
+        }
+      };
+
+      const originalNewConversation = store.newConversation.bind(store);
+      store.newConversation = (title?: string) => {
+        const convId = originalNewConversation(title);
+        
+        // Send sync action for new conversation
+        if (syncManager.isConnected() && convId) {
+          const conv = store.conversations.find(c => c.id === convId);
+          if (conv) {
+            syncManager.sendCreateConversation(conv);
+          }
+        }
+        
+        return convId;
+      };
+
+      return () => {
+        // Restore original methods
+        store.sendMessage = originalSendMessage;
+        store.updateConversationTitle = originalUpdateConversationTitle;
+        store.newConversation = originalNewConversation;
+      };
+    };
+
+    initSyncHooks();
+  }, [store.settings.cloudSync?.enabled]);
 
   return (
     <>

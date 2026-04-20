@@ -1,24 +1,170 @@
-import { useState } from 'react';
-import { Upload, Download, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Upload, Download, Trash2, Wifi, WifiOff } from 'lucide-react';
 import type { AppSettings } from '../../types';
-import { encryptData, decryptData } from '../../utils/encryption';
+import { getSyncManager, destroySyncManager } from '../../utils/syncManager';
+import type { SyncActionTypes } from '../../types/sync';
 
 interface CloudSyncTabProps {
   settings: AppSettings;
   conversations: any[];
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onImportData: (data: any) => void;
+  onSyncAction?: (action: SyncActionTypes) => void;
 }
 
-export default function CloudSyncTab({ settings, conversations, onUpdateSettings, onImportData }: CloudSyncTabProps) {
-  const [syncEmail, setSyncEmail] = useState(settings.cloudSync?.email || '');
+export default function CloudSyncTab({ settings, conversations, onUpdateSettings, onImportData, onSyncAction }: CloudSyncTabProps) {
+  const [syncUsername, setSyncUsername] = useState(settings.cloudSync?.email || '');
   const [syncPassword, setSyncPassword] = useState(settings.cloudSync?.password || '');
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'connecting' | 'connected' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
-  const [showConflictModal, setShowConflictModal] = useState(false);
-  const [serverData, setServerData] = useState<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isNewUser, setIsNewUser] = useState(false);
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(settings.cloudSync?.enabled || false);
+
+  useEffect(() => {
+    // Get existing sync manager (initialized in App.tsx)
+    const syncManager = getSyncManager();
+    
+    // Update connection state
+    setIsConnected(syncManager.isConnected());
+    setUserId(syncManager.getUserId());
+    
+    // Auto-connect if credentials are available and auto-sync is enabled
+    if (autoSyncEnabled && syncUsername && syncPassword && !syncManager.isConnected()) {
+      handleConnect();
+    }
+  }, [autoSyncEnabled, syncUsername, syncPassword]);
+
+  const handleConnect = async () => {
+    if (!syncUsername || !syncPassword) {
+      setSyncMessage('Please enter username and password');
+      setSyncStatus('error');
+      return;
+    }
+
+    setSyncStatus('connecting');
+    setSyncMessage('Connecting to sync server...');
+
+    const syncManager = getSyncManager();
+    const success = await syncManager.connect({ username: syncUsername, password: syncPassword });
+    
+    if (!success) {
+      setSyncStatus('error');
+      setSyncMessage('Failed to connect');
+    }
+
+    // Update settings with credentials
+    onUpdateSettings({ 
+      cloudSync: { 
+        enabled: autoSyncEnabled, 
+        email: syncUsername, 
+        password: syncPassword 
+      } 
+    });
+  };
+
+  const handleDisconnect = () => {
+    destroySyncManager();
+    setIsConnected(false);
+    setUserId(null);
+    setSyncStatus('idle');
+    setSyncMessage('Disconnected');
+  };
+
+  const handleSyncCurrentData = async () => {
+    if (!isConnected) {
+      setSyncMessage('Please connect first');
+      setSyncStatus('error');
+      return;
+    }
+
+    setSyncStatus('syncing');
+    setSyncMessage('Syncing current data...');
+
+    try {
+      const syncManager = getSyncManager();
+      
+      // Send all current conversations as create actions
+      for (const conversation of conversations) {
+        syncManager.sendCreateConversation(conversation);
+        
+        // Send all messages in the conversation
+        for (const message of conversation.messages) {
+          syncManager.sendCreateMessage(conversation.id, message);
+        }
+      }
+
+      setSyncStatus('success');
+      setSyncMessage('Data synced successfully!');
+    } catch (error) {
+      setSyncStatus('error');
+      setSyncMessage(error instanceof Error ? error.message : 'Sync failed');
+    }
+  };
+
+  const handleEraseData = async () => {
+    if (!isConnected) {
+      setSyncMessage('Please connect first');
+      setSyncStatus('error');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to erase all your cloud data? This cannot be undone.')) return;
+
+    setSyncStatus('syncing');
+    setSyncMessage('Erasing cloud data...');
+
+    try {
+      const syncManager = getSyncManager();
+      const success = await syncManager.eraseData();
+      
+      if (success) {
+        setSyncStatus('success');
+        setSyncMessage('Cloud data erased successfully');
+        // Optionally disconnect after erasing
+        setTimeout(() => {
+          handleDisconnect();
+        }, 2000);
+      } else {
+        setSyncStatus('error');
+        setSyncMessage('Failed to erase cloud data');
+      }
+    } catch (error) {
+      setSyncStatus('error');
+      setSyncMessage(error instanceof Error ? error.message : 'Erase failed');
+    }
+  };
+
+  const handleOverwriteData = async () => {
+    if (!isConnected) {
+      setSyncMessage('Please connect first');
+      setSyncStatus('error');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to overwrite all cloud data? This will replace everything on the server with your local data.')) return;
+
+    setSyncStatus('syncing');
+    setSyncMessage('Overwriting cloud data...');
+
+    try {
+      const syncManager = getSyncManager();
+      
+      // Send complete data overwrite
+      syncManager.sendOverwriteData({
+        conversations: conversations,
+        settings: settings
+      });
+
+      setSyncStatus('success');
+      setSyncMessage('Cloud data overwritten successfully!');
+    } catch (error) {
+      setSyncStatus('error');
+      setSyncMessage(error instanceof Error ? error.message : 'Overwrite failed');
+    }
+  };
 
   return (
     <>
@@ -36,20 +182,40 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
                 <strong>Warning:</strong> While there is little chance that your data get's stolen from our servers, the chance is not 0%. We are not responsible for stolen data.
               </p>
             </div>
+
+            {/* Connection Status */}
+            <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {isConnected ? <Wifi size={16} className="text-green-600" /> : <WifiOff size={16} className="text-red-600" />}
+                  <span className="text-sm font-medium">
+                    {isConnected ? 'Connected' : 'Disconnected'}
+                  </span>
+                  {userId && <span className="text-xs text-gray-500">(ID: {userId.slice(0, 8)}...)</span>}
+                </div>
+                {isNewUser && (
+                  <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
+                    New Account
+                  </span>
+                )}
+              </div>
+            </div>
+
             <section>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Sync Configuration</h3>
-                            <div className="form-group">
+              
+              <div className="form-group">
                 <div className="flex items-center justify-between">
                   <label className="form-label mb-0">Enable Auto-Sync</label>
                   <button
                     onClick={() => {
                       const newEnabled = !autoSyncEnabled;
                       setAutoSyncEnabled(newEnabled);
-                      onUpdateSettings({ cloudSync: { enabled: newEnabled, email: syncEmail, password: syncPassword } });
+                      onUpdateSettings({ cloudSync: { enabled: newEnabled, email: syncUsername, password: syncPassword } });
                       if (!newEnabled) {
-                        setSyncStatus('idle');
-                      } else if (syncEmail && syncPassword) {
-                        setSyncStatus('idle');
+                        handleDisconnect();
+                      } else if (syncUsername && syncPassword) {
+                        handleConnect();
                       }
                     }}
                     className={`toggle ${autoSyncEnabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
@@ -59,164 +225,92 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
                 </div>
                 <p className="form-help">Automatically sync changes to cloud</p>
               </div>
+
               <div className="form-group">
-                <label className="form-label">Email Address</label>
+                <label className="form-label">Username</label>
                 <input
-                  type="email"
-                  value={syncEmail}
+                  type="text"
+                  value={syncUsername}
                   onChange={e => {
-                    setSyncEmail(e.target.value);
+                    setSyncUsername(e.target.value);
                     onUpdateSettings({ cloudSync: { enabled: autoSyncEnabled, email: e.target.value, password: syncPassword } });
                   }}
                   className="input text-sm"
-                  placeholder="your@email.com"
-                  disabled={syncStatus === 'loading'}
+                  placeholder="username"
+                  disabled={isConnected || syncStatus === 'connecting'}
                 />
               </div>
+
               <div className="form-group">
-                <label className="form-label">Password (AES-256 Encryption)</label>
+                <label className="form-label">Password</label>
                 <input
                   type="password"
                   value={syncPassword}
                   onChange={e => {
                     setSyncPassword(e.target.value);
-                    onUpdateSettings({ cloudSync: { enabled: autoSyncEnabled, email: syncEmail, password: e.target.value } });
+                    onUpdateSettings({ cloudSync: { enabled: autoSyncEnabled, email: syncUsername, password: e.target.value } });
                   }}
                   className="input text-sm"
-                  placeholder="Enter encryption password"
-                  disabled={syncStatus === 'loading'}
+                  placeholder="Enter password"
+                  disabled={isConnected || syncStatus === 'connecting'}
                 />
-                <p className="form-help">Your data is encrypted client-side before upload</p>
+                <p className="form-help">Your data is encrypted server-side with AES-256</p>
               </div>
+
               <div className="flex gap-2 flex-wrap">
+                {!isConnected ? (
+                  <button
+                    onClick={handleConnect}
+                    disabled={syncStatus === 'connecting' || !syncUsername || !syncPassword}
+                    className="btn-primary"
+                  >
+                    <Wifi size={16} />
+                    {syncStatus === 'connecting' ? 'Connecting...' : 'Connect'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleDisconnect}
+                      className="btn-secondary"
+                    >
+                      <WifiOff size={16} />
+                      Disconnect
+                    </button>
+                    <button
+                      onClick={handleSyncCurrentData}
+                      disabled={syncStatus === 'syncing'}
+                      className="btn-primary"
+                    >
+                      <Upload size={16} />
+                      {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Current Data'}
+                    </button>
+                    <button
+                      onClick={handleOverwriteData}
+                      disabled={!isConnected || syncStatus === 'syncing'}
+                      className="btn-secondary text-orange-600 hover:text-orange-700"
+                    >
+                      <Upload size={16} />
+                      Overwrite Data
+                    </button>
+                  </>
+                )}
+                
                 <button
-                  onClick={async () => {
-                    if (!syncEmail || !syncPassword) {
-                      setSyncMessage('Please enter email and password');
-                      setSyncStatus('error');
-                      return;
-                    }
-                    setSyncStatus('loading');
-                    setSyncMessage('Uploading data...');
-                    try {
-                      const encrypted = encryptData({ settings, conversations }, syncPassword);
-                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'save', email: syncEmail, data: encrypted })
-                      });
-                      const result = await response.json();
-                      if (result.disabled) {
-                        setCloudSyncEnabled(false);
-                        setSyncMessage('Cloud sync is unavailable');
-                        setSyncStatus('error');
-                      } else if (result.success) {
-                        setSyncMessage('Data uploaded successfully!');
-                        setSyncStatus('success');
-                      } else {
-                        throw new Error(result.error || 'Upload failed');
-                      }
-                    } catch (err) {
-                      setSyncMessage(err instanceof Error ? err.message : 'Upload failed');
-                      setSyncStatus('error');
-                    }
-                  }}
-                  disabled={syncStatus === 'loading'}
-                  className="btn-primary"
-                >
-                  <Upload size={16} />
-                  {syncStatus === 'loading' ? 'Uploading...' : 'Upload to Cloud'}
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!syncEmail || !syncPassword) {
-                      setSyncMessage('Please enter email and password');
-                      setSyncStatus('error');
-                      return;
-                    }
-                    setSyncStatus('loading');
-                    setSyncMessage('Checking for data...');
-                    try {
-                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'get', email: syncEmail })
-                      });
-                      const result = await response.json();
-                      if (result.disabled) {
-                        setCloudSyncEnabled(false);
-                        setSyncMessage('Cloud sync is unavailable');
-                        setSyncStatus('error');
-                      } else if (!result.exists) {
-                        setSyncMessage('No data found for this email');
-                        setSyncStatus('error');
-                      } else {
-                        const decrypted = decryptData(result.data, syncPassword);
-                        if (!decrypted) {
-                          setSyncMessage('Invalid password');
-                          setSyncStatus('error');
-                        } else {
-                          setServerData(decrypted);
-                          setShowConflictModal(true);
-                          setSyncStatus('idle');
-                          setSyncMessage('');
-                        }
-                      }
-                    } catch (err) {
-                      setSyncMessage(err instanceof Error ? err.message : 'Download failed');
-                      setSyncStatus('error');
-                    }
-                  }}
-                  disabled={syncStatus === 'loading'}
-                  className="btn-secondary"
-                >
-                  <Download size={16} />
-                  {syncStatus === 'loading' ? 'Checking...' : 'Download from Cloud'}
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!syncEmail) {
-                      setSyncMessage('Please enter email address');
-                      setSyncStatus('error');
-                      return;
-                    }
-                    if (!confirm('Are you sure you want to erase all your cloud data? This cannot be undone.')) return;
-                    setSyncStatus('loading');
-                    setSyncMessage('Erasing data...');
-                    try {
-                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'delete', email: syncEmail })
-                      });
-                      const result = await response.json();
-                      if (result.disabled) {
-                        setCloudSyncEnabled(false);
-                        setSyncMessage('Cloud sync is unavailable');
-                        setSyncStatus('error');
-                      } else if (result.success) {
-                        setSyncMessage('Cloud data erased successfully');
-                        setSyncStatus('success');
-                      } else {
-                        throw new Error(result.error || 'Delete failed');
-                      }
-                    } catch (err) {
-                      setSyncMessage(err instanceof Error ? err.message : 'Delete failed');
-                      setSyncStatus('error');
-                    }
-                  }}
-                  disabled={syncStatus === 'loading'}
+                  onClick={handleEraseData}
+                  disabled={!isConnected || syncStatus === 'syncing'}
                   className="btn-secondary text-red-600 hover:text-red-700"
                 >
                   <Trash2 size={16} />
                   Erase My Data
                 </button>
               </div>
+
               {syncMessage && (
                 <div className={`mt-4 p-3 rounded-xl text-sm ${
                   syncStatus === 'success' ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200' :
                   syncStatus === 'error' ? 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200' :
-                  'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200'
+                  syncStatus === 'connecting' || syncStatus === 'syncing' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200' :
+                  'bg-gray-50 dark:bg-gray-900/20 text-gray-800 dark:text-gray-200'
                 }`}>
                   {syncMessage}
                 </div>
@@ -225,72 +319,6 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
           </>
         )}
       </div>
-
-      {/* Conflict Resolution Modal */}
-      {showConflictModal && serverData && (
-        <>
-          <div className="fixed inset-0 bg-black/50 z-[60]" onClick={() => setShowConflictModal(false)} />
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
-              <h3 className="text-lg font-semibold">Data Conflict Detected</h3>
-              <p className="text-sm text-[rgb(var(--muted))]">
-                We found existing data on the server for this email. What would you like to do?
-              </p>
-              <div className="space-y-2">
-                <button
-                  onClick={() => {
-                    onImportData(serverData);
-                    setShowConflictModal(false);
-                    setSyncMessage('Local data overwritten with server data');
-                    setSyncStatus('success');
-                  }}
-                  className="w-full btn-primary justify-center"
-                >
-                  Overwrite Local Data
-                </button>
-                <button
-                  onClick={async () => {
-                    setSyncStatus('loading');
-                    try {
-                      const encrypted = encryptData({ settings, conversations }, syncPassword);
-                      const response = await fetch('https://lumina-chat-rho.vercel.app/api/sync', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'save', email: syncEmail, data: encrypted })
-                      });
-                      const result = await response.json();
-                      if (result.success) {
-                        setShowConflictModal(false);
-                        setSyncMessage('Server data overwritten with local data');
-                        setSyncStatus('success');
-                      } else {
-                        throw new Error(result.error || 'Upload failed');
-                      }
-                    } catch (err) {
-                      setSyncMessage(err instanceof Error ? err.message : 'Upload failed');
-                      setSyncStatus('error');
-                      setShowConflictModal(false);
-                    }
-                  }}
-                  className="w-full btn-secondary justify-center"
-                >
-                  Overwrite Server Data
-                </button>
-                <button
-                  onClick={() => {
-                    setShowConflictModal(false);
-                    setSyncMessage('Sync cancelled');
-                    setSyncStatus('idle');
-                  }}
-                  className="w-full btn-secondary justify-center"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </>
   );
 }

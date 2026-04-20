@@ -386,43 +386,20 @@ export default function App() {
           setSyncStatus('error');
         },
         onInitialState: async (data) => {
-          // Suppress all sync actions while processing initial state
-          // This prevents deleted items from being re-broadcast when merged
-          const suppressedActions = (window as any).__suppressedSyncActions || new Set();
-          const initialStateKey = `initial_state:${Date.now()}`;
-          suppressedActions.add(initialStateKey);
-          (window as any).__suppressedSyncActions = suppressedActions;
-          
-          try {
-            // Import initial data from server
-            if (data.conversations) {
-              const syncUtils = await import('./utils/syncUtils');
-              const mergedConversations = syncUtils.mergeConversationsSafely(store.conversations, data.conversations);
-              store.setConversations(mergedConversations);
-            }
-            if (data.settings) {
-              store.updateSettings(data.settings);
-            }
-          } finally {
-            // Clean up suppression after a delay to allow storage monitor to skip
-            setTimeout(() => {
-              suppressedActions.delete(initialStateKey);
-            }, 5000);
+          // Import initial data from server
+          if (data.conversations) {
+            const syncUtils = await import('./utils/syncUtils');
+            const mergedConversations = syncUtils.mergeConversationsSafely(store.conversations, data.conversations);
+            store.setConversations(mergedConversations);
           }
+          if (data.settings) {
+            store.updateSettings(data.settings);
+          }
+          // Update storage monitor's snapshot so it doesn't see these as local changes
+          (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
         },
         onSyncAction: (action) => {
-          // Handle incoming sync actions
-          // Mark this action as processed to prevent storage monitor from echoing it
-          const suppressedActions = (window as any).__suppressedSyncActions || new Set();
-          const actionKey = `${action.type}:${action.data?.conversationId || ''}:${action.data?.messageId || ''}:${action.timestamp}`;
-          suppressedActions.add(actionKey);
-          (window as any).__suppressedSyncActions = suppressedActions;
-          
-          // Clean up old suppressed actions after 5 seconds
-          setTimeout(() => {
-            suppressedActions.delete(actionKey);
-          }, 5000);
-          
+          // Handle incoming sync actions from remote
           switch (action.type) {
             case 'create_conversation':
               store.setConversations([{ ...action.data, messages: [] }, ...store.conversations]);
@@ -473,6 +450,8 @@ export default function App() {
               break;
             // Handle other action types as needed
           }
+          // Update storage monitor's snapshot so it doesn't see remote changes as local changes
+          (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
         }
       });
 
@@ -539,54 +518,32 @@ export default function App() {
         return;
       }
 
-      let lastConversations = localStorage.getItem('lumina_conversations');
-      let lastSettings = localStorage.getItem('lumina_settings');
+      // Use shared snapshot so sync handlers can update it when applying remote changes
+      let localLastConversations = localStorage.getItem('lumina_conversations');
+      (window as any).__syncLastConversations = localLastConversations;
+      let localLastSettings = localStorage.getItem('lumina_settings');
 
       const checkForChanges = () => {
+        // Get shared snapshot (may have been updated by remote sync handlers)
+        const lastConversations = (window as any).__syncLastConversations ?? localLastConversations;
         const currentConversations = localStorage.getItem('lumina_conversations');
         const currentSettings = localStorage.getItem('lumina_settings');
 
-        // Check if conversations changed
+        // Check if conversations changed (local changes only - remote changes update the snapshot)
         if (currentConversations !== lastConversations) {
           try {
             const oldConversations = lastConversations ? JSON.parse(lastConversations) : [];
             const newConversations = currentConversations ? JSON.parse(currentConversations) : [];
             
-            // Helper to check if an action should be suppressed (came from remote sync)
-            const isActionSuppressed = (actionType: string, conversationId: string, messageId?: string, timestamp?: number) => {
-              const suppressedActions = (window as any).__suppressedSyncActions as Set<string> | undefined;
-              if (!suppressedActions) return false;
-              // Check for initial_state suppression (suppress everything during initial sync)
-              for (const key of suppressedActions) {
-                if (key.startsWith('initial_state:')) return true;
-              }
-              // Check with the exact timestamp if provided
-              if (timestamp) {
-                const actionKey = `${actionType}:${conversationId}:${messageId || ''}:${timestamp}`;
-                if (suppressedActions.has(actionKey)) return true;
-              }
-              // Also check without timestamp for broader matching
-              for (const key of suppressedActions) {
-                if (key.startsWith(`${actionType}:${conversationId}:${messageId || ''}:`)) {
-                  return true;
-                }
-              }
-              return false;
-            };
-            
             // Find what changed
             const changes = findConversationsDiff(oldConversations, newConversations);
             
-            // Send sync actions for changes
+            // Send sync actions for local changes only
             console.log('Processing sync changes:', changes.length, 'changes detected');
             changes.forEach(change => {
               if (change.type === 'added') {
-                if (isActionSuppressed('create_conversation', change.conversation.id)) {
-                  console.log('Suppressing create conversation echo for:', change.conversation.id);
-                } else {
-                  console.log('Sending create conversation for:', change.conversation.id);
-                  syncManager.sendCreateConversation(change.conversation);
-                }
+                console.log('Sending create conversation for:', change.conversation.id);
+                syncManager.sendCreateConversation(change.conversation);
               } else if (change.type === 'modified') {
                 // Check what changed in the conversation
                 const oldConv = oldConversations.find(c => c.id === change.conversation.id);
@@ -595,9 +552,7 @@ export default function App() {
                 if (oldConv && newConv) {
                   // Check for title changes
                   if (oldConv.title !== newConv.title) {
-                    if (!isActionSuppressed('update_title', change.conversation.id)) {
-                      syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
-                    }
+                    syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
                   }
                   
                   // Check for new messages
@@ -608,47 +563,38 @@ export default function App() {
                   // Send sync actions for new messages
                   console.log('Sending', newMessages.length, 'new messages for conversation:', change.conversation.id);
                   newMessages.forEach((message: any) => {
-                    if (isActionSuppressed('create_message', change.conversation.id, message.id)) {
-                      console.log('Suppressing create message echo:', message.id);
-                    } else {
-                      console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
-                      syncManager.sendCreateMessage(change.conversation.id, message);
-                    }
+                    console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
+                    syncManager.sendCreateMessage(change.conversation.id, message);
                   });
                   
                   // Check for deleted messages
                   const deletedMessages = (oldConv.messages || []).filter((m: any) => !newMessageIds.has(m.id));
                   console.log('Sending', deletedMessages.length, 'deleted messages for conversation:', change.conversation.id);
                   deletedMessages.forEach((message: any) => {
-                    if (isActionSuppressed('delete_message', change.conversation.id, message.id)) {
-                      console.log('Suppressing delete message echo:', message.id);
-                    } else {
-                      console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
-                      syncManager.sendDeleteMessage(change.conversation.id, message.id);
-                    }
+                    console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
+                    syncManager.sendDeleteMessage(change.conversation.id, message.id);
                   });
                 }
               } else if (change.type === 'deleted') {
-                if (isActionSuppressed('delete_conversation', change.conversationId)) {
-                  console.log('Suppressing delete conversation echo for:', change.conversationId);
-                } else {
-                  syncManager.sendDeleteConversation(change.conversationId);
-                }
+                console.log('Sending delete conversation for:', change.conversationId);
+                syncManager.sendDeleteConversation(change.conversationId);
               }
             });
             
-            lastConversations = currentConversations;
+            // Update both local and shared snapshot
+            localLastConversations = currentConversations;
+            (window as any).__syncLastConversations = currentConversations;
           } catch (error) {
             console.error('Error syncing conversations:', error);
           }
         }
 
         // Check if settings changed
-        if (currentSettings !== lastSettings) {
+        if (currentSettings !== localLastSettings) {
           try {
             // Settings changes could be handled here if needed
             console.log('Settings changed, could sync if needed');
-            lastSettings = currentSettings;
+            localLastSettings = currentSettings;
           } catch (error) {
             console.error('Error syncing settings:', error);
           }

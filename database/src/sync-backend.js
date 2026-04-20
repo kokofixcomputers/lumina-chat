@@ -4,6 +4,7 @@ const KEY_LENGTH = 32;
 
 export class SyncBackend {
   constructor(ctx, env) {
+    console.log('SyncBackend Durable Object initialized');
     this.ctx = ctx;
     this.env = env;
     this.authenticatedConnections = new Map(); // userId -> Set of WebSocket connections
@@ -233,6 +234,7 @@ export class SyncBackend {
 
   // WebSocket message handling
   async handleWebSocketMessage(ws, message) {
+    console.log('SyncBackend received WebSocket message:', message);
     try {
       const msg = JSON.parse(message);
       
@@ -308,7 +310,7 @@ export class SyncBackend {
     const action = syncMsg.data;
     
     // Apply action to user data and clean up old data
-    const applied = await this._applyActionToUserData(ws.userId, action);
+    const applied = await this._applyActionToUserData(ws.userId, action, ws);
     
     if (applied) {
       // Store action for history/replay
@@ -359,7 +361,7 @@ export class SyncBackend {
     }
   }
 
-  async _applyActionToUserData(userId, action) {
+  async _applyActionToUserData(userId, action, ws = null) {
     try {
       // Get current conversations data (unencrypted for sync actions)
       const conversationsData = await this.getUserData(userId, 'conversations') || [];
@@ -386,11 +388,27 @@ export class SyncBackend {
         
         case 'create_message': {
           const { conversationId, message } = action.data;
+          console.log('Processing create_message for conversation:', conversationId);
+          console.log('Available conversations:', Array.from(conversations.keys()));
+          
           const conversation = conversations.get(conversationId);
           if (conversation) {
+            console.log('Found conversation, adding message:', message.id);
             conversation.messages.push(message);
             conversation.updatedAt = action.timestamp;
             dataChanged = true;
+          } else {
+            console.error('Conversation not found:', conversationId);
+            // Create conversation if it doesn't exist (fallback)
+            conversations.set(conversationId, {
+              id: conversationId,
+              title: 'Untitled Conversation',
+              messages: [message],
+              createdAt: action.timestamp,
+              updatedAt: action.timestamp
+            });
+            dataChanged = true;
+            console.log('Created new conversation as fallback');
           }
           break;
         }
@@ -454,7 +472,25 @@ export class SyncBackend {
           break;
         }
         
+        case 'overwrite_data': {
+          // Complete data overwrite
+          if (action.data.conversations) {
+            // Replace all conversations
+            const newConversations = new Map();
+            for (const conv of action.data.conversations) {
+              newConversations.set(conv.id, conv);
+            }
+            conversations.clear();
+            for (const [id, conv] of newConversations) {
+              conversations.set(id, conv);
+            }
+            dataChanged = true;
+          }
+          break;
+        }
+        
         default:
+          console.error('Unknown action type:', action.type);
           return false;
       }
       
@@ -465,7 +501,23 @@ export class SyncBackend {
       
       return true;
     } catch (error) {
-      console.error('Apply action to user data error:', error);
+      const errorMsg = `Apply action error: ${error.message}`;
+      console.error(errorMsg);
+      console.error('Action details:', JSON.stringify(action, null, 2));
+      
+      // Send error details back to client
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: errorMsg,
+          details: {
+            action: action.type,
+            message: error.message,
+            stack: error.stack
+          }
+        }));
+      }
+      
       return false;
     }
   }

@@ -131,6 +131,11 @@ export interface SyncWebSocketMessage {
   error?: string;
   success?: boolean;
   userId?: string;
+  details?: {
+    action?: string;
+    message?: string;
+    stack?: string;
+  };
 }
 
 export interface SyncState {

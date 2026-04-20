@@ -358,6 +358,8 @@ export default function App() {
 
   // Initialize sync manager for continuous operation
   useEffect(() => {
+    let cleanupFn: (() => void) | undefined;
+
     const initSync = async () => {
       const cloudSync = store.settings.cloudSync;
       if (!cloudSync?.enabled || !cloudSync?.email || !cloudSync?.password) {
@@ -383,11 +385,11 @@ export default function App() {
           console.error('Sync auth error:', error);
           setSyncStatus('error');
         },
-        onInitialState: (data) => {
+        onInitialState: async (data) => {
           // Import initial data from server
           if (data.conversations) {
-            const { mergeConversationsSafely } = require('./utils/syncUtils');
-            const mergedConversations = mergeConversationsSafely(store.conversations, data.conversations);
+            const syncUtils = await import('./utils/syncUtils');
+            const mergedConversations = syncUtils.mergeConversationsSafely(store.conversations, data.conversations);
             store.setConversations(mergedConversations);
           }
           if (data.settings) {
@@ -437,30 +439,66 @@ export default function App() {
         }
       });
 
-      // Auto-connect
-      syncManager.connect({ 
-        username: cloudSync.email, 
-        password: cloudSync.password 
-      });
+      // Auto-connect if credentials are available
+      if (cloudSync.enabled) {
+        syncManager.connect({ 
+          username: cloudSync.email, 
+          password: cloudSync.password 
+        });
+      }
+
+      // Store the cleanup function
+      cleanupFn = () => {
+        syncManager.disconnect();
+      };
     };
 
     initSync();
-
+    
     return () => {
-      // Don't destroy on unmount - let it continue running
+      cleanupFn?.();
     };
-  }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.email, store.settings.cloudSync?.password]);
+  }, []); // No dependencies - runs once on mount and stays active
 
   // Monitor localStorage changes and sync them
   useEffect(() => {
+    let cleanupFn: (() => void) | undefined;
+
     const initStorageMonitoring = async () => {
-      if (!store.settings.cloudSync?.enabled) return;
+      if (!store.settings.cloudSync?.enabled) {
+        console.log('Cloud sync disabled, skipping storage monitoring');
+        return;
+      }
 
       const { getSyncManager } = await import('./utils/syncManager');
       const syncManager = getSyncManager();
       
-      if (!syncManager.isConnected()) {
-        console.log('Sync manager not connected, skipping storage monitoring');
+      // Wait for connection with retry logic
+      let retryCount = 0;
+      const maxRetries = 10;
+      const retryDelay = 1000;
+      
+      const waitForConnection = () => {
+        return new Promise<boolean>((resolve) => {
+          const checkConnection = () => {
+            if (syncManager.isConnected()) {
+              console.log('Storage monitoring started - sync manager is connected');
+              resolve(true);
+            } else if (retryCount >= maxRetries) {
+              console.log('Sync manager failed to connect after', maxRetries, 'attempts');
+              resolve(false);
+            } else {
+              retryCount++;
+              console.log('Waiting for sync manager connection... attempt', retryCount);
+              setTimeout(checkConnection, retryDelay);
+            }
+          };
+          checkConnection();
+        });
+      };
+
+      const isConnected = await waitForConnection();
+      if (!isConnected) {
         return;
       }
 
@@ -481,8 +519,10 @@ export default function App() {
             const changes = findConversationsDiff(oldConversations, newConversations);
             
             // Send sync actions for changes
+            console.log('Processing sync changes:', changes.length, 'changes detected');
             changes.forEach(change => {
               if (change.type === 'added') {
+                console.log('Sending create conversation for:', change.conversation.id);
                 syncManager.sendCreateConversation(change.conversation);
               } else if (change.type === 'modified') {
                 // Check what changed in the conversation
@@ -490,10 +530,21 @@ export default function App() {
                 const newConv = newConversations.find(c => c.id === change.conversation.id);
                 
                 if (oldConv && newConv) {
+                  // Check for title changes
                   if (oldConv.title !== newConv.title) {
                     syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
                   }
-                  // Could add more change detection here (messages, etc.)
+                  
+                  // Check for new messages
+                  const oldMessageIds = new Set((oldConv.messages || []).map((m: any) => m.id));
+                  const newMessages = (newConv.messages || []).filter((m: any) => !oldMessageIds.has(m.id));
+                  
+                  // Send sync actions for new messages
+                  console.log('Sending', newMessages.length, 'new messages for conversation:', change.conversation.id);
+                  newMessages.forEach((message: any) => {
+                    console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
+                    syncManager.sendCreateMessage(change.conversation.id, message);
+                  });
                 }
               } else if (change.type === 'deleted') {
                 syncManager.sendDeleteConversation(change.conversationId);
@@ -521,17 +572,18 @@ export default function App() {
       // Check for changes every second
       const interval = setInterval(checkForChanges, 1000);
 
-      return () => {
+      // Store the cleanup function
+      cleanupFn = () => {
         clearInterval(interval);
       };
     };
 
-    const cleanup = initStorageMonitoring();
+    initStorageMonitoring();
     
     return () => {
-      cleanup?.();
+      cleanupFn?.();
     };
-  }, [store.settings.cloudSync?.enabled]);
+  }, [store.settings.cloudSync?.enabled, syncStatus]);
 
   // Helper function to find differences in conversations
   const findConversationsDiff = (oldConvs: any[], newConvs: any[]) => {

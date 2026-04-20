@@ -130,7 +130,7 @@ export const toolsConfig: ToolConfig[] = [
 // Function to get extension tools dynamically
 export function getExtensionToolsConfig(): ToolConfig[] {
   try {
-    const { extensionToolRegistry } = require('../extensions/extensionToolRegistry');
+    const { extensionToolRegistry } = import('../extensions/extensionToolRegistry');
     const extensionTools = extensionToolRegistry.getDynamicTools();
     
     return extensionTools.map(tool => {

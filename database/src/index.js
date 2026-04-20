@@ -272,9 +272,11 @@ export default {
       return stub.fetch(request);
     }
 
-    // New sync WebSocket endpoint
+    // New sync WebSocket endpoint using Durable Objects
     if (url.pathname === "/sync-ws") {
-      return handleSyncWebSocket(request, env);
+      const id = env.LUMINA_CHAT_SYNC_DO.idFromName("global-sync");
+      const stub = env.LUMINA_CHAT_SYNC_DO.get(id);
+      return stub.fetch(request);
     }
 
     // Share conversation endpoint

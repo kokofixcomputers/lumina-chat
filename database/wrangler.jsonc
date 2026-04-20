@@ -8,6 +8,10 @@
       {
         "name": "LUMINA_CHAT_USER_DO",
         "class_name": "UserStore"
+      },
+      {
+        "name": "LUMINA_CHAT_SYNC_DO",
+        "class_name": "SyncBackend"
       }
     ]
   },
@@ -31,6 +35,10 @@
       "renamed_classes": [
         { "from": "ChatUser", "to": "UserStore" }
       ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["SyncBackend"]
     }
   ]
 }

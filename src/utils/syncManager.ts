@@ -155,6 +155,9 @@ export class SyncManager {
           
         case 'error':
           console.error('Sync error:', message.error);
+          if (message.details) {
+            console.error('Error details:', message.details);
+          }
           this.options.onAuthError?.(message.error || 'Unknown sync error');
           break;
       }
@@ -192,18 +195,11 @@ export class SyncManager {
 
   // Action methods
   sendCreateConversation(conversation: Omit<Conversation, 'messages'>) {
+    console.log('sendCreateConversation called with:', conversation.id);
     const action: CreateConversationAction = {
       type: 'create_conversation',
       timestamp: Date.now(),
-      data: {
-        id: conversation.id,
-        title: conversation.title,
-        modelId: conversation.modelId,
-        systemPrompt: conversation.systemPrompt,
-        mode: conversation.mode,
-        createdAt: conversation.createdAt,
-        updatedAt: conversation.updatedAt
-      }
+      data: conversation
     };
     this._sendAction(action);
   }
@@ -295,11 +291,14 @@ export class SyncManager {
   }
 
   private _sendAction(action: SyncActionTypes) {
+    console.log('_sendAction called with:', action.type, 'WebSocket ready state:', this.ws?.readyState);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
+      const message = JSON.stringify({
         type: 'sync_action',
         data: action
-      }));
+      });
+      console.log('Sending WebSocket message:', message);
+      this.ws.send(message);
     } else {
       console.warn('Cannot send sync action: WebSocket not connected');
     }

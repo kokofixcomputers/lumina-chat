@@ -451,78 +451,116 @@ export default function App() {
     };
   }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.email, store.settings.cloudSync?.password]);
 
-  // Hook into store methods to send sync actions
+  // Monitor localStorage changes and sync them
   useEffect(() => {
-    const initSyncHooks = async () => {
+    const initStorageMonitoring = async () => {
       if (!store.settings.cloudSync?.enabled) return;
 
       const { getSyncManager } = await import('./utils/syncManager');
       const syncManager = getSyncManager();
       
       if (!syncManager.isConnected()) {
-        console.log('Sync manager not connected, skipping hook setup');
+        console.log('Sync manager not connected, skipping storage monitoring');
         return;
       }
 
-      // Override store methods to send sync actions
-      const originalSendMessage = store.sendMessage.bind(store);
-      store.sendMessage = async (content: string, images: string[], convId: string) => {
-        const result = await originalSendMessage(content, images, convId);
-        
-        // Send sync action for new message
-        if (syncManager.isConnected()) {
-          const lastMessage = store.activeConversation?.messages[store.activeConversation.messages.length - 1];
-          if (lastMessage) {
-            syncManager.sendCreateMessage(convId, lastMessage);
+      let lastConversations = localStorage.getItem('lumina_conversations');
+      let lastSettings = localStorage.getItem('lumina_settings');
+
+      const checkForChanges = () => {
+        const currentConversations = localStorage.getItem('lumina_conversations');
+        const currentSettings = localStorage.getItem('lumina_settings');
+
+        // Check if conversations changed
+        if (currentConversations !== lastConversations) {
+          try {
+            const oldConversations = lastConversations ? JSON.parse(lastConversations) : [];
+            const newConversations = currentConversations ? JSON.parse(currentConversations) : [];
+            
+            // Find what changed
+            const changes = findConversationsDiff(oldConversations, newConversations);
+            
+            // Send sync actions for changes
+            changes.forEach(change => {
+              if (change.type === 'added') {
+                syncManager.sendCreateConversation(change.conversation);
+              } else if (change.type === 'modified') {
+                // Check what changed in the conversation
+                const oldConv = oldConversations.find(c => c.id === change.conversation.id);
+                const newConv = newConversations.find(c => c.id === change.conversation.id);
+                
+                if (oldConv && newConv) {
+                  if (oldConv.title !== newConv.title) {
+                    syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
+                  }
+                  // Could add more change detection here (messages, etc.)
+                }
+              } else if (change.type === 'deleted') {
+                syncManager.sendDeleteConversation(change.conversationId);
+              }
+            });
+            
+            lastConversations = currentConversations;
+          } catch (error) {
+            console.error('Error syncing conversations:', error);
           }
         }
-        
-        return result;
-      };
 
-      const originalUpdateConversationTitle = store.updateConversationTitle.bind(store);
-      store.updateConversationTitle = (id: string, title: string) => {
-        originalUpdateConversationTitle(id, title);
-        
-        // Send sync action for title update
-        if (syncManager.isConnected()) {
-          syncManager.sendUpdateTitle(id, title);
+        // Check if settings changed
+        if (currentSettings !== lastSettings) {
+          try {
+            // Settings changes could be handled here if needed
+            console.log('Settings changed, could sync if needed');
+            lastSettings = currentSettings;
+          } catch (error) {
+            console.error('Error syncing settings:', error);
+          }
         }
       };
 
-      const originalNewConversation = store.newConversation.bind(store);
-      store.newConversation = (mode?: 'chat' | 'image', attachments?: string[]) => {
-        const convId = originalNewConversation(mode, attachments);
-        
-        // Send sync action for new conversation immediately
-        if (syncManager.isConnected() && convId) {
-          // Create the conversation object to send
-          const convData = {
-            id: convId,
-            title: 'New conversation',
-            mode: mode || 'chat',
-            modelId: store.settings.defaultProviderModelId,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            messages: [],
-            attachments: attachments || []
-          };
-          syncManager.sendCreateConversation(convData);
-        }
-        
-        return convId;
-      };
+      // Check for changes every second
+      const interval = setInterval(checkForChanges, 1000);
 
       return () => {
-        // Restore original methods
-        store.sendMessage = originalSendMessage;
-        store.updateConversationTitle = originalUpdateConversationTitle;
-        store.newConversation = originalNewConversation;
+        clearInterval(interval);
       };
     };
 
-    initSyncHooks();
+    const cleanup = initStorageMonitoring();
+    
+    return () => {
+      cleanup?.();
+    };
   }, [store.settings.cloudSync?.enabled]);
+
+  // Helper function to find differences in conversations
+  const findConversationsDiff = (oldConvs: any[], newConvs: any[]) => {
+    const changes = [];
+    
+    // Find added conversations
+    const oldIds = new Set(oldConvs.map(c => c.id));
+    const newIds = new Set(newConvs.map(c => c.id));
+    
+    newConvs.forEach(conv => {
+      if (!oldIds.has(conv.id)) {
+        changes.push({ type: 'added', conversation: conv });
+      }
+    });
+    
+    oldConvs.forEach(conv => {
+      if (!newIds.has(conv.id)) {
+        changes.push({ type: 'deleted', conversationId: conv.id });
+      } else {
+        // Check if modified
+        const newConv = newConvs.find(c => c.id === conv.id);
+        if (JSON.stringify(conv) !== JSON.stringify(newConv)) {
+          changes.push({ type: 'modified', conversation: newConv });
+        }
+      }
+    });
+    
+    return changes;
+  };
 
   return (
     <>

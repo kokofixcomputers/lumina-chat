@@ -214,9 +214,9 @@ export function useSendMessage({
         const parts: unknown[] = [];
         m.images.forEach(img => {
           if (img.startsWith('data:image/')) parts.push({ type: 'image_url', image_url: {url: img }});
-          else parts.push({ type: 'input_text', text: `[Attached file content]:\n${img}` });
+          else parts.push({ type: 'text', text: `[Attached file content]:\n${img}` });
         });
-        parts.push({ type: 'input_text', text: m.content });
+        parts.push({ type: 'text', text: m.content });
         apiMessages.push({ role: m.role, content: parts });
         if (m.role === 'user') responsesApiMessages.push({ type: 'message', role: m.role, content: parts });
         else responsesApiMessages.push({ type: 'message', role: m.role, content: m.content });

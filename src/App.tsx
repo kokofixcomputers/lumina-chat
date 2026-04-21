@@ -410,13 +410,61 @@ export default function App() {
         },
         onInitialState: async (data) => {
           console.log('[SYNC] Received initial state:', data);
+          console.log('[SYNC] Current local conversations:', store.conversations.length);
+          console.log('[SYNC] Server conversations:', data.conversations?.length || 0);
+          
           // Suppress storage monitor during initial sync for much longer period
           (window as any).__syncSuppressUntil = Date.now() + 5000;
           
-          // Import initial data from server
+          // Import initial data from server - merge with local to preserve offline changes
           if (data.conversations) {
             const syncUtils = await import('./utils/syncUtils');
-            const mergedConversations = syncUtils.mergeConversationsSafely(store.conversations, data.conversations);
+            
+            // Get current local conversations from IndexedDB to ensure we have latest
+            const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+            const localConversations = await SyncIndexedDB.exportConversations();
+            
+            console.log('[SYNC] Merging conversations - Local:', localConversations.length, 'Server:', data.conversations.length);
+            
+            // Merge server data with local data (local takes precedence for conflicts)
+            const mergedConversations = syncUtils.mergeConversationsSafely(localConversations, data.conversations);
+            
+            console.log('[SYNC] Merged conversations count:', mergedConversations.length);
+            
+            // Find conversations that exist locally but not on server (need to be synced up)
+            const localOnlyConversations = localConversations.filter(local => 
+              !data.conversations.some((server: any) => server.id === local.id)
+            );
+            
+            if (localOnlyConversations.length > 0) {
+              console.log('[SYNC] Found', localOnlyConversations.length, 'local-only conversations to sync up');
+              
+              // Sync up local-only conversations after a delay to ensure they're saved
+              setTimeout(async () => {
+                try {
+                  const { getSyncManager } = await import('./utils/syncManager');
+                  const syncManager = getSyncManager();
+                  
+                  if (syncManager.isConnected()) {
+                    console.log('[SYNC] Syncing up local-only conversations');
+                    
+                    for (const conv of localOnlyConversations) {
+                      // Send create conversation action (without messages first)
+                      const { messages, ...convWithoutMessages } = conv;
+                      syncManager.sendCreateConversation(convWithoutMessages);
+                      
+                      // Then send messages
+                      for (const message of messages || []) {
+                        syncManager.sendCreateMessage(conv.id, message);
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.error('[SYNC] Failed to sync up local conversations:', error);
+                }
+              }, 2000);
+            }
+            
             store.setConversations(mergedConversations);
           }
           if (data.settings) {

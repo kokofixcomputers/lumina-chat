@@ -409,8 +409,10 @@ export default function App() {
           setSyncStatus('error');
         },
         onInitialState: async (data) => {
-          // Suppress storage monitor during initial sync
-          (window as any).__syncSuppressUntil = Date.now() + 1000;
+          console.log('[SYNC] Received initial state:', data);
+          // Suppress storage monitor during initial sync for longer period
+          (window as any).__syncSuppressUntil = Date.now() + 2000;
+          
           // Import initial data from server
           if (data.conversations) {
             const syncUtils = await import('./utils/syncUtils');
@@ -420,11 +422,17 @@ export default function App() {
           if (data.settings) {
             store.updateSettings(data.settings);
           }
-          // Update snapshot after useEffect saves to localStorage (needs 500ms)
-          setTimeout(() => {
+          
+          // Update IndexedDB snapshot after useEffect saves (needs longer delay for IndexedDB)
+          setTimeout(async () => {
             console.log('[SYNC] Updating snapshot after initial state');
-            (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
-          }, 500);
+            try {
+              const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+              await SyncIndexedDB.updateSnapshot();
+            } catch (error) {
+              console.error('[SYNC] Failed to update snapshot after initial state:', error);
+            }
+          }, 1000);
         },
         onSyncAction: (action) => {
           // Handle incoming sync actions from remote
@@ -599,6 +607,29 @@ export default function App() {
       await SyncIndexedDB.initializeSync();
       
       let localLastSettings = localStorage.getItem('lumina_settings');
+      
+      // Track recently sent actions to prevent duplicates
+      const recentlySentActions = new Map<string, number>();
+      const ACTION_DEDUP_WINDOW = 5000; // 5 seconds
+      
+      const isRecentlySent = (actionType: string, data: any): boolean => {
+        const key = `${actionType}:${JSON.stringify(data)}`;
+        const timestamp = recentlySentActions.get(key);
+        if (timestamp && Date.now() - timestamp < ACTION_DEDUP_WINDOW) {
+          console.log('[SYNC] Ignoring duplicate action:', actionType, key);
+          return true;
+        }
+        recentlySentActions.set(key, Date.now());
+        
+        // Clean old entries
+        for (const [k, t] of recentlySentActions.entries()) {
+          if (Date.now() - t > ACTION_DEDUP_WINDOW) {
+            recentlySentActions.delete(k);
+          }
+        }
+        
+        return false;
+      };
 
       const checkForChanges = async () => {
         try {
@@ -619,8 +650,10 @@ export default function App() {
           console.log('Processing sync changes:', changes.length, 'changes detected');
           changes.forEach(change => {
             if (change.type === 'added') {
-              console.log('Sending create conversation for:', change.conversation.id);
-              syncManager.sendCreateConversation(change.conversation);
+              if (!isRecentlySent('create_conversation', { id: change.conversation.id })) {
+                console.log('Sending create conversation for:', change.conversation.id);
+                syncManager.sendCreateConversation(change.conversation);
+              }
             } else if (change.type === 'modified') {
               // Check what changed in the conversation
               const oldConv = oldConversations.find(c => c.id === change.conversation.id);
@@ -629,7 +662,9 @@ export default function App() {
               if (oldConv && newConv) {
                 // Check for title changes
                 if (oldConv.title !== newConv.title) {
-                  syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
+                  if (!isRecentlySent('update_title', { conversationId: change.conversation.id, title: newConv.title })) {
+                    syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
+                  }
                 }
                 
                 // Check for new messages
@@ -640,8 +675,10 @@ export default function App() {
                 // Send sync actions for new messages
                 console.log('Sending', newMessages.length, 'new messages for conversation:', change.conversation.id);
                 newMessages.forEach((message: any) => {
-                  console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
-                  syncManager.sendCreateMessage(change.conversation.id, message);
+                  if (!isRecentlySent('create_message', { conversationId: change.conversation.id, messageId: message.id })) {
+                    console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
+                    syncManager.sendCreateMessage(change.conversation.id, message);
+                  }
                 });
                 
                 // Check for deleted messages
@@ -654,8 +691,10 @@ export default function App() {
                   console.log('  deleted:', deletedMessages.map((m: any) => m.id));
                 }
                 deletedMessages.forEach((message: any) => {
-                  console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
-                  syncManager.sendDeleteMessage(change.conversation.id, message.id);
+                  if (!isRecentlySent('delete_message', { conversationId: change.conversation.id, messageId: message.id })) {
+                    console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
+                    syncManager.sendDeleteMessage(change.conversation.id, message.id);
+                  }
                 });
                 
                 // Check for follow-up changes in existing messages
@@ -666,24 +705,27 @@ export default function App() {
                     const oldFollowUps = oldMsg.followUps || [];
                     const newFollowUps = (newMsg.followUps as string[]) || [];
                     if (JSON.stringify(oldFollowUps) !== JSON.stringify(newFollowUps)) {
-                      console.log('Sending update_followup for message:', newMsg.id);
-                      syncManager.sendUpdateFollowup(change.conversation.id, newMsg.id, newFollowUps);
+                      if (!isRecentlySent('update_followup', { conversationId: change.conversation.id, messageId: newMsg.id, followUps: newFollowUps })) {
+                        console.log('Sending update_followup for message:', newMsg.id);
+                        syncManager.sendUpdateFollowup(change.conversation.id, newMsg.id, newFollowUps);
+                      }
                     }
                   }
                 });
               }
             } else if (change.type === 'deleted') {
-              console.log('Sending delete conversation for:', change.conversation.id);
-              syncManager.sendDeleteConversation(change.conversation.id);
+              if (!isRecentlySent('delete_conversation', { conversationId: change.conversation.id })) {
+                console.log('Sending delete conversation for:', change.conversation.id);
+                syncManager.sendDeleteConversation(change.conversation.id);
+              }
             }
           });
           
           // Update snapshot after processing changes
           await SyncIndexedDB.updateSnapshot();
         } catch (error) {
-            console.error('Error syncing conversations:', error);
-          }
-        
+          console.error('Error syncing conversations:', error);
+        }
 
         // Check if settings changed (settings still use localStorage)
         const currentSettings = localStorage.getItem('lumina_settings');
@@ -693,8 +735,10 @@ export default function App() {
             const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
             // Exclude cloudSync credentials from sync
             const { cloudSync, ...syncSettings } = newSettings;
-            console.log('[SYNC] Sending settings update');
-            syncManager.sendUpdateSettings(syncSettings);
+            if (!isRecentlySent('update_settings', syncSettings)) {
+              console.log('[SYNC] Sending settings update');
+              syncManager.sendUpdateSettings(syncSettings);
+            }
             localLastSettings = currentSettings;
           } catch (error) {
             console.error('Error syncing settings:', error);

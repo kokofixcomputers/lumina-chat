@@ -16,7 +16,7 @@ jobs:
           - os: macos-latest
             rust_target: aarch64-apple-darwin
           - os: windows-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -25,66 +25,75 @@ jobs:
       uses: pnpm/action-setup@v2
       with:
         version: latest
-        
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'pnpm'
-    
+
     - name: Install dependencies
       run: pnpm install
-      
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.rust_target }}
-        
+
     - name: Setup Tauri CLI
       run: cargo install tauri-cli --version "^2.0"
-      
+
     - name: Set Tauri target (macOS ARM64)
       if: matrix.os == 'macos-latest'
       run: echo "TAURI_ARCH=aarch64-apple-darwin" >> $GITHUB_ENV
-      
+
     - name: Build Tauri app
       run: npx tauri build
-      
-    - name: Find and zip binaries
-      id: zip-binaries
+
+    - name: Find and zip binaries (macOS)
+      if: matrix.os == 'macos-latest'
       shell: bash
       run: |
         cd src-tauri/target/release
         ZIP_NAME="Lumina-Chat-${{ matrix.os }}.zip"
-        
-        if [ "${{ matrix.os }}" == "macos-latest" ]; then
-          # Search for any .dmg files (handles spaces)
-          shopt -s nullglob
-          DMG_FILES=(bundle/dmg/*/*.dmg bundle/*/*.dmg bundle/**/*.dmg)
-          if [ ${#DMG_FILES[@]} -eq 0 ]; then
-            echo "No DMG found, zipping release dir"
-            zip -r "$ZIP_NAME" .
-          else
-            echo "Found DMGs: ${DMG_FILES[*]}"
-            zip -r "$ZIP_NAME" "${DMG_FILES[@]}"
-          fi
+
+        # Search for any .dmg files (handles spaces)
+        shopt -s nullglob
+        DMG_FILES=(bundle/dmg/*/*.dmg bundle/*/*.dmg bundle/**/*.dmg)
+        if [ ${#DMG_FILES[@]} -eq 0 ]; then
+          echo "No DMG found, zipping release dir"
+          zip -r "$ZIP_NAME" .
         else
-          # Search for Windows binaries recursively (handles spaces)
-          shopt -s nullglob
-          BINARY_FILES=(**/*.exe **/*.msi)
-          if [ ${#BINARY_FILES[@]} -eq 0 ]; then
-            echo "No binaries found, zipping release dir"
-            zip -r "$ZIP_NAME" .
-          else
-            echo "Found binaries: ${BINARY_FILES[*]}"
-            zip -r "$ZIP_NAME" "${BINARY_FILES[@]}"
-          fi
+          echo "Found DMGs: ${DMG_FILES[*]}"
+          zip -r "$ZIP_NAME" "${DMG_FILES[@]}"
         fi
-        
+
         echo "zip_path=$ZIP_NAME" >> $GITHUB_OUTPUT
         echo "Created: $ZIP_NAME"
         ls -la *.zip
-        
+
+    - name: Find and zip binaries (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        cd src-tauri/target/release
+        $ZIP_NAME = "Lumina-Chat-${{ matrix.os }}.zip"
+
+        # Search for Windows binaries recursively
+        $BINARY_FILES = Get-ChildItem -Recurse -Include *.exe,*.msi
+
+        if ($BINARY_FILES.Count -eq 0) {
+          Write-Host "No binaries found, zipping release dir"
+          Compress-Archive -Path * -DestinationPath $ZIP_NAME
+        } else {
+          Write-Host "Found binaries: $($BINARY_FILES.FullName -join ', ')"
+          Compress-Archive -Path $BINARY_FILES -DestinationPath $ZIP_NAME
+        }
+
+        echo "zip_path=$ZIP_NAME" >> $env:GITHUB_OUTPUT
+        Write-Host "Created: $ZIP_NAME"
+        Get-ChildItem -Name *.zip
+
     - name: Upload zip artifact
       uses: actions/upload-artifact@v4
       with:

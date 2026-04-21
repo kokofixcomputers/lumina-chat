@@ -116,7 +116,7 @@ export function useGenerate({
         const userContent: any[] = [{ type: 'input_text', text: prompt }];
         if (lastImageMsg?.imageGenerationCall?.result?.image_data) {
           const imageData = lastImageMsg.imageGenerationCall.result.image_data;
-          userContent.push({ type: 'input_image', image_url: imageData.startsWith('data:') || imageData.startsWith('http') ? imageData : `data:image/png;base64,${imageData}` });
+          userContent.push({ type: 'image_url', image_url: { url: imageData.startsWith('data:') || imageData.startsWith('http') ? imageData : `data:image/png;base64,${imageData}`  }});
         }
         const response = await fetch(responsesUrl, {
           method: 'POST',

@@ -213,7 +213,7 @@ export function useSendMessage({
       if (m.images && m.images.length > 0) {
         const parts: unknown[] = [];
         m.images.forEach(img => {
-          if (img.startsWith('data:image/')) parts.push({ type: 'input_image', image_url: img });
+          if (img.startsWith('data:image/')) parts.push({ type: 'image_url', image_url: {url: img }});
           else parts.push({ type: 'input_text', text: `[Attached file content]:\n${img}` });
         });
         parts.push({ type: 'input_text', text: m.content });

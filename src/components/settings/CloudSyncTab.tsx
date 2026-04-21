@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Upload, Download, Trash2, Wifi, WifiOff } from 'lucide-react';
 import type { AppSettings } from '../../types';
 import { getSyncManager, destroySyncManager } from '../../utils/syncManager';
+import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from '../../utils/syncStatus';
 import type { SyncActionTypes } from '../../types/sync';
 
 interface CloudSyncTabProps {
@@ -15,59 +16,41 @@ interface CloudSyncTabProps {
 export default function CloudSyncTab({ settings, conversations, onUpdateSettings, onImportData, onSyncAction }: CloudSyncTabProps) {
   const [syncUsername, setSyncUsername] = useState(settings.cloudSync?.email || '');
   const [syncPassword, setSyncPassword] = useState(settings.cloudSync?.password || '');
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'connecting' | 'connected' | 'syncing' | 'success' | 'error'>('idle');
   const [syncMessage, setSyncMessage] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isNewUser, setIsNewUser] = useState(false);
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(true);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(settings.cloudSync?.enabled || false);
+  
+  // Use centralized sync status
+  const syncStatus = getSyncStatus();
+  const isConnected = syncStatus === 'synced';
 
   useEffect(() => {
     // Get existing sync manager (initialized in App.tsx)
     const syncManager = getSyncManager();
     
     // Update connection state
-    setIsConnected(syncManager.isConnected());
     setUserId(syncManager.getUserId());
     
     // Auto-connect if credentials are available and auto-sync is enabled
-    if (autoSyncEnabled && syncUsername && syncPassword && !syncManager.isConnected()) {
+    if (autoSyncEnabled && syncUsername && syncPassword && !isConnected) {
       handleConnect();
     }
-    
-    // Poll connection status every 2 seconds to detect dropped connections
-    const interval = setInterval(() => {
-      const actuallyConnected = syncManager.isConnected();
-      setIsConnected(prev => {
-        if (prev && !actuallyConnected) {
-          // Connection dropped - update UI
-          setSyncStatus('error');
-          setSyncMessage('Connection lost');
-        }
-        return actuallyConnected;
-      });
-      setUserId(syncManager.getUserId());
-    }, 2000);
-    
-    return () => clearInterval(interval);
-  }, [autoSyncEnabled, syncUsername, syncPassword]);
+  }, [autoSyncEnabled, syncUsername, syncPassword, isConnected]);
 
   const handleConnect = async () => {
     if (!syncUsername || !syncPassword) {
       setSyncMessage('Please enter username and password');
-      setSyncStatus('error');
       return;
     }
 
-    setSyncStatus('connecting');
     setSyncMessage('Connecting to sync server...');
 
     const syncManager = getSyncManager();
     const success = await syncManager.connect({ username: syncUsername, password: syncPassword });
     
     if (!success) {
-      setSyncStatus('error');
       setSyncMessage('Failed to connect');
     }
 
@@ -83,20 +66,16 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
 
   const handleDisconnect = () => {
     destroySyncManager();
-    setIsConnected(false);
     setUserId(null);
-    setSyncStatus('idle');
     setSyncMessage('Disconnected');
   };
 
   const handleSyncCurrentData = async () => {
     if (!isConnected) {
       setSyncMessage('Please connect first');
-      setSyncStatus('error');
       return;
     }
 
-    setSyncStatus('syncing');
     setSyncMessage('Syncing current data...');
 
     try {
@@ -112,10 +91,8 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
         }
       }
 
-      setSyncStatus('success');
       setSyncMessage('Data synced successfully!');
     } catch (error) {
-      setSyncStatus('error');
       setSyncMessage(error instanceof Error ? error.message : 'Sync failed');
     }
   };
@@ -123,13 +100,11 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
   const handleEraseData = async () => {
     if (!isConnected) {
       setSyncMessage('Please connect first');
-      setSyncStatus('error');
       return;
     }
 
     if (!confirm('Are you sure you want to erase all your cloud data? This cannot be undone.')) return;
 
-    setSyncStatus('syncing');
     setSyncMessage('Erasing cloud data...');
 
     try {
@@ -137,18 +112,15 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
       const success = await syncManager.eraseData();
       
       if (success) {
-        setSyncStatus('success');
         setSyncMessage('Cloud data erased successfully');
         // Optionally disconnect after erasing
         setTimeout(() => {
           handleDisconnect();
         }, 2000);
       } else {
-        setSyncStatus('error');
         setSyncMessage('Failed to erase cloud data');
       }
     } catch (error) {
-      setSyncStatus('error');
       setSyncMessage(error instanceof Error ? error.message : 'Erase failed');
     }
   };
@@ -156,13 +128,10 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
   const handleOverwriteData = async () => {
     if (!isConnected) {
       setSyncMessage('Please connect first');
-      setSyncStatus('error');
       return;
     }
-
     if (!confirm('Are you sure you want to overwrite all cloud data? This will replace everything on the server with your local data.')) return;
-
-    setSyncStatus('syncing');
+    
     setSyncMessage('Overwriting cloud data...');
 
     try {
@@ -174,10 +143,8 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
         settings: settings
       });
 
-      setSyncStatus('success');
       setSyncMessage('Cloud data overwritten successfully!');
     } catch (error) {
-      setSyncStatus('error');
       setSyncMessage(error instanceof Error ? error.message : 'Overwrite failed');
     }
   };

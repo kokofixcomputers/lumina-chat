@@ -679,6 +679,8 @@ export default function App() {
       await SyncIndexedDB.initializeSync();
       
       let localLastSettings = localStorage.getItem('lumina_settings');
+      // Initialize shared settings tracking
+      (window as any).__syncLastSettings = localLastSettings;
       
       // Track recently sent actions to prevent duplicates
       const recentlySentActions = new Map<string, number>();
@@ -689,8 +691,18 @@ export default function App() {
         
         // Check if we recently sent this action
         const timestamp = recentlySentActions.get(key);
+        
+        if (actionType === 'update_settings') {
+          console.log('[SYNC-DEDUP] Settings action check - Key:', key);
+          console.log('[SYNC-DEDUP] Settings action check - Timestamp:', timestamp);
+          console.log('[SYNC-DEDUP] Settings action check - Time since:', timestamp ? Date.now() - timestamp : 'N/A');
+          console.log('[SYNC-DEDUP] Settings action check - Window:', ACTION_DEDUP_WINDOW);
+          console.log('[SYNC-DEDUP] Settings action check - In window:', timestamp && Date.now() - timestamp < ACTION_DEDUP_WINDOW);
+        }
+        
         if (timestamp && Date.now() - timestamp < ACTION_DEDUP_WINDOW) {
           console.log('[SYNC] Ignoring duplicate action:', actionType, key);
+          console.log('[SYNC] Time since last sent:', Date.now() - timestamp, 'ms');
           return true;
         }
         
@@ -821,17 +833,29 @@ export default function App() {
 
         // Check if settings changed (settings still use localStorage)
         const currentSettings = localStorage.getItem('lumina_settings');
-        if (currentSettings !== localLastSettings) {
+        const lastSettings = (window as any).__syncLastSettings || localLastSettings;
+        
+        console.log('[SYNC-MONITOR] Settings check - Current:', currentSettings ? 'exists' : 'null');
+        console.log('[SYNC-MONITOR] Settings check - Last:', lastSettings ? 'exists' : 'null');
+        console.log('[SYNC-MONITOR] Settings changed:', currentSettings !== lastSettings);
+        
+        if (currentSettings !== lastSettings) {
           try {
             // Parse and send settings sync action
             const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
             // Exclude cloudSync credentials from sync
             const { cloudSync, ...syncSettings } = newSettings;
-            if (!isRecentlySent('update_settings', syncSettings)) {
-              console.log('[SYNC] Sending settings update');
+            // Create a simpler key for settings deduplication
+            const settingsKey = JSON.stringify(syncSettings);
+            if (!isRecentlySent('update_settings', settingsKey)) {
+              console.log('[SYNC] Sending settings update:', syncSettings);
               syncManager.sendUpdateSettings(syncSettings);
+            } else {
+              console.log('[SYNC] Ignoring duplicate settings update');
             }
+            // Update both local and shared variables
             localLastSettings = currentSettings;
+            (window as any).__syncLastSettings = currentSettings;
           } catch (error) {
             console.error('Error syncing settings:', error);
           }
@@ -841,9 +865,46 @@ export default function App() {
       // Check for changes every second
       const interval = setInterval(checkForChanges, 1000);
 
+      // Also monitor settings changes separately (since localStorage doesn't trigger IndexedDB changes)
+      const checkSettingsChanges = () => {
+        const currentSettings = localStorage.getItem('lumina_settings');
+        const lastSettings = (window as any).__syncLastSettings || localLastSettings;
+        
+        if (currentSettings !== lastSettings) {
+          console.log('[SETTINGS-MONITOR] Settings change detected');
+          try {
+            const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
+            console.log('[SETTINGS-MONITOR] Parsed settings:', newSettings);
+            console.log('[SETTINGS-MONITOR] Shares in settings:', newSettings.shares);
+            console.log('[SETTINGS-MONITOR] Shares type:', typeof newSettings.shares);
+            
+            const { cloudSync, ...syncSettings } = newSettings;
+            const settingsKey = JSON.stringify(syncSettings);
+            console.log('[SETTINGS-MONITOR] Settings key for sync:', settingsKey);
+            
+            if (!isRecentlySent('update_settings', settingsKey)) {
+              console.log('[SETTINGS-MONITOR] Sending settings update:', syncSettings);
+              console.log('[SETTINGS-MONITOR] Shares being sent:', syncSettings.shares);
+              syncManager.sendUpdateSettings(syncSettings);
+            } else {
+              console.log('[SETTINGS-MONITOR] Ignoring duplicate settings update');
+            }
+            
+            localLastSettings = currentSettings;
+            (window as any).__syncLastSettings = currentSettings;
+          } catch (error) {
+            console.error('Error syncing settings:', error);
+          }
+        }
+      };
+
+      // Check settings every 500ms (more responsive)
+      const settingsInterval = setInterval(checkSettingsChanges, 500);
+
       // Store the cleanup function
       cleanupFn = () => {
         clearInterval(interval);
+        clearInterval(settingsInterval);
       };
     };
 

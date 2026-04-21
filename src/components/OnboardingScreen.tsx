@@ -40,6 +40,7 @@ export default function OnboardingScreen({
   const [taglineIndex, setTaglineIndex] = useState(0);
   const [fade, setFade] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [providerApiKeys, setProviderApiKeys] = useState<Record<string, string>>({});
   const [customProviderUrl, setCustomProviderUrl] = useState('');
   const [customProviderName, setCustomProviderName] = useState('');
   const [customProviderKey, setCustomProviderKey] = useState('');
@@ -80,9 +81,18 @@ export default function OnboardingScreen({
 
   const handleProviderSelect = async (providerId: string) => {
     setSelectedProvider(providerId);
+  };
+
+  const handleAddProviderWithKey = async (providerId: string) => {
     const template = integratedProviders.find(p => p.id === providerId);
     if (template) {
       onAddIntegratedProvider(template);
+      // Set the API key if provided
+      const apiKey = providerApiKeys[providerId];
+      if (apiKey) {
+        // Note: The API key will be set by the user in the settings after onboarding
+        // For now, we just add the provider
+      }
     }
   };
 
@@ -179,68 +189,129 @@ export default function OnboardingScreen({
     </div>
   );
 
-  const renderProvidersStep = () => (
-    <div className="text-center space-y-6 md:space-y-8 max-w-4xl mx-auto w-full">
-      <div className="space-y-4">
-        <h2 className="text-2xl md:text-4xl font-bold text-[rgb(var(--text))]">
-          Choose Your AI Provider
-        </h2>
-        <p className="text-base md:text-lg text-[rgb(var(--muted))] max-w-2xl mx-auto">
-          Select an integrated provider or set up a custom one. You can always add more later in settings.
-        </p>
-      </div>
+  const renderProvidersStep = () => {
+    const selectedIntegratedProvider = integratedProviders.find(p => p.id === selectedProvider);
+    
+    return (
+      <div className="text-center space-y-6 md:space-y-8 max-w-4xl mx-auto w-full">
+        <div className="space-y-4">
+          <h2 className="text-2xl md:text-4xl font-bold text-[rgb(var(--text))]">
+            Choose Your AI Provider
+          </h2>
+          <p className="text-base md:text-lg text-[rgb(var(--muted))] max-w-2xl mx-auto">
+            Select an integrated provider or set up a custom one. You can always add more later in settings.
+          </p>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {integratedProviders.map((provider) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {integratedProviders.map((provider) => (
+            <button
+              key={provider.id}
+              onClick={() => handleProviderSelect(provider.id)}
+              className={`p-4 rounded-2xl border transition-all duration-200 text-left ${
+                selectedProvider === provider.id
+                  ? 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10'
+                  : 'border-[rgb(var(--border))] hover:border-[rgb(var(--accent))]/50 bg-[rgb(var(--bg))]'
+              }`}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                {provider.id === 'openai' && <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-bold">O</div>}
+                {provider.id === 'anthropic' && <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white text-xs font-bold">A</div>}
+                {provider.id === 'ollama' && <Server size={20} className="text-[rgb(var(--text))]" />}
+                {provider.id === '1minrelay' && <Globe size={20} className="text-[rgb(var(--text))]" />}
+                {provider.id === 'mistral' && <div className="w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center text-white text-xs font-bold">M</div>}
+                {provider.id === 'pollinations' && <Star size={20} className="text-[rgb(var(--text))]" />}
+                <div>
+                  <h3 className="font-semibold text-[rgb(var(--text))]">{provider.name}</h3>
+                  <p className="text-xs text-[rgb(var(--muted))]">{provider.description}</p>
+                </div>
+              </div>
+              {selectedProvider === provider.id && (
+                <Check size={16} className="text-[rgb(var(--accent))]" />
+              )}
+            </button>
+          ))}
+
           <button
-            key={provider.id}
-            onClick={() => handleProviderSelect(provider.id)}
+            onClick={() => setSelectedProvider('custom')}
             className={`p-4 rounded-2xl border transition-all duration-200 text-left ${
-              selectedProvider === provider.id
+              selectedProvider === 'custom'
                 ? 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10'
                 : 'border-[rgb(var(--border))] hover:border-[rgb(var(--accent))]/50 bg-[rgb(var(--bg))]'
             }`}
           >
             <div className="flex items-center gap-3 mb-2">
-              {provider.id === 'openai' && <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-bold">O</div>}
-              {provider.id === 'anthropic' && <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white text-xs font-bold">A</div>}
-              {provider.id === 'ollama' && <Server size={20} className="text-[rgb(var(--text))]" />}
-              {provider.id === '1minrelay' && <Globe size={20} className="text-[rgb(var(--text))]" />}
-              {provider.id === 'mistral' && <div className="w-8 h-8 rounded-full bg-orange-600 flex items-center justify-center text-white text-xs font-bold">M</div>}
-              {provider.id === 'pollinations' && <Star size={20} className="text-[rgb(var(--text))]" />}
+              <Settings size={20} className="text-[rgb(var(--text))]" />
               <div>
-                <h3 className="font-semibold text-[rgb(var(--text))]">{provider.name}</h3>
-                <p className="text-xs text-[rgb(var(--muted))]">{provider.description}</p>
+                <h3 className="font-semibold text-[rgb(var(--text))]">Custom Provider</h3>
+                <p className="text-xs text-[rgb(var(--muted))]">Add your own API endpoint</p>
               </div>
             </div>
-            {selectedProvider === provider.id && (
+            {selectedProvider === 'custom' && (
               <Check size={16} className="text-[rgb(var(--accent))]" />
             )}
           </button>
-        ))}
+        </div>
 
-        <button
-          onClick={() => setSelectedProvider('custom')}
-          className={`p-4 rounded-2xl border transition-all duration-200 text-left ${
-            selectedProvider === 'custom'
-              ? 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10'
-              : 'border-[rgb(var(--border))] hover:border-[rgb(var(--accent))]/50 bg-[rgb(var(--bg))]'
-          }`}
-        >
-          <div className="flex items-center gap-3 mb-2">
-            <Settings size={20} className="text-[rgb(var(--text))]" />
+        {/* API Key Input for Selected Integrated Provider */}
+        {selectedIntegratedProvider && selectedIntegratedProvider.requireAuth && (
+          <div className="bg-[rgb(var(--bg))] rounded-2xl p-6 border border-[rgb(var(--border))] space-y-4 text-left">
+            <h3 className="font-semibold text-[rgb(var(--text))] flex items-center gap-2">
+              <Key size={18} />
+              {selectedIntegratedProvider.name} API Key
+            </h3>
+            
             <div>
-              <h3 className="font-semibold text-[rgb(var(--text))]">Custom Provider</h3>
-              <p className="text-xs text-[rgb(var(--muted))]">Add your own API endpoint</p>
+              <label className="block text-sm font-medium text-[rgb(var(--text))] mb-2">
+                API Key {selectedIntegratedProvider.requireAuth && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="password"
+                value={providerApiKeys[selectedProvider] || ''}
+                onChange={(e) => setProviderApiKeys(prev => ({
+                  ...prev,
+                  [selectedProvider]: e.target.value
+                }))}
+                placeholder={`Enter your ${selectedIntegratedProvider.name} API key`}
+                className="w-full px-3 py-2 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none focus:border-[rgb(var(--accent))]"
+              />
+              <p className="text-xs text-[rgb(var(--muted))] mt-1">
+                You can also add this later in settings
+              </p>
             </div>
+            
+            <button
+              onClick={() => handleAddProviderWithKey(selectedProvider)}
+              className="px-4 py-2 bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-lg font-medium hover:opacity-90 transition-opacity"
+            >
+              Add {selectedIntegratedProvider.name}
+            </button>
           </div>
-          {selectedProvider === 'custom' && (
-            <Check size={16} className="text-[rgb(var(--accent))]" />
-          )}
-        </button>
-      </div>
+        )}
 
-      {selectedProvider === 'custom' && (
+        {/* No Auth Required Provider */}
+        {selectedIntegratedProvider && !selectedIntegratedProvider.requireAuth && (
+          <div className="bg-[rgb(var(--bg))] rounded-2xl p-6 border border-[rgb(var(--border))] space-y-4 text-left">
+            <h3 className="font-semibold text-[rgb(var(--text))] flex items-center gap-2">
+              <Server size={18} />
+              {selectedIntegratedProvider.name} Setup
+            </h3>
+            
+            <p className="text-sm text-[rgb(var(--muted))]">
+              {selectedIntegratedProvider.name} doesn't require an API key. Make sure the service is running at the default URL.
+            </p>
+            
+            <button
+              onClick={() => handleAddProviderWithKey(selectedProvider)}
+              className="px-4 py-2 bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-lg font-medium hover:opacity-90 transition-opacity"
+            >
+              Add {selectedIntegratedProvider.name}
+            </button>
+          </div>
+        )}
+
+        {/* Custom Provider Setup */}
+        {selectedProvider === 'custom' && (
         <div className="bg-[rgb(var(--bg))] rounded-2xl p-6 border border-[rgb(var(--border))] space-y-4 text-left">
           <h3 className="font-semibold text-[rgb(var(--text))] flex items-center gap-2">
             <Settings size={18} />
@@ -296,9 +367,10 @@ export default function OnboardingScreen({
             {isAddingProvider ? 'Adding...' : 'Add Custom Provider'}
           </button>
         </div>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+  };
 
   const renderDoneStep = () => (
     <div className="text-center space-y-6 md:space-y-8">
@@ -363,7 +435,7 @@ export default function OnboardingScreen({
   };
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 dark:from-[rgb(14,14,16)] dark:via-blue-950/10 dark:to-purple-950/5 flex items-center justify-center p-4 z-50 animate-fade-in">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 dark:from-[rgb(14,14,16)] dark:via-blue-950/10 dark:to-purple-950/5 flex items-center justify-center p-4 animate-fade-in">
       <div className="w-full max-w-6xl">
         {renderStepIndicator()}
         

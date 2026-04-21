@@ -35,6 +35,22 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
     if (autoSyncEnabled && syncUsername && syncPassword && !syncManager.isConnected()) {
       handleConnect();
     }
+    
+    // Poll connection status every 2 seconds to detect dropped connections
+    const interval = setInterval(() => {
+      const actuallyConnected = syncManager.isConnected();
+      setIsConnected(prev => {
+        if (prev && !actuallyConnected) {
+          // Connection dropped - update UI
+          setSyncStatus('error');
+          setSyncMessage('Connection lost');
+        }
+        return actuallyConnected;
+      });
+      setUserId(syncManager.getUserId());
+    }, 2000);
+    
+    return () => clearInterval(interval);
   }, [autoSyncEnabled, syncUsername, syncPassword]);
 
   const handleConnect = async () => {

@@ -377,11 +377,22 @@ export class SyncBackend {
       const conversationsData = await this.getUserData(userId, 'conversations') || [];
       const conversations = new Map(conversationsData.map(conv => [conv.id, conv]));
       
+      // Additional deduplication check - get fresh data to handle race conditions
+      const freshConversationsData = await this.getUserData(userId, 'conversations') || [];
+      const freshConversations = new Map(freshConversationsData.map(conv => [conv.id, conv]));
+      
       let dataChanged = false;
       
       switch (action.type) {
         case 'create_conversation': {
           const { id, title, messages, modelId, systemPrompt, mode, createdAt, updatedAt } = action.data;
+          
+          // Check if conversation already exists by UUID (double check with fresh data)
+          if (conversations.has(id) || freshConversations.has(id)) {
+            console.log(`[SYNC] Conversation ${id} already exists, ignoring create_conversation`);
+            return false; // Don't store duplicate action
+          }
+          
           conversations.set(id, {
             id,
             title,
@@ -402,10 +413,22 @@ export class SyncBackend {
           console.log('Available conversations:', Array.from(conversations.keys()));
           
           const conversation = conversations.get(conversationId);
-          if (conversation) {
+          const freshConversation = freshConversations.get(conversationId);
+          
+          if (conversation || freshConversation) {
+            // Check if message already exists by UUID (check both current and fresh data)
+            const existingMessage = conversation?.messages.find(msg => msg.id === message.id) || 
+                                  freshConversation?.messages.find(msg => msg.id === message.id);
+            
+            if (existingMessage) {
+              console.log(`[SYNC] Message ${message.id} already exists in conversation ${conversationId}, ignoring create_message`);
+              return false; // Don't store duplicate action
+            }
+            
             console.log('Found conversation, adding message:', message.id);
-            conversation.messages.push(message);
-            conversation.updatedAt = action.timestamp;
+            const targetConversation = conversation || freshConversation;
+            targetConversation.messages.push(message);
+            targetConversation.updatedAt = action.timestamp;
             dataChanged = true;
           } else {
             console.error('Conversation not found:', conversationId);

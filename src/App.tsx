@@ -410,8 +410,8 @@ export default function App() {
         },
         onInitialState: async (data) => {
           console.log('[SYNC] Received initial state:', data);
-          // Suppress storage monitor during initial sync for longer period
-          (window as any).__syncSuppressUntil = Date.now() + 2000;
+          // Suppress storage monitor during initial sync for much longer period
+          (window as any).__syncSuppressUntil = Date.now() + 5000;
           
           // Import initial data from server
           if (data.conversations) {
@@ -429,24 +429,35 @@ export default function App() {
             try {
               const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
               await SyncIndexedDB.updateSnapshot();
+              // Extend suppression a bit more after snapshot update
+              (window as any).__syncSuppressUntil = Date.now() + 3000;
             } catch (error) {
               console.error('[SYNC] Failed to update snapshot after initial state:', error);
             }
-          }, 1000);
+          }, 1500);
         },
         onSyncAction: (action) => {
           // Handle incoming sync actions from remote
           console.log('[CLIENT] Received sync action:', action.type, action.data);
           console.log('[CLIENT] Current conversations:', store.conversations.map(c => ({ id: c.id, msgCount: c.messages.length })));
+          
+          // Mark this action as recently sent to prevent echoing it back
+          const actionKey = `${action.type}:${JSON.stringify(action.data)}`;
+          if (typeof window !== 'undefined') {
+            (window as any).__recentlyReceivedActions = (window as any).__recentlyReceivedActions || new Map();
+            (window as any).__recentlyReceivedActions.set(actionKey, Date.now());
+          }
+          
           switch (action.type) {
             case 'create_conversation':
               // Use functional update to read from latest state, avoiding stale closure
               store.setConversations((prev: any[]) => {
-                // Check if conversation already exists
+                // Check if conversation already exists by UUID
                 if (prev.find(c => c.id === action.data.id)) {
-                  console.log('[CLIENT] Conversation already exists:', action.data.id);
+                  console.log('[CLIENT] Conversation already exists, ignoring:', action.data.id);
                   return prev;
                 }
+                console.log('[CLIENT] Adding new conversation:', action.data.id);
                 return [action.data, ...prev];
               });
               break;
@@ -458,6 +469,14 @@ export default function App() {
                   console.log('[CLIENT] Conversation not found for message:', action.data.conversationId);
                   return prev;
                 }
+                
+                // Check if message already exists by UUID
+                if (conv.messages.find(m => m.id === action.data.message.id)) {
+                  console.log('[CLIENT] Message already exists, ignoring:', action.data.message.id);
+                  return prev;
+                }
+                
+                console.log('[CLIENT] Adding new message:', action.data.message.id, 'to conversation:', action.data.conversationId);
                 const isFirstUserMessage = conv.messages.length === 0 && action.data.message.role === 'user';
                 const title = isFirstUserMessage 
                   ? action.data.message.content.slice(0, 50) + (action.data.message.content.length > 50 ? '...' : '')
@@ -516,11 +535,11 @@ export default function App() {
               break;
             // Handle other action types as needed
           }
-          // Suppress storage monitor for 600ms to prevent echoing remote changes
-          (window as any).__syncSuppressUntil = Date.now() + 600;
-          // Update storage monitor's snapshot so it doesn't see remote changes as local changes
-          // Use setTimeout because IndexedDB is updated in a useEffect that runs after render
-          setTimeout(async () => {
+          // Suppress storage monitor for longer to prevent echoing remote changes
+          (window as any).__syncSuppressUntil = Date.now() + 2000;
+          
+          // Update snapshot immediately and then again after useEffect
+          const updateSnapshot = async () => {
             console.log('[SYNC] Updating snapshot after remote action');
             try {
               const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
@@ -529,7 +548,12 @@ export default function App() {
             } catch (error) {
               console.error('[SYNC] Failed to update IndexedDB snapshot:', error);
             }
-          }, 500);
+          };
+          
+          // Update immediately
+          updateSnapshot();
+          // And again after useEffect runs (with current state)
+          setTimeout(updateSnapshot, 100);
         }
       });
 
@@ -614,14 +638,34 @@ export default function App() {
       
       const isRecentlySent = (actionType: string, data: any): boolean => {
         const key = `${actionType}:${JSON.stringify(data)}`;
+        
+        // Check if we recently sent this action
         const timestamp = recentlySentActions.get(key);
         if (timestamp && Date.now() - timestamp < ACTION_DEDUP_WINDOW) {
           console.log('[SYNC] Ignoring duplicate action:', actionType, key);
           return true;
         }
+        
+        // Check if we recently received this action from server (prevent echoing)
+        const recentlyReceived = (window as any).__recentlyReceivedActions;
+        if (recentlyReceived) {
+          const receivedTimestamp = recentlyReceived.get(key);
+          if (receivedTimestamp && Date.now() - receivedTimestamp < ACTION_DEDUP_WINDOW) {
+            console.log('[SYNC] Ignoring recently received action (prevent echo):', actionType, key);
+            return true;
+          }
+          
+          // Clean old received actions
+          for (const [k, t] of recentlyReceived.entries()) {
+            if (Date.now() - t > ACTION_DEDUP_WINDOW) {
+              recentlyReceived.delete(k);
+            }
+          }
+        }
+        
         recentlySentActions.set(key, Date.now());
         
-        // Clean old entries
+        // Clean old sent entries
         for (const [k, t] of recentlySentActions.entries()) {
           if (Date.now() - t > ACTION_DEDUP_WINDOW) {
             recentlySentActions.delete(k);

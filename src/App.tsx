@@ -386,6 +386,8 @@ export default function App() {
           setSyncStatus('error');
         },
         onInitialState: async (data) => {
+          // Suppress storage monitor during initial sync
+          (window as any).__syncSuppressUntil = Date.now() + 1000;
           // Import initial data from server
           if (data.conversations) {
             const syncUtils = await import('./utils/syncUtils');
@@ -395,12 +397,16 @@ export default function App() {
           if (data.settings) {
             store.updateSettings(data.settings);
           }
-          // Update storage monitor's snapshot so it doesn't see these as local changes
-          (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
+          // Update snapshot after useEffect saves to localStorage (needs 500ms)
+          setTimeout(() => {
+            console.log('[SYNC] Updating snapshot after initial state');
+            (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
+          }, 500);
         },
         onSyncAction: (action) => {
           // Handle incoming sync actions from remote
           console.log('[CLIENT] Received sync action:', action.type, action.data);
+          console.log('[CLIENT] Current conversations:', store.conversations.map(c => ({ id: c.id, msgCount: c.messages.length })));
           switch (action.type) {
             case 'create_conversation':
               store.setConversations([{ ...action.data, messages: [] }, ...store.conversations]);
@@ -408,9 +414,14 @@ export default function App() {
             case 'create_message':
               const conv = store.conversations.find(c => c.id === action.data.conversationId);
               if (conv) {
+                const isFirstUserMessage = conv.messages.length === 0 && action.data.message.role === 'user';
+                const title = isFirstUserMessage 
+                  ? action.data.message.content.slice(0, 50) + (action.data.message.content.length > 50 ? '...' : '')
+                  : conv.title;
                 const updatedConv = {
                   ...conv,
                   messages: [...conv.messages, action.data.message],
+                  title,
                   updatedAt: action.timestamp
                 };
                 store.setConversations(store.conversations.map(c => 
@@ -468,8 +479,14 @@ export default function App() {
             }
             // Handle other action types as needed
           }
+          // Suppress storage monitor for 600ms to prevent echoing remote changes
+          (window as any).__syncSuppressUntil = Date.now() + 600;
           // Update storage monitor's snapshot so it doesn't see remote changes as local changes
-          (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
+          // Use setTimeout because localStorage is updated in a useEffect that runs after render
+          setTimeout(() => {
+            console.log('[SYNC] Updating snapshot after remote action');
+            (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
+          }, 500);
         }
       });
 
@@ -542,6 +559,13 @@ export default function App() {
       let localLastSettings = localStorage.getItem('lumina_settings');
 
       const checkForChanges = () => {
+        // Skip if we're in suppression period after receiving remote changes
+        const suppressUntil = (window as any).__syncSuppressUntil;
+        if (suppressUntil && Date.now() < suppressUntil) {
+          // Just skip - snapshot will be updated by setTimeout after useEffect saves
+          return;
+        }
+        
         // Get shared snapshot (may have been updated by remote sync handlers)
         const lastConversations = (window as any).__syncLastConversations ?? localLastConversations;
         const currentConversations = localStorage.getItem('lumina_conversations');
@@ -549,9 +573,14 @@ export default function App() {
 
         // Check if conversations changed (local changes only - remote changes update the snapshot)
         if (currentConversations !== lastConversations) {
+          console.log('[SYNC-MONITOR] Change detected!');
+          console.log('[SYNC-MONITOR] lastConversations length:', lastConversations?.length || 0);
+          console.log('[SYNC-MONITOR] currentConversations length:', currentConversations?.length || 0);
           try {
             const oldConversations = lastConversations ? JSON.parse(lastConversations) : [];
             const newConversations = currentConversations ? JSON.parse(currentConversations) : [];
+            console.log('[SYNC-MONITOR] old convs:', oldConversations.map((c: any) => ({ id: c.id, msgs: c.messages?.length })));
+            console.log('[SYNC-MONITOR] new convs:', newConversations.map((c: any) => ({ id: c.id, msgs: c.messages?.length })));
             
             // Find what changed
             const changes = findConversationsDiff(oldConversations, newConversations);
@@ -587,7 +616,13 @@ export default function App() {
                   
                   // Check for deleted messages
                   const deletedMessages = (oldConv.messages || []).filter((m: any) => !newMessageIds.has(m.id));
-                  console.log('Sending', deletedMessages.length, 'deleted messages for conversation:', change.conversation.id);
+                  if (deletedMessages.length > 0) {
+                    console.log('DELETED MESSAGES DETECTED:', deletedMessages.length);
+                    console.log('  oldConv.messages:', (oldConv.messages || []).map((m: any) => m.id));
+                    console.log('  newConv.messages:', (newConv.messages || []).map((m: any) => m.id));
+                    console.log('  newMessageIds:', Array.from(newMessageIds));
+                    console.log('  deleted:', deletedMessages.map((m: any) => m.id));
+                  }
                   deletedMessages.forEach((message: any) => {
                     console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
                     syncManager.sendDeleteMessage(change.conversation.id, message.id);

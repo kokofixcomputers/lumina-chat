@@ -37,9 +37,11 @@ export function useConversations(defaultProviderModelId: string) {
     conversationsRef.current = conversations;
     (async () => {
       const serialized = JSON.stringify(conversations);
+      console.log('[STORAGE] Saving to localStorage:', conversations.length, 'conversations');
       while (true) {
         try {
           localStorage.setItem('lumina_conversations', serialized);
+          console.log('[STORAGE] Saved successfully');
           return;
         } catch (err) {
           if (err instanceof Error && err.name === 'QuotaExceededError') {

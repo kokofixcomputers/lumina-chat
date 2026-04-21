@@ -55,31 +55,34 @@ jobs:
       shell: bash
       run: |
         cd src-tauri/target/release
+        ZIP_NAME="Lumina-Chat-${{ matrix.os }}.zip"
+        
         if [ "${{ matrix.os }}" == "macos-latest" ]; then
-          # Find DMG(s)
-          DMG_FILES=$(find bundle -name "*.dmg" | head -n 5)
-          if [ -z "$DMG_FILES" ]; then
+          # Search for any .dmg files (handles spaces)
+          shopt -s nullglob
+          DMG_FILES=(bundle/dmg/*/*.dmg bundle/*/*.dmg bundle/**/*.dmg)
+          if [ ${#DMG_FILES[@]} -eq 0 ]; then
             echo "No DMG found, zipping release dir"
-            zip -r Lumina-Chat-${{ matrix.os }}.zip .
-            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+            zip -r "$ZIP_NAME" .
           else
-            zip -r Lumina-Chat-${{ matrix.os }}.zip $DMG_FILES
-            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+            echo "Found DMGs: ${DMG_FILES[*]}"
+            zip -r "$ZIP_NAME" "${DMG_FILES[@]}"
           fi
         else
-          # Find all EXE/MSI/NSIS files recursively
-          BINARY_FILES=$(find . -name "*.exe" -o -name "*.msi" | head -n 10)
-          if [ -z "$BINARY_FILES" ]; then
+          # Search for Windows binaries recursively (handles spaces)
+          shopt -s nullglob
+          BINARY_FILES=(**/*.exe **/*.msi)
+          if [ ${#BINARY_FILES[@]} -eq 0 ]; then
             echo "No binaries found, zipping release dir"
-            zip -r Lumina-Chat-${{ matrix.os }}.zip .
-            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+            zip -r "$ZIP_NAME" .
           else
-            zip -r Lumina-Chat-${{ matrix.os }}.zip $BINARY_FILES
-            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+            echo "Found binaries: ${BINARY_FILES[*]}"
+            zip -r "$ZIP_NAME" "${BINARY_FILES[@]}"
           fi
         fi
-        echo "zip_path=$ZIP_PATH" >> $GITHUB_OUTPUT
-        echo "Created zip: $ZIP_PATH"
+        
+        echo "zip_path=$ZIP_NAME" >> $GITHUB_OUTPUT
+        echo "Created: $ZIP_NAME"
         ls -la *.zip
         
     - name: Upload zip artifact

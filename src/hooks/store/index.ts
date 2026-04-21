@@ -49,7 +49,7 @@ export function useAppStore() {
     setActiveConvId, newConversation, deleteConversation, updateConversationTitle,
     setConversations, setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,
     updateMessageVersions, setConversationMode, setConversationAttachments,
-    setBuildMode, setConversationDevEnvSession,
+    setBuildMode, setConversationDevEnvSession, addMessage,
     // settings actions
     updateSettings, updateModelSettings, updateProvider,
     addIntegratedProvider, addProvider, deleteProvider,

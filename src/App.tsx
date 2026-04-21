@@ -37,6 +37,13 @@ export default function App() {
 
   // Initialize extensions on app startup
   useEffect(() => {
+    // Clean timestamps from extensions to prevent sync conflicts
+    import('./extensions/extensionStorage').then(({ extensionStorage }) => {
+      extensionStorage.cleanTimestamps();
+    }).catch(error => {
+      console.error('Failed to clean extension timestamps:', error);
+    });
+    
     extensionLoader.initializeExtensions().catch(error => {
       console.error('Failed to initialize extensions:', error);
     });
@@ -259,6 +266,76 @@ export default function App() {
     }
   };
 
+  const handleForkConversation = () => {
+    const activeConv = store.activeConversation;
+    if (!activeConv || activeConv.messages.length === 0) return;
+    
+    console.log('[FORK] Starting fork of conversation:', store.activeConvId);
+    console.log('[FORK] Original messages count:', activeConv.messages.length);
+    
+    // Create a new conversation
+    const forkedConvId = store.newConversation(
+      activeConv.mode || 'chat',
+      activeConv.attachments || []
+    );
+    
+    console.log('[FORK] Created new conversation:', forkedConvId);
+    
+    // Copy all messages from the current conversation
+    // We need to create new message objects to avoid ID conflicts
+    const messageCopies = activeConv.messages.map((message, index) => {
+      console.log(`[FORK] Copying message ${index + 1}:`, message.id, message.role, message.content?.slice(0, 50));
+      return {
+        ...message,
+        id: crypto.randomUUID(), // Generate new ID for each message
+        timestamp: Date.now(), // Update timestamp
+      };
+    });
+    
+    // Add all copied messages to the new conversation using setConversations
+    store.setConversations(prev => prev.map(c => {
+      if (c.id !== forkedConvId) return c;
+      return {
+        ...c,
+        messages: messageCopies
+      };
+    }));
+    
+    console.log('[FORK] Copied all messages to:', forkedConvId);
+    
+    // Copy conversation metadata
+    if (activeConv.title) {
+      store.updateConversationTitle(forkedConvId, 
+        `${activeConv.title} (Forked)`
+      );
+    }
+    
+    if (activeConv.modelId) {
+      store.setConversationModel(forkedConvId, activeConv.modelId);
+    }
+    
+    if (activeConv.systemPrompt) {
+      // System prompt is part of the conversation, we need to update it via setConversations
+      store.setConversations(prev => prev.map(c => {
+        if (c.id !== forkedConvId) return c;
+        return {
+          ...c,
+          systemPrompt: activeConv.systemPrompt
+        };
+      }));
+    }
+    
+    // Switch to the new conversation
+    store.setActiveConvId(forkedConvId);
+    
+    // Verify the fork worked
+    setTimeout(() => {
+      const forkedConv = store.conversations.find(c => c.id === forkedConvId);
+      console.log('[FORK] Verification - Forked conversation messages count:', forkedConv?.messages.length || 0);
+      console.log('[FORK] Verification - Forked conversation title:', forkedConv?.title);
+    }, 100);
+  };
+
   const handleVersionChange = (msgId: string, versionIndex: number) => {
     if (!store.activeConvId) return;
     
@@ -284,6 +361,16 @@ export default function App() {
   const handleImportData = async (data: any) => {
     if (data.settings) {
       store.updateSettings(data.settings);
+    }
+    if (data.extensions) {
+      try {
+        const { extensionStorage } = await import('./extensions/extensionStorage');
+        // Import extensions to lumina_extensions localStorage
+        localStorage.setItem('lumina_extensions', JSON.stringify(data.extensions));
+        console.log('[IMPORT] Extensions imported successfully:', Object.keys(data.extensions).length, 'extensions');
+      } catch (error) {
+        console.error('Failed to import extensions:', error);
+      }
     }
     if (data.conversations) {
       try {
@@ -468,7 +555,25 @@ export default function App() {
             store.setConversations(mergedConversations);
           }
           if (data.settings) {
-            store.updateSettings(data.settings);
+            // Extract extensions from settings and save separately
+            const { cloudSync: remoteCloudSync, extensions: remoteExtensions, ...settingsOnly } = data.settings;
+            store.updateSettings(settingsOnly);
+            
+            // Handle extensions separately if they exist
+            if (remoteExtensions) {
+              try {
+                localStorage.setItem('lumina_extensions', JSON.stringify(remoteExtensions));
+                console.log('[SYNC-INIT] Extensions loaded from remote:', Object.keys(remoteExtensions).length, 'extensions');
+                // Trigger extension reload
+                import('./extensions/extensionLoader').then(({ extensionLoader }) => {
+                  extensionLoader.initializeExtensions().catch(error => {
+                    console.error('Failed to reload extensions after initial sync:', error);
+                  });
+                });
+              } catch (error) {
+                console.error('Failed to load extensions from remote:', error);
+              }
+            }
           }
           
           // Update IndexedDB snapshot after useEffect saves (needs longer delay for IndexedDB)
@@ -578,8 +683,27 @@ export default function App() {
               break;
             case 'update_settings':
               // Update settings from remote - exclude cloudSync to avoid overwriting local credentials
-              const { cloudSync: remoteCloudSync, ...remoteSettings } = action.data.settings;
+              const { cloudSync: remoteCloudSync, extensions: remoteExtensions, ...remoteSettings } = action.data.settings;
               store.updateSettings(remoteSettings);
+              
+              // Handle extensions separately if they exist in the sync data
+              if (remoteExtensions) {
+                try {
+                  localStorage.setItem('lumina_extensions', JSON.stringify(remoteExtensions));
+                  console.log('[SYNC] Extensions updated from remote:', Object.keys(remoteExtensions).length, 'extensions');
+                  // Trigger extension reload
+                  import('./extensions/extensionLoader').then(({ extensionLoader }) => {
+                    extensionLoader.initializeExtensions().catch(error => {
+                      console.error('Failed to reload extensions after sync:', error);
+                    });
+                  });
+                } catch (error) {
+                  console.error('Failed to update extensions from remote:', error);
+                }
+              }
+              
+              // Update the tracking variable
+              (window as any).__syncLastExtensions = localStorage.getItem('lumina_extensions');
               break;
             // Handle other action types as needed
           }
@@ -681,6 +805,7 @@ export default function App() {
       let localLastSettings = localStorage.getItem('lumina_settings');
       // Initialize shared settings tracking
       (window as any).__syncLastSettings = localLastSettings;
+      (window as any).__syncLastExtensions = localStorage.getItem('lumina_extensions');
       
       // Track recently sent actions to prevent duplicates
       const recentlySentActions = new Map<string, number>();
@@ -833,18 +958,41 @@ export default function App() {
 
         // Check if settings changed (settings still use localStorage)
         const currentSettings = localStorage.getItem('lumina_settings');
+        const currentExtensions = localStorage.getItem('lumina_extensions');
         const lastSettings = (window as any).__syncLastSettings || localLastSettings;
         
         console.log('[SYNC-MONITOR] Settings check - Current:', currentSettings ? 'exists' : 'null');
+        console.log('[SYNC-MONITOR] Extensions check - Current:', currentExtensions ? 'exists' : 'null');
         console.log('[SYNC-MONITOR] Settings check - Last:', lastSettings ? 'exists' : 'null');
         console.log('[SYNC-MONITOR] Settings changed:', currentSettings !== lastSettings);
         
-        if (currentSettings !== lastSettings) {
+        // Combine settings and extensions for sync
+        const settingsChanged = currentSettings !== lastSettings;
+        const extensionsChanged = currentExtensions !== (window as any).__syncLastExtensions;
+        
+        if (settingsChanged || extensionsChanged) {
           try {
             // Parse and send settings sync action
             const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
+            const newExtensions = currentExtensions ? JSON.parse(currentExtensions) : {};
+            
+            console.log('[SYNC-MONITOR] Full settings object:', newSettings);
+            console.log('[SYNC-MONITOR] Full extensions object:', newExtensions);
+            console.log('[SYNC-MONITOR] Shares:', newSettings.shares);
+            console.log('[SYNC-MONITOR] Extensions from settings:', newSettings.extensions);
+            console.log('[SYNC-MONITOR] Extensions from lumina_extensions:', newExtensions);
+            console.log('[SYNC-MONITOR] Integrations:', newSettings.integrations);
+            
+            // Combine settings and extensions
+            const combinedData = {
+              ...newSettings,
+              extensions: newExtensions // Override extensions with lumina_extensions data
+            };
+            
             // Exclude cloudSync credentials from sync
-            const { cloudSync, ...syncSettings } = newSettings;
+            const { cloudSync, ...syncSettings } = combinedData;
+            console.log('[SYNC-MONITOR] Settings to sync (excluding cloudSync):', syncSettings);
+            
             // Create a simpler key for settings deduplication
             const settingsKey = JSON.stringify(syncSettings);
             if (!isRecentlySent('update_settings', settingsKey)) {
@@ -856,6 +1004,7 @@ export default function App() {
             // Update both local and shared variables
             localLastSettings = currentSettings;
             (window as any).__syncLastSettings = currentSettings;
+            (window as any).__syncLastExtensions = currentExtensions;
           } catch (error) {
             console.error('Error syncing settings:', error);
           }
@@ -865,35 +1014,54 @@ export default function App() {
       // Check for changes every second
       const interval = setInterval(checkForChanges, 1000);
 
-      // Also monitor settings changes separately (since localStorage doesn't trigger IndexedDB changes)
+      // Also monitor settings and extensions changes separately (since localStorage doesn't trigger IndexedDB changes)
       const checkSettingsChanges = () => {
         const currentSettings = localStorage.getItem('lumina_settings');
+        const currentExtensions = localStorage.getItem('lumina_extensions');
         const lastSettings = (window as any).__syncLastSettings || localLastSettings;
+        const lastExtensions = (window as any).__syncLastExtensions;
         
-        if (currentSettings !== lastSettings) {
-          console.log('[SETTINGS-MONITOR] Settings change detected');
+        const settingsChanged = currentSettings !== lastSettings;
+        const extensionsChanged = currentExtensions !== lastExtensions;
+        
+        if (settingsChanged || extensionsChanged) {
+          console.log('[SETTINGS-MONITOR] Settings/extensions change detected - Settings:', settingsChanged, 'Extensions:', extensionsChanged);
           try {
             const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
-            console.log('[SETTINGS-MONITOR] Parsed settings:', newSettings);
-            console.log('[SETTINGS-MONITOR] Shares in settings:', newSettings.shares);
-            console.log('[SETTINGS-MONITOR] Shares type:', typeof newSettings.shares);
+            const newExtensions = currentExtensions ? JSON.parse(currentExtensions) : {};
             
-            const { cloudSync, ...syncSettings } = newSettings;
+            // Combine settings and extensions
+            const combinedData = {
+              ...newSettings,
+              extensions: newExtensions
+            };
+            
+            console.log('[SETTINGS-MONITOR] Parsed settings:', newSettings);
+            console.log('[SETTINGS-MONITOR] Parsed extensions:', newExtensions);
+            console.log('[SETTINGS-MONITOR] Combined data:', combinedData);
+            
+            // Exclude cloudSync credentials from sync
+            const { cloudSync, ...syncSettings } = combinedData;
             const settingsKey = JSON.stringify(syncSettings);
             console.log('[SETTINGS-MONITOR] Settings key for sync:', settingsKey);
             
             if (!isRecentlySent('update_settings', settingsKey)) {
-              console.log('[SETTINGS-MONITOR] Sending settings update:', syncSettings);
-              console.log('[SETTINGS-MONITOR] Shares being sent:', syncSettings.shares);
+              console.log('[SETTINGS-MONITOR] Sending settings/extensions update:', syncSettings);
               syncManager.sendUpdateSettings(syncSettings);
             } else {
-              console.log('[SETTINGS-MONITOR] Ignoring duplicate settings update');
+              console.log('[SETTINGS-MONITOR] Ignoring duplicate settings/extensions update');
             }
             
-            localLastSettings = currentSettings;
-            (window as any).__syncLastSettings = currentSettings;
+            // Update tracking variables
+            if (settingsChanged) {
+              localLastSettings = currentSettings;
+              (window as any).__syncLastSettings = currentSettings;
+            }
+            if (extensionsChanged) {
+              (window as any).__syncLastExtensions = currentExtensions;
+            }
           } catch (error) {
-            console.error('Error syncing settings:', error);
+            console.error('Error syncing settings/extensions:', error);
           }
         }
       };
@@ -901,10 +1069,23 @@ export default function App() {
       // Check settings every 500ms (more responsive)
       const settingsInterval = setInterval(checkSettingsChanges, 500);
 
+      // Listen for storage events for immediate updates
+      const handleStorageChange = (e: StorageEvent) => {
+        if (e.key === 'lumina_extensions') {
+          console.log('[STORAGE] Extensions changed, triggering immediate check');
+          checkSettingsChanges();
+        } else if (e.key === 'lumina_settings') {
+          console.log('[STORAGE] Settings changed, triggering immediate check');
+          checkSettingsChanges();
+        }
+      };
+      window.addEventListener('storage', handleStorageChange);
+
       // Store the cleanup function
       cleanupFn = () => {
         clearInterval(interval);
         clearInterval(settingsInterval);
+        window.removeEventListener('storage', handleStorageChange);
       };
     };
 
@@ -1057,6 +1238,7 @@ export default function App() {
             onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
             onVersionChange={handleVersionChange}
             onOpenShare={openSharePanel}
+            onForkConversation={handleForkConversation}
           />
 
           {panel === 'settings' && (

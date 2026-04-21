@@ -85,8 +85,6 @@ api.registerExtension({
         ...editForm,
         code: editCode,
         enabled: true,
-        installedAt: Date.now(),
-        lastModified: Date.now(),
         tools: [] // Will be populated when the extension registers itself
       };
 
@@ -101,6 +99,12 @@ api.registerExtension({
       setTimeout(() => {
         loadExtensions();
       }, 100);
+      
+      // Trigger sync by dispatching a storage event
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'lumina_extensions',
+        newValue: localStorage.getItem('lumina_extensions')
+      }));
     } catch (error) {
       alert(`Failed to save extension: ${error}`);
     }
@@ -111,6 +115,11 @@ api.registerExtension({
       extensionStorage.deleteExtension(id);
       extensionLoader.unloadExtension(id);
       loadExtensions();
+      // Trigger sync by dispatching a storage event
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'lumina_extensions',
+        newValue: localStorage.getItem('lumina_extensions')
+      }));
     }
   };
 
@@ -146,6 +155,11 @@ api.registerExtension({
         }, 100);
       }
     }
+    // Trigger sync by dispatching a storage event
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'lumina_extensions',
+      newValue: localStorage.getItem('lumina_extensions')
+    }));
   };
 
   const handleExportExtensions = () => {
@@ -181,6 +195,12 @@ api.registerExtension({
         }
         
         loadExtensions();
+        
+        // Trigger sync by dispatching a storage event
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'lumina_extensions',
+          newValue: localStorage.getItem('lumina_extensions')
+        }));
       } catch (error) {
         alert('Failed to import extensions');
       }

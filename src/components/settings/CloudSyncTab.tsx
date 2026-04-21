@@ -162,7 +162,7 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
           <>
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
               <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                <strong>Warning:</strong> While there is little chance that your data get's stolen from our servers, the chance is not 0%. We are not responsible for stolen data.
+                <strong>Warning:</strong> This feature is subject to change that may cause breaking changes and may result in your data being lost.
               </p>
             </div>
 

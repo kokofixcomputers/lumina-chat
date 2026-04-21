@@ -89,6 +89,7 @@ interface ChatAreaProps {
   onBuildModeChange?: (on: boolean) => void;
   onOpenBuildFS?: () => void;
   onOpenShare?: () => void;
+  onForkConversation?: () => void;
   homeBuildMode?: boolean;
 }
 
@@ -120,6 +121,7 @@ export default function ChatArea({
   onGenerateTitle,
   onGenerateFollowUps,
   onOpenShare,
+  onForkConversation,
   onOpenBuildFS,
   homeMode = 'chat',
   homeAttachments = [],
@@ -222,6 +224,7 @@ export default function ChatArea({
               onBuildModeChange={onBuildModeChange}
               onOpenBuildFS={onOpenBuildFS}
               onOpenShare={onOpenShare}
+              onForkConversation={onForkConversation}
               conversation={{ messages: [] }}
             />
           </div>
@@ -342,6 +345,7 @@ export default function ChatArea({
         onBuildModeChange={onBuildModeChange ? (on) => onBuildModeChange(on) : undefined}
         onOpenBuildFS={() => setShowFS(s => !s)}
         onOpenShare={onOpenShare}
+        onForkConversation={onForkConversation}
         conversation={conversation}
       />
       </div>

@@ -3,8 +3,8 @@ import { Extension } from './extensionSystem';
 export interface StoredExtension extends Extension {
   code: string;
   enabled: boolean;
-  installedAt: number;
-  lastModified: number;
+  installedAt?: number;
+  lastModified?: number;
 }
 
 class ExtensionStorage {
@@ -58,7 +58,7 @@ class ExtensionStorage {
       const extension = this.getExtension(id);
       if (!extension) return false;
 
-      const updatedExtension = { ...extension, ...updates, lastModified: Date.now() };
+      const updatedExtension = { ...extension, ...updates };
       this.saveExtension(updatedExtension);
       return true;
     } catch (error) {
@@ -117,6 +117,31 @@ class ExtensionStorage {
       typeof obj.enabled === 'boolean' &&
       Array.isArray(obj.tools)
     );
+  }
+
+  // Clean timestamps from all extensions to prevent sync conflicts
+  cleanTimestamps(): void {
+    try {
+      const extensions = this.getAllExtensions();
+      let hasTimestamps = false;
+      
+      // Remove timestamps from all extensions
+      const cleanedExtensions: Record<string, StoredExtension> = {};
+      for (const [id, extension] of Object.entries(extensions)) {
+        const { installedAt, lastModified, ...cleaned } = extension;
+        cleanedExtensions[id] = cleaned;
+        if (installedAt || lastModified) {
+          hasTimestamps = true;
+        }
+      }
+      
+      if (hasTimestamps) {
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(cleanedExtensions));
+        console.log('[EXTENSION] Cleaned timestamps from', Object.keys(extensions).length, 'extensions');
+      }
+    } catch (error) {
+      console.error('Failed to clean extension timestamps:', error);
+    }
   }
 }
 

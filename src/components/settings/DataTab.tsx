@@ -9,9 +9,21 @@ interface DataTabProps {
 
 export default function DataTab({ settings, conversations, onImportData }: DataTabProps) {
   const exportData = () => {
+    // Get extensions from localStorage
+    const extensions = {};
+    try {
+      const extensionsData = localStorage.getItem('lumina_extensions');
+      if (extensionsData) {
+        Object.assign(extensions, JSON.parse(extensionsData));
+      }
+    } catch (error) {
+      console.error('Failed to export extensions:', error);
+    }
+    
     const data = {
       settings,
       conversations,
+      extensions,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

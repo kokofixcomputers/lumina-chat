@@ -149,6 +149,11 @@ async function handleSyncWebSocket(request, env) {
                 conv.messages = conv.messages.filter(m => m.id !== action.data.messageId);
                 conv.updatedAt = action.timestamp;
               }
+            } else if (action.type === 'update_settings') {
+              // Store settings separately (includes extensions in the settings object)
+              const settingsKey = `settings:${userId}`;
+              await env.LUMINA_CHAT_USER_KV.put(settingsKey, JSON.stringify(action.data.settings));
+              console.log('Settings updated for user:', userId);
             } else if (action.type === 'overwrite_data') {
               // Complete data overwrite
               if (action.data.conversations) {

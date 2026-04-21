@@ -39,8 +39,7 @@ class ExtensionLoader {
         description: extension.description || storedExtension.description,
         author: extension.author || storedExtension.author,
         tools: extension.tools,
-        enabled: currentStored?.enabled ?? storedExtension.enabled, // Use current enabled state
-        lastModified: Date.now()
+        enabled: currentStored?.enabled ?? storedExtension.enabled // Use current enabled state
       };
 
       // Save the updated extension with proper tools

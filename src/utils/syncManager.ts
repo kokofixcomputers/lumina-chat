@@ -11,7 +11,8 @@ import type {
   UpdateTitleAction,
   UpdateFollowupAction,
   UpdateSettingsAction,
-  AddRetryAction
+  AddRetryAction,
+  OverwriteDataAction
 } from '../types/sync';
 import type { Conversation, Message, AppSettings } from '../types';
 

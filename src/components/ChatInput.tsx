@@ -5,7 +5,7 @@ import {
   Type, List, Eraser, MoreHorizontal, ChevronDown,
   Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
   Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, ImageIcon as ImgOut, Video,
-  Share2
+  Share2, GitFork
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
 import { 
@@ -50,6 +50,7 @@ interface ChatInputProps {
   onBuildModeChange?: (on: boolean) => void;
   onOpenBuildFS?: () => void;
   onOpenShare?: () => void;
+  onForkConversation?: () => void;
   conversation?: { messages: Message[] };
 }
 
@@ -181,6 +182,7 @@ export default function ChatInput({
   onBuildModeChange,
   onOpenBuildFS,
   onOpenShare,
+  onForkConversation,
   conversation,
 }: ChatInputProps) {
   const [text, setText] = useState('');
@@ -751,6 +753,14 @@ export default function ChatInput({
             title={!conversation?.messages || conversation.messages.length === 0 ? "No conversation to share" : "Share conversation"}
           >
             <Share2 size={15} />
+          </button>
+          <button 
+            className="toolbar-btn" 
+            onClick={onForkConversation}
+            disabled={!conversation?.messages || conversation.messages.length === 0}
+            title={!conversation?.messages || conversation.messages.length === 0 ? "No conversation to fork" : "Fork conversation"}
+          >
+            <GitFork size={15} />
           </button>
           <button className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
           <button className="toolbar-btn" onClick={() => setText('')}><Eraser size={15} /></button>

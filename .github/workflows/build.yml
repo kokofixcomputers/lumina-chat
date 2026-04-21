@@ -1,0 +1,90 @@
+name: Build Tauri App
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            rust_target: aarch64-apple-darwin
+          - os: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: latest
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+    
+    - name: Install dependencies
+      run: pnpm install
+      
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.rust_target }}
+        
+    - name: Setup Tauri CLI
+      run: cargo install tauri-cli --version "^2.0"
+      
+    - name: Set Tauri target (macOS ARM64)
+      if: matrix.os == 'macos-latest'
+      run: echo "TAURI_ARCH=aarch64-apple-darwin" >> $GITHUB_ENV
+      
+    - name: Build Tauri app
+      run: npx tauri build
+      
+    - name: Find and zip binaries
+      id: zip-binaries
+      shell: bash
+      run: |
+        cd src-tauri/target/release
+        if [ "${{ matrix.os }}" == "macos-latest" ]; then
+          # Find DMG(s)
+          DMG_FILES=$(find bundle -name "*.dmg" | head -n 5)
+          if [ -z "$DMG_FILES" ]; then
+            echo "No DMG found, zipping release dir"
+            zip -r Lumina-Chat-${{ matrix.os }}.zip .
+            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+          else
+            zip -r Lumina-Chat-${{ matrix.os }}.zip $DMG_FILES
+            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+          fi
+        else
+          # Find all EXE/MSI/NSIS files recursively
+          BINARY_FILES=$(find . -name "*.exe" -o -name "*.msi" | head -n 10)
+          if [ -z "$BINARY_FILES" ]; then
+            echo "No binaries found, zipping release dir"
+            zip -r Lumina-Chat-${{ matrix.os }}.zip .
+            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+          else
+            zip -r Lumina-Chat-${{ matrix.os }}.zip $BINARY_FILES
+            ZIP_PATH="Lumina-Chat-${{ matrix.os }}.zip"
+          fi
+        fi
+        echo "zip_path=$ZIP_PATH" >> $GITHUB_OUTPUT
+        echo "Created zip: $ZIP_PATH"
+        ls -la *.zip
+        
+    - name: Upload zip artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: lumina-chat-${{ matrix.os }}
+        path: src-tauri/target/release/Lumina-Chat-${{ matrix.os }}.zip
+        retention-days: 30

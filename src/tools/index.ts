@@ -9,7 +9,6 @@ import hotelSearchTools from './hotelSearch';
 import webRequest from './webRequest';
 import devEnvTools from './devEnv';
 import qanda from './qanda';
-import localAgentTools from './localAgent';
 import { buildFsTools } from './buildFs';
 import { memoryTools } from './memories';
 import chart from './chart';
@@ -28,19 +27,16 @@ const tools: Tool[] = [
   chart,
   execPythonTool,
   ...devEnvTools,
-  ...localAgentTools,
 ];
 
 export function getAllTools(includeImageGen = false, buildMode = false): Tool[] {
   const settingsData = localStorage.getItem('lumina_settings');
-  let localAgentEnabled = false;
   let disabledTools: string[] = [];
   let memoriesEnabled = false;
 
   if (settingsData) {
     try {
       const settings = JSON.parse(settingsData);
-      localAgentEnabled = settings.localAgent?.enabled || false;
       disabledTools = settings.disabledTools || [];
       memoriesEnabled = settings.memoriesEnabled || false;
     } catch {}
@@ -50,10 +46,6 @@ export function getAllTools(includeImageGen = false, buildMode = false): Tool[] 
   const extensionTools = extensionToolRegistry.getDynamicTools();
   
   let filteredTools = [...tools, ...extensionTools].filter(t => !disabledTools.includes(t.definition.function.name));
-
-  if (localAgentEnabled) {
-    filteredTools = filteredTools.filter(t => !t.definition.function.name.startsWith('local_agent_') || localAgentEnabled);
-  }
 
   if (!memoriesEnabled) {
     filteredTools = filteredTools.filter(t => !t.definition.function.name.startsWith('memory_'));
@@ -72,13 +64,11 @@ export function getAllTools(includeImageGen = false, buildMode = false): Tool[] 
 
 export function getToolByName(name: string, buildMode = false): Tool | undefined {
   const settingsData = localStorage.getItem('lumina_settings');
-  let localAgentEnabled = false;
   let disabledTools: string[] = [];
 
   if (settingsData) {
     try {
       const settings = JSON.parse(settingsData);
-      localAgentEnabled = settings.localAgent?.enabled || false;
       disabledTools = settings.disabledTools || [];
     } catch {}
   }
@@ -87,8 +77,6 @@ export function getToolByName(name: string, buildMode = false): Tool | undefined
 
   const extensionTools = extensionToolRegistry.getDynamicTools();
   const allTools = [...tools, ...extensionTools, generateImage, ...(buildMode ? buildFsTools : []), ...memoryTools];
-
-  if (name.startsWith('local_agent_') && !localAgentEnabled) return undefined;
 
   const found = allTools.find(t => t.definition.function.name === name);
   if (!found) return undefined;

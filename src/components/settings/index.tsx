@@ -14,7 +14,6 @@ import ExtensionsTab from './ExtensionsTab';
 import SharesTab from './SharesTab';
 import WorkflowsTab from './WorkflowsTab';
 import IntegrationsTab from './IntegrationsTab';
-import LocalAgentTab from './LocalAgentTab';
 import MemoriesTab from './MemoriesTab';
 import AboutTab from './AboutTab';
 
@@ -36,45 +35,7 @@ export default function SettingsPanel({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
   const [fade, setFade] = useState(true);
-  const [agentPort, setAgentPort] = useState(settings.localAgent?.port || '14345');
-  const [agentProtocol, setAgentProtocol] = useState<'ws' | 'wss'>(settings.localAgent?.protocol || 'ws');
-  const [agentEnabled, setAgentEnabled] = useState(settings.localAgent?.enabled || false);
-  const [agentStatus, setAgentStatus] = useState<'disabled' | 'error' | 'connected'>('disabled');
 
-  useEffect(() => {
-    if (!agentEnabled) {
-      setAgentStatus('disabled');
-      return;
-    }
-    const checkConnection = () => {
-      const wsUrl = `${agentProtocol}://localhost:${agentPort}`;
-      try {
-        const ws = new WebSocket(wsUrl);
-        const timeout = setTimeout(() => {
-          ws.close();
-          setAgentStatus('error');
-        }, 2000);
-        ws.onopen = () => {
-          clearTimeout(timeout);
-          setAgentStatus('connected');
-          ws.close();
-        };
-        ws.onerror = () => {
-          clearTimeout(timeout);
-          setAgentStatus('error');
-        };
-      } catch {
-        setAgentStatus('error');
-      }
-    };
-    checkConnection();
-    const interval = setInterval(() => {
-      if (agentStatus !== 'connected') {
-        checkConnection();
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [agentEnabled, agentPort, agentProtocol, agentStatus]);
 
   useEffect(() => {
     if (activeTab !== 'about') return;
@@ -108,13 +69,6 @@ export default function SettingsPanel({
     >
       {icon}
       {label}
-      {tab === 'localagent' && (
-        <div className={`ml-auto w-2 h-2 rounded-full ${
-          agentStatus === 'disabled' ? 'bg-gray-400' :
-          agentStatus === 'error' ? 'bg-red-500' :
-          'bg-green-500'
-        }`} />
-      )}
     </button>
   );
 
@@ -130,7 +84,6 @@ export default function SettingsPanel({
     extensions: 'Extensions',
     shares: 'Shared Conversations',
     memories: 'Memories',
-    localagent: 'Local Agent',
     integrations: 'Integrations',
     about: 'About',
   };
@@ -169,7 +122,6 @@ export default function SettingsPanel({
               {navBtn('extensions', 'Extensions', <SettingsIcon size={16} />)}
               {navBtn('shares', 'Shares', <Share2 size={16} />)}
               {navBtn('memories', 'Memories', <Brain size={16} />)}
-              {navBtn('localagent', 'Local Agent', <Database size={16} />)}
               {navBtn('integrations', 'Integrations', <Puzzle size={16} />)}
               {navBtn('about', 'About', <Info size={16} />)}
             </div>
@@ -274,19 +226,6 @@ export default function SettingsPanel({
               />
             )}
 
-            {activeTab === 'localagent' && (
-              <LocalAgentTab
-                settings={settings}
-                onUpdateSettings={onUpdateSettings}
-                agentPort={agentPort}
-                agentProtocol={agentProtocol}
-                agentEnabled={agentEnabled}
-                agentStatus={agentStatus}
-                setAgentPort={setAgentPort}
-                setAgentProtocol={setAgentProtocol}
-                setAgentEnabled={setAgentEnabled}
-              />
-            )}
 
             {activeTab === 'shares' && (
               <SharesTab

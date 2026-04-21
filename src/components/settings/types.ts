@@ -13,7 +13,6 @@ export type TabType =
   | 'extensions'
   | 'shares'
   | 'memories'
-  | 'localagent'
   | 'integrations'
   | 'about';
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, Sparkles } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import SettingsPanel from './components/SettingsPanel';
@@ -13,6 +13,8 @@ import { mergeConversations } from './utils/mergeConversations';
 import { extensionLoader } from './extensions/extensionLoader';
 import { handleDeepLinkOrShare, registerDeepLinkProtocol } from './utils/deepLink';
 import { registerDeepLinkHandler, checkForDeepLinkOnStartup } from './utils/tauriDeepLink';
+import './utils/storageMigration'; // Load migration utilities
+import './utils/syncIndexedDB'; // Load IndexedDB sync utilities
 import type { Panel, Message } from './types';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
@@ -279,13 +281,18 @@ export default function App() {
     store.updateSettings({ defaultProviderModelId: modelId });
   };
 
-  const handleImportData = (data: any) => {
+  const handleImportData = async (data: any) => {
     if (data.settings) {
       store.updateSettings(data.settings);
     }
     if (data.conversations) {
-      localStorage.setItem('lumina_conversations', JSON.stringify(data.conversations));
-      window.location.reload();
+      try {
+        const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+        await SyncIndexedDB.importConversations(data.conversations);
+        window.location.reload();
+      } catch (error) {
+        console.error('Failed to import conversations:', error);
+      }
     }
   };
 
@@ -504,11 +511,16 @@ export default function App() {
           // Suppress storage monitor for 600ms to prevent echoing remote changes
           (window as any).__syncSuppressUntil = Date.now() + 600;
           // Update storage monitor's snapshot so it doesn't see remote changes as local changes
-          // Use setTimeout because localStorage is updated in a useEffect that runs after render
-          setTimeout(() => {
+          // Use setTimeout because IndexedDB is updated in a useEffect that runs after render
+          setTimeout(async () => {
             console.log('[SYNC] Updating snapshot after remote action');
-            (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
-            (window as any).__syncLastSettings = localStorage.getItem('lumina_settings');
+            try {
+              const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+              await SyncIndexedDB.updateSnapshot();
+              (window as any).__syncLastSettings = localStorage.getItem('lumina_settings');
+            } catch (error) {
+              console.error('[SYNC] Failed to update IndexedDB snapshot:', error);
+            }
           }, 500);
         }
       });
@@ -582,110 +594,99 @@ export default function App() {
         }
       }
 
-      // Use shared snapshot so sync handlers can update it when applying remote changes
-      let localLastConversations = localStorage.getItem('lumina_conversations');
-      (window as any).__syncLastConversations = localLastConversations;
+      // Initialize IndexedDB sync
+      const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+      await SyncIndexedDB.initializeSync();
+      
       let localLastSettings = localStorage.getItem('lumina_settings');
 
-      const checkForChanges = () => {
-        // Skip if we're in suppression period after receiving remote changes
-        const suppressUntil = (window as any).__syncSuppressUntil;
-        if (suppressUntil && Date.now() < suppressUntil) {
-          // Just skip - snapshot will be updated by setTimeout after useEffect saves
-          return;
-        }
-        
-        // Get shared snapshot (may have been updated by remote sync handlers)
-        const lastConversations = (window as any).__syncLastConversations ?? localLastConversations;
-        const currentConversations = localStorage.getItem('lumina_conversations');
-        const currentSettings = localStorage.getItem('lumina_settings');
+      const checkForChanges = async () => {
+        try {
+          const { hasChanges, oldConversations, newConversations } = await SyncIndexedDB.checkForChanges();
+          
+          if (!hasChanges) {
+            return;
+          }
 
-        // Check if conversations changed (local changes only - remote changes update the snapshot)
-        if (currentConversations !== lastConversations) {
-          console.log('[SYNC-MONITOR] Change detected!');
-          console.log('[SYNC-MONITOR] lastConversations length:', lastConversations?.length || 0);
-          console.log('[SYNC-MONITOR] currentConversations length:', currentConversations?.length || 0);
-          try {
-            const oldConversations = lastConversations ? JSON.parse(lastConversations) : [];
-            const newConversations = currentConversations ? JSON.parse(currentConversations) : [];
-            console.log('[SYNC-MONITOR] old convs:', oldConversations.map((c: any) => ({ id: c.id, msgs: c.messages?.length })));
-            console.log('[SYNC-MONITOR] new convs:', newConversations.map((c: any) => ({ id: c.id, msgs: c.messages?.length })));
-            
-            // Find what changed
-            const changes = findConversationsDiff(oldConversations, newConversations);
-            
-            // Send sync actions for local changes only
-            console.log('Processing sync changes:', changes.length, 'changes detected');
-            changes.forEach(change => {
-              if (change.type === 'added') {
-                console.log('Sending create conversation for:', change.conversation.id);
-                syncManager.sendCreateConversation(change.conversation);
-              } else if (change.type === 'modified') {
-                // Check what changed in the conversation
-                const oldConv = oldConversations.find(c => c.id === change.conversation.id);
-                const newConv = newConversations.find(c => c.id === change.conversation.id);
-                
-                if (oldConv && newConv) {
-                  // Check for title changes
-                  if (oldConv.title !== newConv.title) {
-                    syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
-                  }
-                  
-                  // Check for new messages
-                  const oldMessageIds = new Set((oldConv.messages || []).map((m: any) => m.id));
-                  const newMessageIds = new Set((newConv.messages || []).map((m: any) => m.id));
-                  const newMessages = (newConv.messages || []).filter((m: any) => !oldMessageIds.has(m.id));
-                  
-                  // Send sync actions for new messages
-                  console.log('Sending', newMessages.length, 'new messages for conversation:', change.conversation.id);
-                  newMessages.forEach((message: any) => {
-                    console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
-                    syncManager.sendCreateMessage(change.conversation.id, message);
-                  });
-                  
-                  // Check for deleted messages
-                  const deletedMessages = (oldConv.messages || []).filter((m: any) => !newMessageIds.has(m.id));
-                  if (deletedMessages.length > 0) {
-                    console.log('DELETED MESSAGES DETECTED:', deletedMessages.length);
-                    console.log('  oldConv.messages:', (oldConv.messages || []).map((m: any) => m.id));
-                    console.log('  newConv.messages:', (newConv.messages || []).map((m: any) => m.id));
-                    console.log('  newMessageIds:', Array.from(newMessageIds));
-                    console.log('  deleted:', deletedMessages.map((m: any) => m.id));
-                  }
-                  deletedMessages.forEach((message: any) => {
-                    console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
-                    syncManager.sendDeleteMessage(change.conversation.id, message.id);
-                  });
-                  
-                  // Check for follow-up changes in existing messages
-                  const oldMsgMap = new Map((oldConv.messages || []).map((m: any) => [m.id, m]));
-                  (newConv.messages || []).forEach((newMsg: any) => {
-                    const oldMsg = oldMsgMap.get(newMsg.id) as { followUps?: string[] } | undefined;
-                    if (oldMsg) {
-                      const oldFollowUps = oldMsg.followUps || [];
-                      const newFollowUps = (newMsg.followUps as string[]) || [];
-                      if (JSON.stringify(oldFollowUps) !== JSON.stringify(newFollowUps)) {
-                        console.log('Sending update_followup for message:', newMsg.id);
-                        syncManager.sendUpdateFollowup(change.conversation.id, newMsg.id, newFollowUps);
-                      }
-                    }
-                  });
+          console.log('[SYNC-MONITOR] Processing IndexedDB changes');
+          console.log('[SYNC-MONITOR] old convs:', oldConversations.map(c => ({ id: c.id, msgs: c.messages?.length })));
+          console.log('[SYNC-MONITOR] new convs:', newConversations.map(c => ({ id: c.id, msgs: c.messages?.length })));
+          
+          // Find what changed
+          const changes = SyncIndexedDB.findConversationsDiff(oldConversations, newConversations);
+          
+          // Send sync actions for local changes only
+          console.log('Processing sync changes:', changes.length, 'changes detected');
+          changes.forEach(change => {
+            if (change.type === 'added') {
+              console.log('Sending create conversation for:', change.conversation.id);
+              syncManager.sendCreateConversation(change.conversation);
+            } else if (change.type === 'modified') {
+              // Check what changed in the conversation
+              const oldConv = oldConversations.find(c => c.id === change.conversation.id);
+              const newConv = newConversations.find(c => c.id === change.conversation.id);
+              
+              if (oldConv && newConv) {
+                // Check for title changes
+                if (oldConv.title !== newConv.title) {
+                  syncManager.sendUpdateTitle(change.conversation.id, newConv.title);
                 }
-              } else if (change.type === 'deleted') {
-                console.log('Sending delete conversation for:', change.conversationId);
-                syncManager.sendDeleteConversation(change.conversationId);
+                
+                // Check for new messages
+                const oldMessageIds = new Set((oldConv.messages || []).map((m: any) => m.id));
+                const newMessageIds = new Set((newConv.messages || []).map((m: any) => m.id));
+                const newMessages = (newConv.messages || []).filter((m: any) => !oldMessageIds.has(m.id));
+                
+                // Send sync actions for new messages
+                console.log('Sending', newMessages.length, 'new messages for conversation:', change.conversation.id);
+                newMessages.forEach((message: any) => {
+                  console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
+                  syncManager.sendCreateMessage(change.conversation.id, message);
+                });
+                
+                // Check for deleted messages
+                const deletedMessages = (oldConv.messages || []).filter((m: any) => !newMessageIds.has(m.id));
+                if (deletedMessages.length > 0) {
+                  console.log('DELETED MESSAGES DETECTED:', deletedMessages.length);
+                  console.log('  oldConv.messages:', (oldConv.messages || []).map((m: any) => m.id));
+                  console.log('  newConv.messages:', (newConv.messages || []).map((m: any) => m.id));
+                  console.log('  newMessageIds:', Array.from(newMessageIds));
+                  console.log('  deleted:', deletedMessages.map((m: any) => m.id));
+                }
+                deletedMessages.forEach((message: any) => {
+                  console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
+                  syncManager.sendDeleteMessage(change.conversation.id, message.id);
+                });
+                
+                // Check for follow-up changes in existing messages
+                const oldMsgMap = new Map((oldConv.messages || []).map((m: any) => [m.id, m]));
+                (newConv.messages || []).forEach((newMsg: any) => {
+                  const oldMsg = oldMsgMap.get(newMsg.id) as { followUps?: string[] } | undefined;
+                  if (oldMsg) {
+                    const oldFollowUps = oldMsg.followUps || [];
+                    const newFollowUps = (newMsg.followUps as string[]) || [];
+                    if (JSON.stringify(oldFollowUps) !== JSON.stringify(newFollowUps)) {
+                      console.log('Sending update_followup for message:', newMsg.id);
+                      syncManager.sendUpdateFollowup(change.conversation.id, newMsg.id, newFollowUps);
+                    }
+                  }
+                });
               }
-            });
-            
-            // Update both local and shared snapshot
-            localLastConversations = currentConversations;
-            (window as any).__syncLastConversations = currentConversations;
-          } catch (error) {
+            } else if (change.type === 'deleted') {
+              console.log('Sending delete conversation for:', change.conversation.id);
+              syncManager.sendDeleteConversation(change.conversation.id);
+            }
+          });
+          
+          // Update snapshot after processing changes
+          await SyncIndexedDB.updateSnapshot();
+        } catch (error) {
             console.error('Error syncing conversations:', error);
           }
-        }
+        
 
-        // Check if settings changed
+        // Check if settings changed (settings still use localStorage)
+        const currentSettings = localStorage.getItem('lumina_settings');
         if (currentSettings !== localLastSettings) {
           try {
             // Parse and send settings sync action
@@ -748,6 +749,19 @@ export default function App() {
 
   return (
     <>
+      {/* Loading screen while IndexedDB is initializing */}
+      {store.isLoading && (
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 dark:from-[rgb(14,14,16)] dark:via-blue-950/10 dark:to-purple-950/5 flex items-center justify-center p-4 fixed inset-0 z-50">
+          <div className="text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700">
+              <Sparkles size={32} className="text-[rgb(var(--text))]" />
+            </div>
+            <h2 className="text-xl font-semibold text-[rgb(var(--text))]">Loading Lumina Chat...</h2>
+            <p className="text-sm text-[rgb(var(--muted))]">Initializing your conversations</p>
+          </div>
+        </div>
+      )}
+
       {showWelcome && (
         <OnboardingScreen 
           onGetStarted={handleGetStarted}

@@ -1,4 +1,4 @@
-import { useConversations } from './useConversations';
+import { useConversationsIndexedDB } from './useConversationsIndexedDB';
 import { useSettings } from './useSettings';
 import { useGenerate } from './useGenerate';
 import { useSendMessage } from './useSendMessage';
@@ -13,11 +13,11 @@ export function useAppStore() {
     getProviderAndModel, allProviderModels,
   } = settingsSlice;
 
-  const convSlice = useConversations(settings.defaultProviderModelId);
+  const convSlice = useConversationsIndexedDB(settings.defaultProviderModelId);
   const {
     conversations, setConversations, conversationsRef,
     activeConvId, setActiveConvId, activeConversation,
-    storageQuotaExceeded, resolveStorageQuota,
+    storageQuotaExceeded, resolveStorageQuota, isLoading,
     newConversation, deleteConversation, updateConversationTitle, addMessage,
     setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,
     updateMessageVersions, setConversationMode, setConversationAttachments,
@@ -44,7 +44,7 @@ export function useAppStore() {
     // state
     conversations, activeConvId, activeConversation,
     settings, isGenerating, streamingContent, streamingContentRef, allProviderModels,
-    storageQuotaExceeded,
+    storageQuotaExceeded, isLoading,
     // conversation actions
     setActiveConvId, newConversation, deleteConversation, updateConversationTitle,
     setConversations, setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,

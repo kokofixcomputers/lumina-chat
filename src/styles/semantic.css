@@ -189,6 +189,22 @@
            shadow-[0_2px_8px_rgba(0,0,0,0.12)];
   }
 
+  /* ── Toast animations ── */
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out forwards;
+  }
+
   /* ── Side panels ── */
   .side-panel {
     @apply flex flex-col h-full shrink-0

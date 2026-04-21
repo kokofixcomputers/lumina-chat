@@ -3,9 +3,10 @@ import { Menu } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import SettingsPanel from './components/SettingsPanel';
-import WelcomeScreen from './components/WelcomeScreen';
+import OnboardingScreen from './components/OnboardingScreen';
 import SharePanel from './components/SharePanel';
 import ViewChatModal from './components/ViewChatModal';
+import DesktopAppToast from './components/DesktopAppToast';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { mergeConversations } from './utils/mergeConversations';
@@ -747,7 +748,13 @@ export default function App() {
 
   return (
     <>
-      {showWelcome && <WelcomeScreen onGetStarted={handleGetStarted} />}
+      {showWelcome && (
+        <OnboardingScreen 
+          onGetStarted={handleGetStarted}
+          onAddProvider={store.addProvider}
+          onAddIntegratedProvider={store.addIntegratedProvider}
+        />
+      )}
 
       {store.storageQuotaExceeded && (
         <>
@@ -870,7 +877,13 @@ export default function App() {
       </div>
       
       {/* Modals */}
-      {showWelcome && <WelcomeScreen onGetStarted={handleGetStarted} />}
+      {showWelcome && (
+        <OnboardingScreen 
+          onGetStarted={handleGetStarted}
+          onAddProvider={store.addProvider}
+          onAddIntegratedProvider={store.addIntegratedProvider}
+        />
+      )}
       {store.storageQuotaExceeded && (
         <>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" />
@@ -910,6 +923,8 @@ export default function App() {
           onLoadConversation={handleLoadSharedConversation}
         />
       )}
+      
+      <DesktopAppToast />
     </>
   );
 }

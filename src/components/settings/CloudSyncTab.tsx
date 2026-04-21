@@ -230,7 +230,8 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
                       onUpdateSettings({ cloudSync: { enabled: newEnabled, email: syncUsername, password: syncPassword } });
                       if (!newEnabled) {
                         handleDisconnect();
-                      } else if (syncUsername && syncPassword) {
+                      } else if (syncUsername && syncPassword && !isConnected) {
+                        // Only connect if not already connected
                         handleConnect();
                       }
                     }}

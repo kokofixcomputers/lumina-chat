@@ -10,6 +10,7 @@ import type {
   DeleteConversationAction,
   UpdateTitleAction,
   UpdateFollowupAction,
+  UpdateSettingsAction,
   AddRetryAction
 } from '../types/sync';
 import type { Conversation, Message, AppSettings } from '../types';
@@ -32,6 +33,7 @@ export class SyncManager {
   private isConnecting = false;
   private isDestroyed = false;
   private options: SyncManagerOptions;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: SyncManagerOptions = {}) {
     this.options = options;
@@ -56,11 +58,32 @@ export class SyncManager {
 
   disconnect() {
     this.isDestroyed = true;
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     this.options.onConnectionChange?.(false);
+  }
+
+  private _startWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+    }
+    
+    // Check connection health every 5 seconds
+    this.watchdogTimer = setInterval(() => {
+      if (this.isDestroyed) return;
+      
+      // If WebSocket is not open but we have credentials, trigger reconnect
+      if (this.ws?.readyState !== WebSocket.OPEN && this.credentials && !this.isConnecting) {
+        console.log('[SYNC] Watchdog detected dead connection, triggering reconnect');
+        this._handleReconnect();
+      }
+    }, 5000);
   }
 
   private async _connectWebSocket(): Promise<void> {
@@ -78,6 +101,9 @@ export class SyncManager {
         this.isConnecting = false;
         this.reconnectAttempts = 0;
         this.options.onConnectionChange?.(true);
+        
+        // Start watchdog to monitor connection health
+        this._startWatchdog();
         
         // Send authentication immediately
         this._authenticate();
@@ -268,6 +294,15 @@ export class SyncManager {
       type: 'update_followup',
       timestamp: Date.now(),
       data: { conversationId, messageId, followUps }
+    };
+    this._sendAction(action);
+  }
+
+  sendUpdateSettings(settings: any) {
+    const action: UpdateSettingsAction = {
+      type: 'update_settings',
+      timestamp: Date.now(),
+      data: { settings }
     };
     this._sendAction(action);
   }

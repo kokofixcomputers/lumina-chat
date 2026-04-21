@@ -12,7 +12,7 @@ import { mergeConversations } from './utils/mergeConversations';
 import { extensionLoader } from './extensions/extensionLoader';
 import { handleDeepLinkOrShare, registerDeepLinkProtocol } from './utils/deepLink';
 import { registerDeepLinkHandler, checkForDeepLinkOnStartup } from './utils/tauriDeepLink';
-import type { Panel } from './types';
+import type { Panel, Message } from './types';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
@@ -105,7 +105,7 @@ export default function App() {
     }
   };
 
-  const handleRetry = () => {
+  const handleRetry = async () => {
     if (!store.activeConvId || !store.activeConversation) return;
     const messages = store.activeConversation.messages;
     const convMode = store.activeConversation.mode;
@@ -152,6 +152,19 @@ export default function App() {
     // Store version info globally to apply to new assistant message
     (window as any).pendingRetryVersionInfo = { convId, versions, currentVersionIndex: versions.length };
     console.log('Stored pending retry version info:', (window as any).pendingRetryVersionInfo);
+    
+    // Send add_retry sync action so other clients get the retry versions
+    const { getSyncManager } = await import('./utils/syncManager');
+    const syncManager = getSyncManager();
+    if (syncManager.isConnected()) {
+      const newVersion = versions[versions.length - 1];
+      syncManager.sendAddRetry(convId, assistantMsg.id, newVersion);
+      console.log('[SYNC] Sent add_retry for message:', assistantMsg.id);
+      
+      // Also send delete_message for the old assistant message so other clients remove it
+      syncManager.sendDeleteMessage(convId, assistantMsg.id);
+      console.log('[SYNC] Sent delete_message for old assistant:', assistantMsg.id);
+    }
     
     // Delete from user message onwards to remove assistant and avoid duplicates
     store.deleteMessagesFrom(convId, userMsg.id);
@@ -347,9 +360,11 @@ export default function App() {
   const openProviders = () => setPanel('settings');
 
   useEffect(() => {
-    const handler = () => setPanel('settings');
-    window.addEventListener('openProviders', handler as EventListener);
-    return () => window.removeEventListener('openProviders', handler as EventListener);
+    const handleOpenProviders = () => {
+      setPanel('settings');
+    }
+    window.addEventListener('openProviders', handleOpenProviders as EventListener);
+    return () => window.removeEventListener('openProviders', handleOpenProviders as EventListener);
   }, []);
 
   useEffect(() => {
@@ -478,6 +493,11 @@ export default function App() {
                 } : c);
               });
               break;
+            case 'update_settings':
+              // Update settings from remote - exclude cloudSync to avoid overwriting local credentials
+              const { cloudSync: remoteCloudSync, ...remoteSettings } = action.data.settings;
+              store.updateSettings(remoteSettings);
+              break;
             // Handle other action types as needed
           }
           // Suppress storage monitor for 600ms to prevent echoing remote changes
@@ -487,6 +507,7 @@ export default function App() {
           setTimeout(() => {
             console.log('[SYNC] Updating snapshot after remote action');
             (window as any).__syncLastConversations = localStorage.getItem('lumina_conversations');
+            (window as any).__syncLastSettings = localStorage.getItem('lumina_settings');
           }, 500);
         }
       });
@@ -525,33 +546,39 @@ export default function App() {
       const { getSyncManager } = await import('./utils/syncManager');
       const syncManager = getSyncManager();
       
-      // Wait for connection with retry logic
-      let retryCount = 0;
-      const maxRetries = 10;
-      const retryDelay = 1000;
-      
-      const waitForConnection = () => {
-        return new Promise<boolean>((resolve) => {
-          const checkConnection = () => {
-            if (syncManager.isConnected()) {
-              console.log('Storage monitoring started - sync manager is connected');
-              resolve(true);
-            } else if (retryCount >= maxRetries) {
-              console.log('Sync manager failed to connect after', maxRetries, 'attempts');
-              resolve(false);
-            } else {
-              retryCount++;
-              console.log('Waiting for sync manager connection... attempt', retryCount);
-              setTimeout(checkConnection, retryDelay);
-            }
-          };
-          checkConnection();
-        });
-      };
-
-      const isConnected = await waitForConnection();
-      if (!isConnected) {
-        return;
+      // Check if already connected first (handles auto-sync toggle while connected)
+      if (syncManager.isConnected()) {
+        console.log('Storage monitoring started - sync manager already connected');
+        // Continue to monitoring setup
+      } else {
+        // Wait for connection with retry logic
+        let retryCount = 0;
+        const maxRetries = 10;
+        const retryDelay = 1000;
+        
+        const waitForConnection = () => {
+          return new Promise<boolean>((resolve) => {
+            const checkConnection = () => {
+              if (syncManager.isConnected()) {
+                console.log('Storage monitoring started - sync manager is connected');
+                resolve(true);
+              } else if (retryCount >= maxRetries) {
+                console.log('Sync manager failed to connect after', maxRetries, 'attempts');
+                resolve(false);
+              } else {
+                retryCount++;
+                console.log('Waiting for sync manager connection... attempt', retryCount);
+                setTimeout(checkConnection, retryDelay);
+              }
+            };
+            checkConnection();
+          });
+        };
+        
+        const isConnected = await waitForConnection();
+        if (!isConnected) {
+          return;
+        }
       }
 
       // Use shared snapshot so sync handlers can update it when applying remote changes
@@ -660,8 +687,12 @@ export default function App() {
         // Check if settings changed
         if (currentSettings !== localLastSettings) {
           try {
-            // Settings changes could be handled here if needed
-            console.log('Settings changed, could sync if needed');
+            // Parse and send settings sync action
+            const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
+            // Exclude cloudSync credentials from sync
+            const { cloudSync, ...syncSettings } = newSettings;
+            console.log('[SYNC] Sending settings update');
+            syncManager.sendUpdateSettings(syncSettings);
             localLastSettings = currentSettings;
           } catch (error) {
             console.error('Error syncing settings:', error);

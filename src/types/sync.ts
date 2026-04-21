@@ -1,5 +1,5 @@
 export interface SyncAction {
-  type: 'create_conversation' | 'create_message' | 'delete_message' | 'delete_conversation' | 'update_title' | 'update_followup' | 'add_retry' | 'overwrite_data';
+  type: 'create_conversation' | 'create_message' | 'delete_message' | 'delete_conversation' | 'update_title' | 'update_followup' | 'update_settings' | 'add_retry' | 'overwrite_data';
   timestamp: number;
   data: any;
 }
@@ -87,6 +87,13 @@ export interface UpdateFollowupAction extends SyncAction {
   };
 }
 
+export interface UpdateSettingsAction extends SyncAction {
+  type: 'update_settings';
+  data: {
+    settings: any;
+  };
+}
+
 export interface AddRetryAction extends SyncAction {
   type: 'add_retry';
   data: {
@@ -108,6 +115,7 @@ export type SyncActionTypes =
   | DeleteConversationAction
   | UpdateTitleAction
   | UpdateFollowupAction
+  | UpdateSettingsAction
   | AddRetryAction
   | OverwriteDataAction;
 

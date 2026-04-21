@@ -482,6 +482,17 @@ export class SyncBackend {
           break;
         }
         
+        case 'update_settings': {
+          // Merge new settings with existing settings
+          const currentSettings = await this.getUserData(userId, 'settings') || {};
+          const newSettings = { ...currentSettings, ...action.data.settings };
+          // Don't store cloudSync credentials in server storage
+          delete newSettings.cloudSync;
+          await this.setUserData(userId, 'settings', newSettings);
+          dataChanged = true;
+          break;
+        }
+        
         case 'overwrite_data': {
           // Complete data overwrite
           if (action.data.conversations) {

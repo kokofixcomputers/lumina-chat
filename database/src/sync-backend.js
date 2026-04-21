@@ -381,11 +381,11 @@ export class SyncBackend {
       
       switch (action.type) {
         case 'create_conversation': {
-          const { id, title, modelId, systemPrompt, mode, createdAt, updatedAt } = action.data;
+          const { id, title, messages, modelId, systemPrompt, mode, createdAt, updatedAt } = action.data;
           conversations.set(id, {
             id,
             title,
-            messages: [],
+            messages: messages || [],
             modelId,
             systemPrompt,
             mode,

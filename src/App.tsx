@@ -409,11 +409,24 @@ export default function App() {
           console.log('[CLIENT] Current conversations:', store.conversations.map(c => ({ id: c.id, msgCount: c.messages.length })));
           switch (action.type) {
             case 'create_conversation':
-              store.setConversations([{ ...action.data, messages: [] }, ...store.conversations]);
+              // Use functional update to read from latest state, avoiding stale closure
+              store.setConversations((prev: any[]) => {
+                // Check if conversation already exists
+                if (prev.find(c => c.id === action.data.id)) {
+                  console.log('[CLIENT] Conversation already exists:', action.data.id);
+                  return prev;
+                }
+                return [action.data, ...prev];
+              });
               break;
             case 'create_message':
-              const conv = store.conversations.find(c => c.id === action.data.conversationId);
-              if (conv) {
+              // Use functional update to read from latest state, avoiding stale closure
+              store.setConversations((prev: any[]) => {
+                const conv = prev.find(c => c.id === action.data.conversationId);
+                if (!conv) {
+                  console.log('[CLIENT] Conversation not found for message:', action.data.conversationId);
+                  return prev;
+                }
                 const isFirstUserMessage = conv.messages.length === 0 && action.data.message.role === 'user';
                 const title = isFirstUserMessage 
                   ? action.data.message.content.slice(0, 50) + (action.data.message.content.length > 50 ? '...' : '')
@@ -424,59 +437,47 @@ export default function App() {
                   title,
                   updatedAt: action.timestamp
                 };
-                store.setConversations(store.conversations.map(c => 
-                  c.id === action.data.conversationId ? updatedConv : c
-                ));
-              }
+                return prev.map(c => c.id === action.data.conversationId ? updatedConv : c);
+              });
               break;
-            case 'delete_message': {
-              const { conversationId, messageId } = action.data;
-              const convWithMsg = store.conversations.find(c => c.id === conversationId);
-              if (convWithMsg) {
-                const updatedConv = {
-                  ...convWithMsg,
-                  messages: convWithMsg.messages.filter(m => m.id !== messageId),
+            case 'delete_message':
+              store.setConversations((prev: any[]) => {
+                const conv = prev.find(c => c.id === action.data.conversationId);
+                if (!conv) return prev;
+                return prev.map(c => c.id === action.data.conversationId ? {
+                  ...c,
+                  messages: c.messages.filter((m: any) => m.id !== action.data.messageId),
                   updatedAt: action.timestamp
-                };
-                store.setConversations(store.conversations.map(c => 
-                  c.id === conversationId ? updatedConv : c
-                ));
-              }
+                } : c);
+              });
               break;
-            }
             case 'delete_conversation':
-              store.setConversations(store.conversations.filter(c => c.id !== action.data.conversationId));
+              store.setConversations((prev: any[]) => prev.filter(c => c.id !== action.data.conversationId));
               break;
             case 'update_title':
-              const titleConv = store.conversations.find(c => c.id === action.data.conversationId);
-              if (titleConv) {
-                const updatedConv = {
-                  ...titleConv,
+              store.setConversations((prev: any[]) => {
+                const conv = prev.find(c => c.id === action.data.conversationId);
+                if (!conv) return prev;
+                return prev.map(c => c.id === action.data.conversationId ? {
+                  ...c,
                   title: action.data.title,
                   updatedAt: action.timestamp
-                };
-                store.setConversations(store.conversations.map(c => 
-                  c.id === action.data.conversationId ? updatedConv : c
-                ));
-              }
+                } : c);
+              });
               break;
-            case 'update_followup': {
-              const { conversationId, messageId, followUps } = action.data;
-              const followupConv = store.conversations.find(c => c.id === conversationId);
-              if (followupConv) {
-                const updatedConv = {
-                  ...followupConv,
-                  messages: followupConv.messages.map(m => 
-                    m.id === messageId ? { ...m, followUps } : m
+            case 'update_followup':
+              store.setConversations((prev: any[]) => {
+                const conv = prev.find(c => c.id === action.data.conversationId);
+                if (!conv) return prev;
+                return prev.map(c => c.id === action.data.conversationId ? {
+                  ...c,
+                  messages: c.messages.map((m: any) => 
+                    m.id === action.data.messageId ? { ...m, followUps: action.data.followUps } : m
                   ),
                   updatedAt: action.timestamp
-                };
-                store.setConversations(store.conversations.map(c => 
-                  c.id === conversationId ? updatedConv : c
-                ));
-              }
+                } : c);
+              });
               break;
-            }
             // Handle other action types as needed
           }
           // Suppress storage monitor for 600ms to prevent echoing remote changes

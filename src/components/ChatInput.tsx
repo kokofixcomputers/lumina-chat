@@ -261,11 +261,8 @@ export default function ChatInput({
     const isMobile = window.innerWidth < 768;
     
     if (isMobile) {
-      // Center on mobile - use fixed positioning
-      setDropdownPos({ 
-        top: rect.top, 
-        left: window.innerWidth / 2 // 100 is half of dropdown width (200px)
-      });
+      // On mobile, CSS handles positioning - just set top position
+      setDropdownPos({ top: rect.top, left: 0 });
     } else {
       // Align to button on desktop
       setDropdownPos({ top: rect.top, left: rect.left });

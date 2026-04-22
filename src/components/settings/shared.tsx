@@ -7,6 +7,7 @@ import { getModelInfo } from '../../utils/models';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { BUILTIN_FORMATS, resolveFormat } from '../ProvidersPanel';
 import type { IntegratedProviderTemplate } from '../../data/integratedProviders';
+import { getAuthHandler } from '../../integrations/auth';
 
 export const TAGLINES = [
   'Light up every conversation.',
@@ -219,6 +220,47 @@ export function IntegratedProviderCard({
     }
   };
 
+  const handleOAuthAuth = async () => {
+    console.log('[OAUTH] OAuth button clicked for template:', template.id);
+    console.log('[OAUTH] autoAuth field:', template.autoAuth);
+    
+    if (!template.autoAuth) {
+      console.log('[OAUTH] No autoAuth field found');
+      return;
+    }
+    
+    const authHandler = getAuthHandler(template.autoAuth);
+    console.log('[OAUTH] Auth handler found:', !!authHandler);
+    
+    if (!authHandler) {
+      console.log('[OAUTH] No auth handler found for:', template.autoAuth);
+      return;
+    }
+    
+    try {
+      console.log('[OAUTH] Starting OAuth configuration...');
+      const config = await authHandler.configure();
+      console.log('[OAUTH] OAuth config received:', config);
+      
+      if (config.type === 'oauth') {
+        // OAuth successful - save config
+        authHandler.saveAuthConfig(config);
+        onUpdate({ 
+          apiKey: config.credentials.apiKey,
+          customFieldValues: {
+            ...existingProvider?.customFieldValues,
+            [template.autoAuth]: 'configured'
+          }
+        });
+        
+        // Fetch models after successful OAuth
+        setTimeout(() => fetchModels(), 100);
+      }
+    } catch (error) {
+      console.error('OAuth authentication failed:', error);
+    }
+  };
+
   const handleCustomFieldChange = (fieldId: string, value: string) => {
     const newCustomFieldValues = { ...existingProvider?.customFieldValues, [fieldId]: value };
     let newBaseUrl = template.baseUrlTemplate;
@@ -281,13 +323,25 @@ export function IntegratedProviderCard({
                   onChange={e => handleApiKeyChange(e.target.value)}
                   placeholder="sk-..."
                 />
-                <button
-                  onClick={() => setShowKey(p => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
-                >
-                  {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
+                {showKey && (
+                  <button
+                    onClick={() => setShowKey(p => !p)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+                  >
+                    {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                )}
               </div>
+            </div>
+          )}
+          {template.autoAuth && (
+            <div className="form-group mb-0">
+              <button
+                onClick={handleOAuthAuth}
+                className="btn-secondary py-1 px-3 text-xs w-full"
+              >
+                {existingProvider.customFieldValues?.[template.autoAuth] === 'configured' ? 'Re-authenticate' : 'Authenticate with Pollinations.ai'}
+              </button>
             </div>
           )}
           {template.customFields?.map(field => (

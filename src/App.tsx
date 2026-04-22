@@ -35,7 +35,7 @@ export default function App() {
     setShowWelcome(false);
   };
 
-  // Initialize extensions on app startup
+  // Initialize extensions and OAuth handlers on app startup
   useEffect(() => {
     // Clean timestamps from extensions to prevent sync conflicts
     import('./extensions/extensionStorage').then(({ extensionStorage }) => {
@@ -47,6 +47,28 @@ export default function App() {
     extensionLoader.initializeExtensions().catch(error => {
       console.error('Failed to initialize extensions:', error);
     });
+    
+    // Check if we're in a popup window (OAuth callback)
+    if (window.opener) {
+      console.log('[APP] Detected popup window, initializing OAuth callback handler');
+      import('./utils/oauthCallback').then(({ initOAuthCallback }) => {
+        const cleanup = initOAuthCallback();
+        
+        return () => {
+          cleanup?.();
+        };
+      });
+    } else {
+      // Initialize OAuth URL handler for main app
+      console.log('[APP] Main app detected, initializing OAuth redirect handler');
+      import('./utils/urlHandler').then(({ initOAuthRedirectHandler }) => {
+        const cleanup = initOAuthRedirectHandler();
+        
+        return () => {
+          cleanup?.();
+        };
+      });
+    }
   }, []);
 
   // Handle deep links and shared conversations

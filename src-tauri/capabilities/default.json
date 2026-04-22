@@ -7,19 +7,17 @@
   ],
   "permissions": [
     "core:default",
-    "opener:default",
-    "shell:default",
-    "dialog:default",
-    "dialog:allow-save",
-    "fs:default",
     "fs:allow-write-text-file",
+    "opener:default",
+    "dialog:allow-confirm",
     "fs:allow-write-file",
     "http:default",
     "http:allow-fetch",
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "https://**" }
+        { "url": "https://**" },
+        { "url": "https://enter.pollinations.ai/**" }
       ]
     }
   ]

@@ -4,6 +4,7 @@ export interface IntegratedProviderTemplate {
   description?: string;
   baseUrlTemplate: string;
   requireAuth: boolean;
+  autoAuth?: string;
   defaultApiFormatId?: string;
   customFields?: Array<{ name: string; id: string; placeholder?: string; blur?: boolean }>;
   defaultModels: Array<{
@@ -55,6 +56,19 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
     ],
   },
   {
+    id: 'pollinations',
+    name: 'Pollinations.ai',
+    description: 'AI image generation with various models',
+    baseUrlTemplate: 'https://gen.pollinations.ai/v1',
+    requireAuth: true,
+    autoAuth: 'pollinations',
+    defaultModels: [
+      { id: 'flux', name: 'FLUX.1', contextLength: 8000, supportsImages: true, supportsStreaming: true },
+      { id: 'flux-dev', name: 'FLUX.1-dev', contextLength: 8000, supportsImages: true, supportsStreaming: true },
+      { id: 'stable-diffusion', name: 'Stable Diffusion', contextLength: 8000, supportsImages: true, supportsStreaming: true },
+    ],
+  },
+  {
     id: '1minrelay',
     name: '1minrelay',
     description: 'Relay service for AI models',
@@ -74,16 +88,8 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
     baseUrlTemplate: 'https://api.mistral.ai/v1',
     requireAuth: true,
     defaultModels: [
-      { id: 'mistral-7b', name: 'Mistral 7B', contextLength: 8192, supportsImages: false, supportsStreaming: true },
-      { id: 'mistral-7b-chat', name: 'Mistral 7B Chat', contextLength: 8192, supportsImages: false, supportsStreaming: true },
+      { id: 'mistral-large', name: 'Mistral Large', contextLength: 32768, supportsImages: false, supportsStreaming: true },
+      { id: 'codestral', name: 'Codestral', contextLength: 32768, supportsImages: false, supportsStreaming: true },
     ],
   },
-  {
-    id: 'pollinations',
-    name: 'Pollinations.AI',
-    description: 'Pollinations.ai API',
-    baseUrlTemplate: 'https://gen.pollinations.ai/v1',
-    requireAuth: true,
-    defaultModels: []
-  }
 ];

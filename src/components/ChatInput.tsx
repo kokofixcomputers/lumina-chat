@@ -726,19 +726,32 @@ export default function ChatInput({
     >
       {/* Quote display */}
       {quote && (
-        <div className="mb-3 px-3 py-2 bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 rounded-lg flex items-start gap-2">
-          <Quote size={14} className="text-[rgb(var(--accent))] mt-0.5 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-xs text-[rgb(var(--muted))] mb-1">Quote</div>
-            <div className="text-sm text-[rgb(var(--text))] italic">"{quote}"</div>
+        <div className="mb-3 mx-2 sm:mx-4">
+          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl shadow-sm">
+            <div className="flex items-start gap-3 p-3">
+              <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 flex items-center justify-center shrink-0 mt-0.5">
+                <Quote size={14} className="text-[rgb(var(--accent))]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-[rgb(var(--muted))] uppercase tracking-wide">Quote</span>
+                  <div className="flex-1 h-px bg-[rgb(var(--border))]" />
+                </div>
+                <div className="text-[13.5px] text-[rgb(var(--text))] leading-relaxed">
+                  <span className="text-[rgb(var(--muted))]">"</span>
+                  <span className="italic">{quote}</span>
+                  <span className="text-[rgb(var(--muted))]">"</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setQuote(null)}
+                className="btn-icon w-7 h-7 mt-1"
+                title="Remove quote"
+              >
+                <X size={12} />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => setQuote(null)}
-            className="shrink-0 p-1 rounded hover:bg-[rgb(var(--accent))]/20 transition-colors"
-            title="Remove quote"
-          >
-            <X size={12} className="text-[rgb(var(--muted))]" />
-          </button>
         </div>
       )}
       

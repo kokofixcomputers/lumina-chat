@@ -1,7 +1,9 @@
 import { useConversationsIndexedDB } from './useConversationsIndexedDB';
 import { useSettings } from './useSettings';
 import { useGenerate } from './useGenerate';
+import { useState, useCallback } from 'react';
 import { useSendMessage } from './useSendMessage';
+import { useFineTuningStore } from '../../store/fineTuningStore';
 
 export function useAppStore() {
   const settingsSlice = useSettings();
@@ -38,13 +40,29 @@ export function useAppStore() {
     addMessage, setConversations, updateProvider,
     generateConversationTitle, generateFollowUps, setIsGenerating,
   });
-  const { streamingContent, streamingContentRef, abortController, stopGeneration, sendMessage } = sendSlice;
+  const { streamingContent, streamingContentRef, abortController, stopGeneration, sendMessage: originalSendMessage } = sendSlice;
+
+  const fineTuningStore = useFineTuningStore();
+  const {
+    fineTunings, selectedFineTuningId, selectFineTuning,
+    createFineTuning, updateFineTuning, deleteFineTuning,
+    createKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry,
+  } = fineTuningStore;
+
+  // Create a wrapper for sendMessage that includes fine-tuning context
+  const sendMessage = useCallback((content: string, images: string[], convId: string) => {
+    console.log('=== STORE SENDMESSAGE WRAPPER ===');
+    console.log('selectedFineTuningId:', selectedFineTuningId);
+    console.log('fineTunings length:', fineTunings?.length);
+    console.log('=== END WRAPPER DEBUG ===');
+    return originalSendMessage(content, images, convId, selectedFineTuningId, fineTunings);
+  }, [originalSendMessage, selectedFineTuningId, fineTunings]);
 
   return {
     // state
     conversations, activeConvId, activeConversation,
     settings, isGenerating, streamingContent, streamingContentRef, allProviderModels,
-    storageQuotaExceeded, isLoading,
+    storageQuotaExceeded, isLoading, fineTunings, selectedFineTuningId,
     // conversation actions
     setActiveConvId, newConversation, deleteConversation, updateConversationTitle,
     setConversations, setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,
@@ -58,6 +76,9 @@ export function useAppStore() {
     sendMessage, stopGeneration,
     // generation
     generateImage, generateConversationTitle, generateFollowUps, transcribeAudio,
+    // fine-tuning actions
+    selectFineTuning, createFineTuning, updateFineTuning, deleteFineTuning,
+    createKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry,
     // utils
     getProviderAndModel, resolveStorageQuota,
   };

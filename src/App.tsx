@@ -7,6 +7,8 @@ import OnboardingScreen from './components/OnboardingScreen';
 import SharePanel from './components/SharePanel';
 import ViewChatModal from './components/ViewChatModal';
 import DesktopAppToast from './components/DesktopAppToast';
+import FineTuningList from './pages/FineTuningList';
+import FineTuningDetail from './pages/FineTuningDetail';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { mergeConversations } from './utils/mergeConversations';
@@ -29,6 +31,7 @@ export default function App() {
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
   const [showViewChatModal, setShowViewChatModal] = useState(false);
+  const [fineTuningView, setFineTuningView] = useState<'list' | { id: string }>('list');
 
   const handleGetStarted = () => {
     localStorage.setItem('notfirsttime', 'true');
@@ -475,6 +478,21 @@ export default function App() {
   };
 
   const openProviders = () => setPanel('settings');
+
+  const openFineTuning = () => {
+    setFineTuningView('list');
+    setPanel('fine-tuning');
+  };
+
+  const handleOpenFineTuningDetail = (id: string) => {
+    setFineTuningView({ id });
+    setPanel('fine-tuning');
+  };
+
+  const handleExitFineTuning = () => {
+    setPanel('chat');
+    setFineTuningView('list');
+  };
 
   useEffect(() => {
     const handleOpenProviders = () => {
@@ -1214,13 +1232,20 @@ export default function App() {
           conversations={store.conversations}
           activeConvId={store.activeConvId}
           settings={store.settings}
-          onSelectConv={store.setActiveConvId}
-          onGoHome={() => store.setActiveConvId(null)}
+          onSelectConv={(convId) => {
+            store.setActiveConvId(convId);
+            handleExitFineTuning();
+          }}
+          onGoHome={() => {
+            store.setActiveConvId(null);
+            handleExitFineTuning();
+          }}
           onDeleteConv={store.deleteConversation}
           onUpdateTitle={store.updateConversationTitle}
           onOpenSettings={() => setPanel(p => p === 'settings' ? 'chat' : 'settings')}
           onOpenProviders={openProviders}
           onOpenViewChat={() => setShowViewChatModal(true)}
+          onOpenFineTuning={openFineTuning}
           onToggleTheme={toggleTheme}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
@@ -1228,65 +1253,80 @@ export default function App() {
         />
 
         <div className="flex-1 flex min-w-0 overflow-hidden">
-          <ChatArea
-            conversation={store.activeConversation}
-            isGenerating={store.isGenerating}
-            streamingContent={store.streamingContent}
-            streamingContentRef={store.streamingContentRef}
-            allModels={store.allProviderModels}
-            onSend={handleSend}
-            onModelChange={handleModelChange}
-            defaultModelId={store.settings.defaultProviderModelId}
-            onTogglePanel={togglePanel}
-            onOpenProviders={openProviders}
-            onRetry={handleRetry}
-            onStopGeneration={store.stopGeneration}
-            onEditMessage={handleEditMessage}
-            onDeleteMessage={handleDeleteMessage}
-            onContinue={handleContinue}
-            onModeChange={handleModeChange}
-            onAttachmentsChange={handleAttachmentsChange}
-            onBuildModeChange={handleBuildModeChange}
-            homeBuildMode={homeBuildMode}
-            onGenerateTitle={handleGenerateTitle}
-            onGenerateFollowUps={handleGenerateFollowUps}
-            homeMode={homeMode}
-            homeAttachments={homeAttachments}
-            prettifyModelNames={store.settings.prettifyModelNames}
-            workflows={store.settings.workflows || []}
-            useResponsesApi={store.settings.modelSettings.useResponsesApi}
-            reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
-            onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
-            onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
-            onVersionChange={handleVersionChange}
-            onOpenShare={openSharePanel}
-            onForkConversation={handleForkConversation}
-          />
+          {panel === 'fine-tuning' ? (
+            fineTuningView === 'list' ? (
+              <FineTuningList onOpenFineTuningDetail={handleOpenFineTuningDetail} />
+            ) : (
+              <FineTuningDetail 
+                fineTuningId={typeof fineTuningView === 'object' ? fineTuningView.id : ''} 
+                onBack={() => setFineTuningView('list')} 
+              />
+            )
+          ) : (
+            <>
+              <ChatArea
+                conversation={store.activeConversation}
+                isGenerating={store.isGenerating}
+                streamingContent={store.streamingContent}
+                streamingContentRef={store.streamingContentRef}
+                allModels={store.allProviderModels}
+                onSend={handleSend}
+                onModelChange={handleModelChange}
+                defaultModelId={store.settings.defaultProviderModelId}
+                onTogglePanel={togglePanel}
+                onOpenProviders={openProviders}
+                onRetry={handleRetry}
+                onStopGeneration={store.stopGeneration}
+                onEditMessage={handleEditMessage}
+                onDeleteMessage={handleDeleteMessage}
+                onContinue={handleContinue}
+                onModeChange={handleModeChange}
+                onAttachmentsChange={handleAttachmentsChange}
+                onBuildModeChange={handleBuildModeChange}
+                homeBuildMode={homeBuildMode}
+                onGenerateTitle={handleGenerateTitle}
+                onGenerateFollowUps={handleGenerateFollowUps}
+                homeMode={homeMode}
+                homeAttachments={homeAttachments}
+                prettifyModelNames={store.settings.prettifyModelNames}
+                workflows={store.settings.workflows || []}
+                useResponsesApi={store.settings.modelSettings.useResponsesApi}
+                reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
+                onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
+                onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
+                onVersionChange={handleVersionChange}
+                onOpenShare={openSharePanel}
+                onForkConversation={handleForkConversation}
+                selectedFineTuningId={store.selectedFineTuningId}
+                onFineTuningChange={store.selectFineTuning}
+              />
 
-          {panel === 'settings' && (
-            <SettingsPanel
-              settings={store.settings}
-              conversations={store.conversations}
-              onUpdateModelSettings={store.updateModelSettings}
-              onUpdateSettings={store.updateSettings}
-              onUpdateProvider={store.updateProvider}
-              onAddProvider={store.addProvider}
-              onAddIntegratedProvider={store.addIntegratedProvider}
-              onDeleteProvider={store.deleteProvider}
-              onUpsertApiFormat={store.upsertApiFormat}
-              onDeleteApiFormat={store.deleteApiFormat}
-              onImportData={handleImportData}
-              onClose={() => setPanel('chat')}
-            />
-          )}
+              {panel === 'settings' && (
+                <SettingsPanel
+                  settings={store.settings}
+                  conversations={store.conversations}
+                  onUpdateModelSettings={store.updateModelSettings}
+                  onUpdateSettings={store.updateSettings}
+                  onUpdateProvider={store.updateProvider}
+                  onAddProvider={store.addProvider}
+                  onAddIntegratedProvider={store.addIntegratedProvider}
+                  onDeleteProvider={store.deleteProvider}
+                  onUpsertApiFormat={store.upsertApiFormat}
+                  onDeleteApiFormat={store.deleteApiFormat}
+                  onImportData={handleImportData}
+                  onClose={() => setPanel('chat')}
+                />
+              )}
 
-          {panel === 'share' && (
-            <SharePanel
-              conversation={store.activeConversation}
-              onShare={handleShare}
-              onUnshare={handleUnshare}
-              onClose={() => setPanel('chat')}
-            />
+              {panel === 'share' && (
+                <SharePanel
+                  conversation={store.activeConversation}
+                  onShare={handleShare}
+                  onUnshare={handleUnshare}
+                  onClose={() => setPanel('chat')}
+                />
+              )}
+            </>
           )}
         </div>
       </div>

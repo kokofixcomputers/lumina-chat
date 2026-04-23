@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
-  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link
+  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
 
@@ -16,6 +16,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenProviders: () => void;
   onOpenViewChat: () => void;
+  onOpenFineTuning: () => void;
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
@@ -33,6 +34,7 @@ export default function Sidebar({
   onOpenSettings,
   onOpenProviders,
   onOpenViewChat,
+  onOpenFineTuning,
   onToggleTheme,
   isOpen,
   onClose,
@@ -190,6 +192,10 @@ export default function Sidebar({
         <button className="sidebar-item w-full" onClick={onOpenViewChat}>
           <Link size={15} />
           <span>View Chat</span>
+        </button>
+        <button className="sidebar-item w-full" onClick={() => { onOpenFineTuning(); onClose(); }}>
+          <BookOpen size={15} />
+          <span>Fine-tuning</span>
         </button>
       </div>
 

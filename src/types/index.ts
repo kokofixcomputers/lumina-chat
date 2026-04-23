@@ -166,4 +166,4 @@ export interface AppSettings {
   };
 }
 
-export type Panel = 'chat' | 'settings' | 'share' | 'providers';
+export type Panel = 'chat' | 'settings' | 'share' | 'providers' | 'fine-tuning';

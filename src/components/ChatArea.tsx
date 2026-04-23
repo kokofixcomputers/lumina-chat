@@ -91,6 +91,8 @@ interface ChatAreaProps {
   onOpenShare?: () => void;
   onForkConversation?: () => void;
   homeBuildMode?: boolean;
+  selectedFineTuningId?: string | null;
+  onFineTuningChange?: (fineTuningId: string | null) => void;
 }
 
 const QUICK_ACTIONS = [
@@ -134,6 +136,8 @@ export default function ChatArea({
   onTranscribeAudio,
   onBuildModeChange,
   homeBuildMode = false,
+  selectedFineTuningId = null,
+  onFineTuningChange,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -226,6 +230,8 @@ export default function ChatArea({
               onOpenShare={onOpenShare}
               onForkConversation={onForkConversation}
               conversation={{ messages: [] }}
+              selectedFineTuningId={selectedFineTuningId}
+              onFineTuningChange={onFineTuningChange}
             />
           </div>
 
@@ -347,6 +353,8 @@ export default function ChatArea({
         onOpenShare={onOpenShare}
         onForkConversation={onForkConversation}
         conversation={conversation}
+        selectedFineTuningId={selectedFineTuningId}
+        onFineTuningChange={onFineTuningChange}
       />
       </div>
       {showFS && conversation.id && (

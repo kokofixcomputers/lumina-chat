@@ -65,9 +65,6 @@ export const useFineTuningStore = create<FineTuningState>()(
       },
 
       selectFineTuning: (id: string | null) => {
-        console.log('=== SELECT FINE TUNING ===');
-        console.log('Setting selectedFineTuningId to:', id);
-        console.log('=== END SELECT FINE TUNING ===');
         set({ selectedFineTuningId: id });
       },
 
@@ -131,6 +128,31 @@ export const useFineTuningStore = create<FineTuningState>()(
       getKnowledgeEntry: (fineTuningId: string, entryId: string) => {
         const fineTuning = get().fineTunings.find((ft) => ft.id === fineTuningId);
         return fineTuning?.knowledgeEntries.find((entry) => entry.id === entryId);
+      },
+      
+      rehydrate: () => {
+        try {
+          const stored = localStorage.getItem('fine-tuning-storage');
+          if (stored) {
+            const data = JSON.parse(stored);
+            if (data.state) {
+              // Convert string dates back to Date objects
+              data.state.fineTunings = data.state.fineTunings.map((ft: any) => ({
+                ...ft,
+                createdAt: new Date(ft.createdAt),
+                updatedAt: new Date(ft.updatedAt),
+                knowledgeEntries: ft.knowledgeEntries.map((entry: any) => ({
+                  ...entry,
+                  createdAt: new Date(entry.createdAt),
+                  updatedAt: new Date(entry.updatedAt),
+                })),
+              }));
+              set(data.state);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to rehydrate fine-tuning store:', error);
+        }
       },
     }),
     {

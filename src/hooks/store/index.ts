@@ -51,10 +51,6 @@ export function useAppStore() {
 
   // Create a wrapper for sendMessage that includes fine-tuning context
   const sendMessage = useCallback((content: string, images: string[], convId: string) => {
-    console.log('=== STORE SENDMESSAGE WRAPPER ===');
-    console.log('selectedFineTuningId:', selectedFineTuningId);
-    console.log('fineTunings length:', fineTunings?.length);
-    console.log('=== END WRAPPER DEBUG ===');
     return originalSendMessage(content, images, convId, selectedFineTuningId, fineTunings);
   }, [originalSendMessage, selectedFineTuningId, fineTunings]);
 

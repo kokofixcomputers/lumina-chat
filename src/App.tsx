@@ -595,8 +595,8 @@ export default function App() {
             store.setConversations(mergedConversations);
           }
           if (data.settings) {
-            // Extract extensions from settings and save separately
-            const { cloudSync: remoteCloudSync, extensions: remoteExtensions, ...settingsOnly } = data.settings;
+            // Extract extensions and fine-tuning from settings and save separately
+            const { cloudSync: remoteCloudSync, extensions: remoteExtensions, fineTuning: remoteFineTuning, ...settingsOnly } = data.settings;
             store.updateSettings(settingsOnly);
             
             // Handle extensions separately if they exist
@@ -612,6 +612,25 @@ export default function App() {
                 });
               } catch (error) {
                 console.error('Failed to load extensions from remote:', error);
+              }
+            }
+            
+            // Handle fine-tuning separately if it exists
+            if (remoteFineTuning) {
+              try {
+                localStorage.setItem('fine-tuning-storage', JSON.stringify(remoteFineTuning));
+                console.log('[SYNC-INIT] Fine-tuning data loaded from remote');
+                
+                // Trigger fine-tuning store rehydration
+                import('./store/fineTuningStore').then(({ useFineTuningStore }) => {
+                  const store = useFineTuningStore.getState();
+                  store.rehydrate();
+                  console.log('[SYNC-INIT] Fine-tuning store rehydrated');
+                }).catch(error => {
+                  console.error('Failed to trigger fine-tuning store rehydration:', error);
+                });
+              } catch (error) {
+                console.error('Failed to load fine-tuning data from remote:', error);
               }
             }
           }
@@ -723,7 +742,7 @@ export default function App() {
               break;
             case 'update_settings':
               // Update settings from remote - exclude cloudSync to avoid overwriting local credentials
-              const { cloudSync: remoteCloudSync, extensions: remoteExtensions, ...remoteSettings } = action.data.settings;
+              const { cloudSync: remoteCloudSync, extensions: remoteExtensions, fineTuning: remoteFineTuning, ...remoteSettings } = action.data.settings;
               store.updateSettings(remoteSettings);
               
               // Handle extensions separately if they exist in the sync data
@@ -742,8 +761,27 @@ export default function App() {
                 }
               }
               
-              // Update the tracking variable
+              // Handle fine-tuning separately if it exists in the sync data
+              if (remoteFineTuning) {
+                try {
+                  localStorage.setItem('fine-tuning-storage', JSON.stringify(remoteFineTuning));
+                  console.log('[SYNC] Fine-tuning updated from remote');
+                  // Trigger fine-tuning store rehydration
+                  import('./store/fineTuningStore').then(({ useFineTuningStore }) => {
+                    const store = useFineTuningStore.getState();
+                    store.rehydrate();
+                    console.log('[SYNC] Fine-tuning store rehydrated');
+                  }).catch(error => {
+                    console.error('Failed to reload fine-tuning after sync:', error);
+                  });
+                } catch (error) {
+                  console.error('Failed to update fine-tuning from remote:', error);
+                }
+              }
+              
+              // Update the tracking variables
               (window as any).__syncLastExtensions = localStorage.getItem('lumina_extensions');
+              (window as any).__syncLastFineTuning = localStorage.getItem('fine-tuning-storage');
               break;
             // Handle other action types as needed
           }
@@ -846,6 +884,7 @@ export default function App() {
       // Initialize shared settings tracking
       (window as any).__syncLastSettings = localLastSettings;
       (window as any).__syncLastExtensions = localStorage.getItem('lumina_extensions');
+      (window as any).__syncLastFineTuning = localStorage.getItem('fine-tuning-storage');
       
       // Track recently sent actions to prevent duplicates
       const recentlySentActions = new Map<string, number>();
@@ -999,22 +1038,26 @@ export default function App() {
         // Check if settings changed (settings still use localStorage)
         const currentSettings = localStorage.getItem('lumina_settings');
         const currentExtensions = localStorage.getItem('lumina_extensions');
+        const currentFineTuning = localStorage.getItem('fine-tuning-storage');
         const lastSettings = (window as any).__syncLastSettings || localLastSettings;
         
         console.log('[SYNC-MONITOR] Settings check - Current:', currentSettings ? 'exists' : 'null');
         console.log('[SYNC-MONITOR] Extensions check - Current:', currentExtensions ? 'exists' : 'null');
+        console.log('[SYNC-MONITOR] Fine-tuning check - Current:', currentFineTuning ? 'exists' : 'null');
         console.log('[SYNC-MONITOR] Settings check - Last:', lastSettings ? 'exists' : 'null');
         console.log('[SYNC-MONITOR] Settings changed:', currentSettings !== lastSettings);
         
         // Combine settings and extensions for sync
         const settingsChanged = currentSettings !== lastSettings;
         const extensionsChanged = currentExtensions !== (window as any).__syncLastExtensions;
+        const fineTuningChanged = currentFineTuning !== (window as any).__syncLastFineTuning;
         
-        if (settingsChanged || extensionsChanged) {
+        if (settingsChanged || extensionsChanged || fineTuningChanged) {
           try {
             // Parse and send settings sync action
             const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
             const newExtensions = currentExtensions ? JSON.parse(currentExtensions) : {};
+            const newFineTuning = currentFineTuning ? JSON.parse(currentFineTuning) : undefined;
             
             console.log('[SYNC-MONITOR] Full settings object:', newSettings);
             console.log('[SYNC-MONITOR] Full extensions object:', newExtensions);
@@ -1023,10 +1066,11 @@ export default function App() {
             console.log('[SYNC-MONITOR] Extensions from lumina_extensions:', newExtensions);
             console.log('[SYNC-MONITOR] Integrations:', newSettings.integrations);
             
-            // Combine settings and extensions
+            // Combine settings, extensions, and fine-tuning
             const combinedData = {
               ...newSettings,
-              extensions: newExtensions // Override extensions with lumina_extensions data
+              extensions: newExtensions, // Override extensions with lumina_extensions data
+              fineTuning: newFineTuning // Include fine-tuning data
             };
             
             // Exclude cloudSync credentials from sync
@@ -1045,6 +1089,7 @@ export default function App() {
             localLastSettings = currentSettings;
             (window as any).__syncLastSettings = currentSettings;
             (window as any).__syncLastExtensions = currentExtensions;
+            (window as any).__syncLastFineTuning = currentFineTuning;
           } catch (error) {
             console.error('Error syncing settings:', error);
           }
@@ -1058,26 +1103,32 @@ export default function App() {
       const checkSettingsChanges = () => {
         const currentSettings = localStorage.getItem('lumina_settings');
         const currentExtensions = localStorage.getItem('lumina_extensions');
+        const currentFineTuning = localStorage.getItem('fine-tuning-storage');
         const lastSettings = (window as any).__syncLastSettings || localLastSettings;
         const lastExtensions = (window as any).__syncLastExtensions;
+        const lastFineTuning = (window as any).__syncLastFineTuning;
         
         const settingsChanged = currentSettings !== lastSettings;
         const extensionsChanged = currentExtensions !== lastExtensions;
+        const fineTuningChanged = currentFineTuning !== lastFineTuning;
         
-        if (settingsChanged || extensionsChanged) {
-          console.log('[SETTINGS-MONITOR] Settings/extensions change detected - Settings:', settingsChanged, 'Extensions:', extensionsChanged);
+        if (settingsChanged || extensionsChanged || fineTuningChanged) {
+          console.log('[SETTINGS-MONITOR] Settings/extensions/fine-tuning change detected - Settings:', settingsChanged, 'Extensions:', extensionsChanged, 'Fine-tuning:', fineTuningChanged);
           try {
             const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
             const newExtensions = currentExtensions ? JSON.parse(currentExtensions) : {};
+            const newFineTuning = currentFineTuning ? JSON.parse(currentFineTuning) : undefined;
             
-            // Combine settings and extensions
+            // Combine settings, extensions, and fine-tuning
             const combinedData = {
               ...newSettings,
-              extensions: newExtensions
+              extensions: newExtensions,
+              fineTuning: newFineTuning
             };
             
             console.log('[SETTINGS-MONITOR] Parsed settings:', newSettings);
             console.log('[SETTINGS-MONITOR] Parsed extensions:', newExtensions);
+            console.log('[SETTINGS-MONITOR] Parsed fine-tuning:', newFineTuning);
             console.log('[SETTINGS-MONITOR] Combined data:', combinedData);
             
             // Exclude cloudSync credentials from sync
@@ -1086,10 +1137,10 @@ export default function App() {
             console.log('[SETTINGS-MONITOR] Settings key for sync:', settingsKey);
             
             if (!isRecentlySent('update_settings', settingsKey)) {
-              console.log('[SETTINGS-MONITOR] Sending settings/extensions update:', syncSettings);
+              console.log('[SETTINGS-MONITOR] Sending settings/extensions/fine-tuning update:', syncSettings);
               syncManager.sendUpdateSettings(syncSettings);
             } else {
-              console.log('[SETTINGS-MONITOR] Ignoring duplicate settings/extensions update');
+              console.log('[SETTINGS-MONITOR] Ignoring duplicate settings/extensions/fine-tuning update');
             }
             
             // Update tracking variables
@@ -1099,6 +1150,9 @@ export default function App() {
             }
             if (extensionsChanged) {
               (window as any).__syncLastExtensions = currentExtensions;
+            }
+            if (fineTuningChanged) {
+              (window as any).__syncLastFineTuning = currentFineTuning;
             }
           } catch (error) {
             console.error('Error syncing settings/extensions:', error);

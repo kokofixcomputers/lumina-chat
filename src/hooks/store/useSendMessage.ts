@@ -76,12 +76,6 @@ export function useSendMessage({
   }, [abortController, setIsGenerating, setConversations]);
 
   const sendMessage = useCallback(async (content: string, images: string[], convId: string, selectedFineTuningId?: string | null, fineTunings?: FineTuning[]) => {
-    console.log('=== SENDMESSAGE CALLED ===');
-    console.log('content:', content);
-    console.log('selectedFineTuningId:', selectedFineTuningId);
-    console.log('fineTunings length:', fineTunings?.length);
-    console.log('=== END SENDMESSAGE DEBUG ===');
-    
     // ── rate-limit helper ──────────────────────────────────────────────────────
     const handleRateLimit = async (headers: Headers): Promise<void> => {
       const raw = headers.get('x-ratelimit-reset-requests') || headers.get('x-ratelimit-reset-tokens');
@@ -187,24 +181,17 @@ export function useSendMessage({
     const apiMessages: Array<{ type?: string; role: string; content: unknown; tool_call_id?: string; tool_calls?: any[] }> = [];
     const responsesApiMessages: Array<{ type?: string; role: string; content: unknown; tool_call_id?: string }> = [];
 
-    console.log('=== SYSTEM PROMPT CHECK ===');
-    console.log('settings.modelSettings.systemPrompt:', !!settings.modelSettings.systemPrompt);
-    
     // Build system prompt - either from settings or create a default one for knowledge injection
     let systemPrompt = '';
     let shouldInjectKnowledge = false;
     
     if (settings.modelSettings.systemPrompt) {
       systemPrompt = settings.modelSettings.systemPrompt;
-      console.log('Using custom system prompt');
       shouldInjectKnowledge = true;
     } else if (selectedFineTuningId && fineTunings) {
       // Create a default system prompt when knowledge is selected but no custom prompt exists
       systemPrompt = 'You are a helpful assistant.';
-      console.log('Created default system prompt for knowledge injection');
       shouldInjectKnowledge = true;
-    } else {
-      console.log('No system prompt and no knowledge selected - skipping system message');
     }
     
     if (shouldInjectKnowledge) {
@@ -212,26 +199,11 @@ export function useSendMessage({
       if (selectedFineTuningId && fineTunings) {
         const selectedFineTuning = fineTunings.find(ft => ft.id === selectedFineTuningId);
         if (selectedFineTuning && selectedFineTuning.knowledgeEntries.length > 0) {
-          console.log('=== KNOWLEDGE INJECTION ===');
-          console.log('Selected Knowledge Base:', selectedFineTuning.name);
-          console.log('Number of entries:', selectedFineTuning.knowledgeEntries.length);
-          console.log('Entries:', selectedFineTuning.knowledgeEntries.map(e => ({ title: e.title, contentLength: e.content.length })));
-          
           systemPrompt += `\n\n## Knowledge Base: ${selectedFineTuning.name}\nThe following information is provided as context. Use this knowledge to answer questions accurately:\n\n`;
           selectedFineTuning.knowledgeEntries.forEach((entry, index) => {
             systemPrompt += `${index + 1}. ${entry.title}\n${entry.content}\n\n`;
           });
-        } else {
-          console.log('=== KNOWLEDGE INJECTION ===');
-          console.log('No knowledge base selected or no entries found');
-          console.log('selectedFineTuningId:', selectedFineTuningId);
-          console.log('fineTunings available:', fineTunings?.length);
         }
-      } else {
-        console.log('=== KNOWLEDGE INJECTION ===');
-        console.log('No knowledge injection - missing parameters');
-        console.log('selectedFineTuningId:', selectedFineTuningId);
-        console.log('fineTunings available:', fineTunings?.length);
       }
       
       if (settings.memoriesEnabled && settings.memories && settings.memories.length > 0) {
@@ -239,14 +211,8 @@ export function useSendMessage({
       } else if (settings.memoriesEnabled) {
         systemPrompt += `\n\nMemories are enabled. When you learn important facts about the user (timezone, location, preferred languages, name, etc.), save them with memory_save so you can recall them in future conversations.`;
       }
-      
       apiMessages.push({ role: 'system', content: systemPrompt });
       responsesApiMessages.push({ type: 'message', role: 'system', content: systemPrompt });
-      
-      // Log the full system prompt for debugging
-      console.log('=== FULL SYSTEM PROMPT ===');
-      console.log(systemPrompt);
-      console.log('=== END SYSTEM PROMPT ===');
     }
 
     const currentConv = conversationsRef.current.find(c => c.id === convId);

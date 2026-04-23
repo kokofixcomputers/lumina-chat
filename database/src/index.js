@@ -1,4 +1,3 @@
-export { UserStore } from './user-store.js';
 export { SyncBackend } from './sync-backend.js';
 
 import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
@@ -267,15 +266,6 @@ export default {
         headers: headers
       });
     };
-
-    if (url.pathname === "/ws") {
-      const userId = url.searchParams.get("userId");
-      if (!userId) return addCorsHeaders(new Response("Missing userId", { status: 400 }));
-
-      const id = env.LUMINA_CHAT_USER_DO.idFromName(userId);
-      const stub = env.LUMINA_CHAT_USER_DO.get(id);
-      return stub.fetch(request);
-    }
 
     // New sync WebSocket endpoint using Durable Objects
     if (url.pathname === "/sync-ws") {

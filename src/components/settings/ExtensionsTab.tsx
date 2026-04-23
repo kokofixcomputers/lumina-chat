@@ -16,11 +16,7 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
   const [isEditing, setIsEditing] = useState(false);
   const [editCode, setEditCode] = useState('');
   const [editForm, setEditForm] = useState({
-    id: '',
-    name: '',
-    version: '',
-    description: '',
-    author: ''
+    id: ''
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -35,11 +31,7 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
   const handleCreateExtension = () => {
     setIsEditing(true);
     setEditForm({
-      id: '',
-      name: '',
-      version: '1.0.0',
-      description: '',
-      author: ''
+      id: ''
     });
     setEditCode(`// Extension Template
 const api = createChatExtensionAPI();
@@ -48,7 +40,7 @@ api.registerExtension({
   id: 'your.extension.id',
   name: 'Your Extension Name',
   version: '1.0.0',
-  description: 'Description of your extension',
+  description: 'Describe what your extension does',
   author: 'Your Name',
   tools: [
     {
@@ -82,7 +74,11 @@ api.registerExtension({
       const testFunction = new Function('api', 'console', editCode);
       
       const extension: StoredExtension = {
-        ...editForm,
+        id: editForm.id,
+        name: '', // Will be populated by extension loader
+        version: '', // Will be populated by extension loader
+        description: '', // Will be populated by extension loader
+        author: '', // Will be populated by extension loader
         code: editCode,
         enabled: true,
         tools: [] // Will be populated when the extension registers itself
@@ -95,6 +91,8 @@ api.registerExtension({
       
       setIsEditing(false);
       setSelectedExtension(null);
+      setEditCode('');
+      setEditForm({ id: '' });
       // Small delay to ensure storage is updated
       setTimeout(() => {
         loadExtensions();
@@ -266,7 +264,8 @@ api.registerExtension({
               {editForm.id ? 'Edit Extension' : 'Create Extension'}
             </h4>
             
-            <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="mb-3">
+              <label className="form-label">Extension ID (for reference)</label>
               <input
                 type="text"
                 placeholder="Extension ID (e.g., demo.math)"
@@ -274,36 +273,10 @@ api.registerExtension({
                 onChange={e => setEditForm({ ...editForm, id: e.target.value })}
                 className="input text-sm"
               />
-              <input
-                type="text"
-                placeholder="Extension Name"
-                value={editForm.name}
-                onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-                className="input text-sm"
-              />
-              <input
-                type="text"
-                placeholder="Version"
-                value={editForm.version}
-                onChange={e => setEditForm({ ...editForm, version: e.target.value })}
-                className="input text-sm"
-              />
-              <input
-                type="text"
-                placeholder="Author"
-                value={editForm.author}
-                onChange={e => setEditForm({ ...editForm, author: e.target.value })}
-                className="input text-sm"
-              />
+              <p className="text-xs text-[rgb(var(--muted))] mt-1">
+                Note: Extension metadata (name, version, description, author) will be automatically extracted from the code
+              </p>
             </div>
-            
-            <textarea
-              placeholder="Description"
-              value={editForm.description}
-              onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-              className="input text-sm mb-3 min-h-[60px]"
-              rows={2}
-            />
             
             <div className="mb-3">
               <label className="form-label">Extension Code</label>
@@ -328,6 +301,7 @@ api.registerExtension({
                   setIsEditing(false);
                   setSelectedExtension(null);
                   setEditCode('');
+                  setEditForm({ id: '' });
                 }}
                 className="btn-secondary text-sm py-2 px-4"
               >

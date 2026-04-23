@@ -6,10 +6,6 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "LUMINA_CHAT_USER_DO",
-        "class_name": "UserStore"
-      },
-      {
         "name": "LUMINA_CHAT_SYNC_DO",
         "class_name": "SyncBackend"
       }
@@ -31,14 +27,12 @@
       "new_sqlite_classes": ["ChatUser"]
     },
     {
-      "tag": "v2",
-      "renamed_classes": [
-        { "from": "ChatUser", "to": "UserStore" }
-      ]
-    },
-    {
       "tag": "v3",
       "new_sqlite_classes": ["SyncBackend"]
+    },
+    {
+      "tag": "v4",
+      "deleted_classes": ["UserStore"]
     }
   ]
 }

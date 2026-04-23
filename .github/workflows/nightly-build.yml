@@ -38,6 +38,11 @@ jobs:
       with:
         targets: ${{ matrix.rust_target }}
 
+    - name: Cache Rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        cache-targets: true
+
     - name: Setup Tauri CLI
       run: cargo install tauri-cli --version "^2.0"
 

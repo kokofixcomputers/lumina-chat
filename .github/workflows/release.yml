@@ -5,106 +5,95 @@ on:
     types: [published]
   workflow_dispatch:
 
-permissions: 
+permissions:
   contents: write
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
             rust_target: aarch64-apple-darwin
           - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install pnpm
-      uses: pnpm/action-setup@v2
-      with:
-        version: latest
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'pnpm'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
 
-    - name: Install dependencies
-      run: pnpm install
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.rust_target }}
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: true
 
-    - name: Setup Tauri CLI
-      run: cargo install tauri-cli --version "^2.0"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-    - name: Set Tauri target (macOS ARM64)
-      if: matrix.os == 'macos-latest'
-      run: echo "TAURI_ARCH=aarch64-apple-darwin" >> $GITHUB_ENV
+      - name: Build Tauri app
+        run: pnpm tauri build --target ${{ matrix.rust_target }}
 
-    - name: Build Tauri app
-      run: npx tauri build
+      - name: Find and zip binaries (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          cd src-tauri/target/${{ matrix.rust_target }}/release
+          ZIP_NAME="Lumina-Chat-${{ matrix.os }}.zip"
 
-    - name: Find and zip binaries (macOS)
-      if: matrix.os == 'macos-latest'
-      shell: bash
-      run: |
-        cd src-tauri/target/release
-        ZIP_NAME="Lumina-Chat-${{ matrix.os }}.zip"
+          shopt -s nullglob globstar
+          FILES=(bundle/dmg/**/*.dmg bundle/macos/**/*.app.tar.gz bundle/**/*.app.tar.gz)
 
-        # Search for any .dmg files (handles spaces)
-        shopt -s nullglob
-        DMG_FILES=(bundle/dmg/*/*.dmg bundle/*/*.dmg bundle/**/*.dmg)
-        if [ ${#DMG_FILES[@]} -eq 0 ]; then
-          echo "No DMG found, zipping release dir"
-          zip -r "$ZIP_NAME" .
-        else
-          echo "Found DMGs: ${DMG_FILES[*]}"
-          zip -r "$ZIP_NAME" "${DMG_FILES[@]}"
-        fi
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No packaged artifacts found, zipping release dir"
+            zip -r "$ZIP_NAME" .
+          else
+            echo "Found artifacts: ${FILES[*]}"
+            zip -r "$ZIP_NAME" "${FILES[@]}"
+          fi
 
-        echo "zip_path=$ZIP_NAME" >> $GITHUB_OUTPUT
-        echo "Created: $ZIP_NAME"
-        ls -la *.zip
+      - name: Find and zip binaries (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd src-tauri/target/${{ matrix.rust_target }}/release
+          $ZIP_NAME = "Lumina-Chat-${{ matrix.os }}.zip"
+          $BINARY_FILES = Get-ChildItem -Recurse -Include *.exe,*.msi
 
-    - name: Find and zip binaries (Windows)
-      if: matrix.os == 'windows-latest'
-      shell: pwsh
-      run: |
-        cd src-tauri/target/release
-        $ZIP_NAME = "Lumina-Chat-${{ matrix.os }}.zip"
+          if ($BINARY_FILES.Count -eq 0) {
+            Write-Host "No binaries found, zipping release dir"
+            Compress-Archive -Path * -DestinationPath $ZIP_NAME -Force
+          } else {
+            Write-Host "Found binaries: $($BINARY_FILES.FullName -join ', ')"
+            Compress-Archive -Path $BINARY_FILES.FullName -DestinationPath $ZIP_NAME -Force
+          }
 
-        # Search for Windows binaries recursively
-        $BINARY_FILES = Get-ChildItem -Recurse -Include *.exe,*.msi
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumina-chat-${{ matrix.os }}-release
+          path: src-tauri/target/${{ matrix.rust_target }}/release/Lumina-Chat-${{ matrix.os }}.zip
+          retention-days: 30
 
-        if ($BINARY_FILES.Count -eq 0) {
-          Write-Host "No binaries found, zipping release dir"
-          Compress-Archive -Path * -DestinationPath $ZIP_NAME
-        } else {
-          Write-Host "Found binaries: $($BINARY_FILES.FullName -join ', ')"
-          Compress-Archive -Path $BINARY_FILES -DestinationPath $ZIP_NAME
-        }
-
-        echo "zip_path=$ZIP_NAME" >> $env:GITHUB_OUTPUT
-        Write-Host "Created: $ZIP_NAME"
-        Get-ChildItem -Name *.zip
-
-    - name: Upload zip artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: lumina-chat-${{ matrix.os }}-release
-        path: src-tauri/target/release/Lumina-Chat-${{ matrix.os }}.zip
-        retention-days: 30
-
-    - name: Upload Release Assets
-      uses: softprops/action-gh-release@v1
-      with:
-        files: src-tauri/target/release/Lumina-Chat-${{ matrix.os }}.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/${{ matrix.rust_target }}/release/Lumina-Chat-${{ matrix.os }}.zip

@@ -59,16 +59,21 @@ jobs:
           cd src-tauri/target/${{ matrix.rust_target }}/release
           ZIP_NAME="Lumina-Chat-${{ matrix.os }}.zip"
 
-          shopt -s nullglob globstar
-          FILES=(bundle/dmg/**/*.dmg bundle/macos/**/*.app.tar.gz bundle/**/*.app.tar.gz)
+          DMG_FILES=$(find bundle -type f -name "*.dmg" 2>/dev/null)
 
-          if [ ${#FILES[@]} -eq 0 ]; then
-            echo "No packaged artifacts found, zipping release dir"
+          if [ -z "$DMG_FILES" ]; then
+            echo "No DMG found, zipping release dir"
             zip -r "$ZIP_NAME" .
           else
-            echo "Found artifacts: ${FILES[*]}"
-            zip -r "$ZIP_NAME" "${FILES[@]}"
+            echo "Found DMGs:"
+            echo "$DMG_FILES"
+            while IFS= read -r file; do
+              zip -r "$ZIP_NAME" "$file"
+            done <<< "$DMG_FILES"
           fi
+
+          echo "Created: $ZIP_NAME"
+          ls -la *.zip
 
       - name: Find and zip binaries (Windows)
         if: matrix.os == 'windows-latest'

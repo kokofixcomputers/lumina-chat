@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Search, Edit, Trash2, Tag, Calendar, X } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Tag, Calendar, X, Link, Loader2 } from 'lucide-react';
 import { KnowledgeEntry, KnowledgeEntryFormData } from '../../types/fineTuning';
 import { useFineTuningStore } from '../../store/fineTuningStore';
+import { urlToMarkdown } from '../../utils/urlToMarkdown';
 
 interface KnowledgeEntryListProps {
   fineTuningId: string;
@@ -19,6 +20,9 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
     content: '',
     tags: [],
   });
+  const [inputMode, setInputMode] = useState<'content' | 'url'>('content');
+  const [urlInput, setUrlInput] = useState('');
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
 
   const filteredEntries = entries.filter(entry =>
     entry.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -31,7 +35,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
 
     addKnowledgeEntry(fineTuningId, formData);
     setIsCreateModalOpen(false);
-    setFormData({ title: '', content: '', tags: [] });
+    resetForm();
   };
 
   const handleEditEntry = () => {
@@ -40,7 +44,13 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
     updateKnowledgeEntry(fineTuningId, editingEntry.id, formData);
     setIsEditModalOpen(false);
     setEditingEntry(null);
+    resetForm();
+  };
+
+  const resetForm = () => {
     setFormData({ title: '', content: '', tags: [] });
+    setInputMode('content');
+    setUrlInput('');
   };
 
   const handleDeleteEntry = (id: string) => {
@@ -62,6 +72,39 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
   const handleTagsChange = (tagsString: string) => {
     const tags = tagsString.split(',').map(tag => tag.trim()).filter(Boolean);
     setFormData({ ...formData, tags });
+  };
+
+  const handleFetchUrl = async () => {
+    if (!urlInput.trim()) return;
+
+    setIsFetchingUrl(true);
+    try {
+      const markdown = await urlToMarkdown(urlInput.trim());
+      
+      // Try to extract a title from the URL or content
+      let title = formData.title;
+      if (!title.trim()) {
+        // Try to get title from URL domain
+        try {
+          const url = new URL(urlInput);
+          title = url.hostname;
+        } catch {
+          title = 'Web Content';
+        }
+      }
+
+      setFormData({ 
+        ...formData, 
+        title: title.trim(),
+        content: markdown,
+        tags: [...(formData.tags || []), 'web']
+      });
+    } catch (error) {
+      console.error('Failed to fetch URL:', error);
+      alert(`Failed to fetch content from URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsFetchingUrl(false);
+    }
   };
 
   return (
@@ -165,7 +208,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                   setIsCreateModalOpen(false);
                   setIsEditModalOpen(false);
                   setEditingEntry(null);
-                  setFormData({ title: '', content: '', tags: [] });
+                  resetForm();
                 }}
                 className="btn-icon"
               >
@@ -192,15 +235,93 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                 
                 <div>
                   <label className="block text-sm font-medium text-[rgb(var(--text))] mb-2">
-                    Content
+                    Content Source
                   </label>
-                  <textarea
-                    value={formData.content}
-                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                    className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] resize-none"
-                    placeholder="Enter knowledge content"
-                    rows={6}
-                  />
+                  <div className="flex gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setInputMode('content')}
+                      className={`flex-1 px-3 py-2 rounded-lg border transition-colors ${
+                        inputMode === 'content'
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-[rgb(var(--bg))] border-[rgb(var(--border))] text-[rgb(var(--text))]'
+                      }`}
+                    >
+                      Direct Input
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInputMode('url')}
+                      className={`flex-1 px-3 py-2 rounded-lg border transition-colors flex items-center justify-center gap-2 ${
+                        inputMode === 'url'
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-[rgb(var(--bg))] border-[rgb(var(--border))] text-[rgb(var(--text))]'
+                      }`}
+                    >
+                      <Link size={16} />
+                      From URL
+                    </button>
+                  </div>
+
+                  {inputMode === 'content' ? (
+                    <textarea
+                      value={formData.content}
+                      onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                      className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] resize-none"
+                      placeholder="Enter knowledge content"
+                      rows={6}
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          className="flex-1 px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+                          placeholder="https://example.com/article"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && !isFetchingUrl) {
+                              handleFetchUrl();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleFetchUrl}
+                          disabled={!urlInput.trim() || isFetchingUrl}
+                          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                        >
+                          {isFetchingUrl ? (
+                            <>
+                              <Loader2 size={16} className="animate-spin" />
+                              Fetching
+                            </>
+                          ) : (
+                            <>
+                              <Link size={16} />
+                              Fetch
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      
+                      {formData.content && (
+                        <div>
+                          <label className="block text-sm font-medium text-[rgb(var(--text))] mb-2">
+                            Fetched Content (you can edit)
+                          </label>
+                          <textarea
+                            value={formData.content}
+                            onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                            className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] resize-none"
+                            placeholder="Content will appear here after fetching..."
+                            rows={6}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               
               <div>
@@ -227,7 +348,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                   } else {
                     setIsCreateModalOpen(false);
                   }
-                  setFormData({ title: '', content: '', tags: [] });
+                  resetForm();
                 }}
                 className="flex-1 btn-secondary"
               >

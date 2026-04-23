@@ -1231,6 +1231,7 @@ export default function App() {
         <Sidebar
           conversations={store.conversations}
           activeConvId={store.activeConvId}
+          currentPanel={panel}
           settings={store.settings}
           onSelectConv={(convId) => {
             store.setActiveConvId(convId);

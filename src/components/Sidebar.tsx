@@ -8,6 +8,7 @@ import type { Conversation, AppSettings } from '../types';
 interface SidebarProps {
   conversations: Conversation[];
   activeConvId: string | null;
+  currentPanel?: string;
   settings: AppSettings;
   onSelectConv: (id: string) => void;
   onGoHome: () => void;
@@ -26,6 +27,7 @@ interface SidebarProps {
 export default function Sidebar({
   conversations,
   activeConvId,
+  currentPanel,
   settings,
   onSelectConv,
   onGoHome,
@@ -84,12 +86,12 @@ export default function Sidebar({
     
     return (
       <div
-        className={`sidebar-item group relative ${activeConvId === conv.id ? 'active' : ''}`}
+        className={`sidebar-item group relative ${activeConvId === conv.id && currentPanel !== 'fine-tuning' ? 'active' : ''}`}
         onClick={() => { if (!editing) { onSelectConv(conv.id); onClose(); } }}
         onMouseEnter={() => setHoverDel(conv.id)}
         onMouseLeave={() => setHoverDel(null)}
       >
-        {activeConvId === conv.id
+        {activeConvId === conv.id && currentPanel !== 'fine-tuning'
           ? <Star size={13} className="shrink-0 opacity-50" />
           : <MessageSquare size={13} className="shrink-0 opacity-30" />
         }
@@ -193,7 +195,7 @@ export default function Sidebar({
           <Link size={15} />
           <span>View Chat</span>
         </button>
-        <button className="sidebar-item w-full" onClick={() => { onOpenFineTuning(); onClose(); }}>
+        <button className={`sidebar-item w-full ${currentPanel === 'fine-tuning' ? 'active' : ''}`} onClick={() => { onOpenFineTuning(); onClose(); }}>
           <BookOpen size={15} />
           <span>Fine-tuning</span>
         </button>

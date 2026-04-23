@@ -1,10 +1,10 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Send, Paperclip, X, Loader2,
-  Smile, Image as ImageIcon, Table, LayoutGrid,
+  Smile, Image as Table, LayoutGrid,
   Type, List, Eraser, MoreHorizontal, ChevronDown,
   Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
-  Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, ImageIcon as ImgOut, Video,
+  Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, X as ImgOut, Video,
   Share2, GitFork
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
@@ -1154,8 +1154,8 @@ export default function ChatInput({
                   }}
               className={`model-option w-full text-left ${!selectedFineTuningId ? 'selected' : ''}`}
             >
-              <div className="w-5 h-5 rounded-full bg-[rgb(var(--border))] text-[rgb(var(--muted))] flex items-center justify-center shrink-0">
-                <span className="text-[9px] font-medium">None</span>
+              <div className="w-5 h-5 rounded-full bg-red-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <X size={11} />
               </div>
               <span className="flex-1 font-medium">No knowledge base</span>
               {!selectedFineTuningId && <Check size={13} className="text-[rgb(var(--accent))]" />}

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Copy, Edit2, Trash2, RotateCcw, Check, AlertCircle,
   User, Bot, Wrench, Sparkles, ChevronDown, ChevronUp,
-  Eye, Loader2, CheckCircle, XCircle, ChevronRight, Download, X, ChevronLeft
+  Eye, Loader2, CheckCircle, XCircle, ChevronRight, Download, X, ChevronLeft, Quote
 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -284,6 +284,8 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
   const [imgError, setImgError] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [currentVersionIndex, setCurrentVersionIndex] = useState(message.currentVersionIndex ?? 0);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selectedText: string } | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const modelInfo = modelId ? getModelInfo(modelId) : null;
   const ModelIcon = modelInfo && typeof modelInfo.icon !== 'string' ? modelInfo.icon : null;
@@ -306,6 +308,38 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    const handleContextMenu = (e: MouseEvent) => {
+      if (isUser || isTool) return;
+      
+      const selection = window.getSelection();
+      const selectedText = selection?.toString().trim();
+      
+      if (selectedText && selectedText.length > 0 && contentRef.current?.contains(e.target as Node)) {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY, selectedText });
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    document.addEventListener('contextmenu', handleContextMenu);
+    
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, [isUser, isTool]);
+
+  const handleAddQuote = () => {
+    if (contextMenu) {
+      window.dispatchEvent(new CustomEvent('addQuote', { 
+        detail: { text: contextMenu.selectedText } 
+      }));
+      setContextMenu(null);
+    }
+  };
 
   const stepText = !isUser && displayMessage.isStep
   ? getVisibleStepText(displayMessage.content)
@@ -545,7 +579,10 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
             </div>
           )
         ) : (
-          <div className={`text-[rgb(var(--text))] w-full min-w-0 break-words overflow-wrap-anywhere ${displayMessage.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}>
+          <div 
+            ref={contentRef}
+            className={`text-[rgb(var(--text))] w-full min-w-0 break-words overflow-wrap-anywhere ${displayMessage.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}
+          >
             {displayMessage.isStep && (
               <div className="mb-2">
                 <div className="inline-flex items-center gap-1.5 rounded-full bg-[rgb(var(--panel))] border border-[rgb(var(--border))] px-3 py-1.5 text-[11px] text-[rgb(var(--muted))]">
@@ -648,6 +685,23 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
           </div>
         )}
       </div>
+      
+      {/* Custom Context Menu */}
+      {contextMenu && (
+        <div 
+          className="fixed bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg shadow-lg py-1 z-50 min-w-[150px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleAddQuote}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-[rgb(var(--text))] hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))] w-full text-left transition-colors"
+          >
+            <Quote size={14} />
+            Add to quote
+          </button>
+        </div>
+      )}
     </div>
   );
 }

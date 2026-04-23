@@ -5,7 +5,7 @@ import {
   Type, List, Eraser, MoreHorizontal, ChevronDown,
   Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
   Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, X as ImgOut, Video,
-  Share2, GitFork
+  Share2, GitFork, Quote
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
 import { 
@@ -214,6 +214,7 @@ export default function ChatInput({
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [showContextWarning, setShowContextWarning] = useState(false);
+  const [quote, setQuote] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -247,6 +248,15 @@ export default function ChatInput({
     const percentage = getContextUsagePercentage(usedTokens, maxTokens);
     setShowContextWarning(percentage >= 90);
   }, [usedTokens, maxTokens]);
+
+  useEffect(() => {
+    const handleAddQuote = (e: CustomEvent<{ text: string }>) => {
+      setQuote(e.detail.text);
+    };
+
+    window.addEventListener('addQuote', handleAddQuote as EventListener);
+    return () => window.removeEventListener('addQuote', handleAddQuote as EventListener);
+  }, []);
 
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
   const canAttachImages = currentModel?.supportsImages ?? false;
@@ -356,14 +366,21 @@ export default function ChatInput({
   }, [showModelPicker]);
 
   const handleSend = useCallback(() => {
-    if ((!text.trim() && !images.length && !attachments.length) || isGenerating) return;
+    if ((!text.trim() && !images.length && !attachments.length && !quote) || isGenerating) return;
+    
+    let messageText = text.trim();
+    if (quote) {
+      messageText = `"${quote}"\n\n${messageText}`;
+      setQuote(null);
+    }
+    
     const allAttachments = [...images, ...attachments];
-    onSend(text.trim(), allAttachments);
+    onSend(messageText, allAttachments);
     setText('');
     setImages([]);
     if (onAttachmentsChange) onAttachmentsChange([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [text, images, attachments, isGenerating, onSend, onAttachmentsChange]);
+  }, [text, images, attachments, quote, isGenerating, onSend, onAttachmentsChange]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { 
@@ -375,7 +392,11 @@ export default function ChatInput({
         const [, slug, rest] = match;
         const workflow = workflows.find(w => w.slug === slug);
         if (workflow) {
-          const finalContent = workflow.prompt + (rest.trim() ? ' ' + rest.trim() : '');
+          let finalContent = workflow.prompt + (rest.trim() ? ' ' + rest.trim() : '');
+          if (quote) {
+            finalContent = `"${quote}"\n\n${finalContent}`;
+            setQuote(null);
+          }
           onSend(finalContent, [...images, ...attachments]);
           setText('');
           setImages([]);
@@ -703,6 +724,24 @@ export default function ChatInput({
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
     >
+      {/* Quote display */}
+      {quote && (
+        <div className="mb-3 px-3 py-2 bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20 rounded-lg flex items-start gap-2">
+          <Quote size={14} className="text-[rgb(var(--accent))] mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-[rgb(var(--muted))] mb-1">Quote</div>
+            <div className="text-sm text-[rgb(var(--text))] italic">"{quote}"</div>
+          </div>
+          <button
+            onClick={() => setQuote(null)}
+            className="shrink-0 p-1 rounded hover:bg-[rgb(var(--accent))]/20 transition-colors"
+            title="Remove quote"
+          >
+            <X size={12} className="text-[rgb(var(--muted))]" />
+          </button>
+        </div>
+      )}
+      
       {/* Context Limit Warning */}
       {showContextWarning && (
         <div className="mb-3 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-2 text-amber-600 dark:text-amber-400 text-xs">
@@ -834,7 +873,7 @@ export default function ChatInput({
 
           <button
             onClick={isGenerating ? onStopGeneration : handleSend}
-            disabled={!isGenerating && (!text.trim() && !images.length && !attachments.length)}
+            disabled={!isGenerating && (!text.trim() && !images.length && !attachments.length && !quote)}
             className="send-btn ml-auto"
           >
             {isGenerating ? <X size={15} /> : <Send size={15} />}

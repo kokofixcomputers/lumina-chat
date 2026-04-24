@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
-  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen
+  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
+import { tauriUtils } from '../utils/tauri';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -48,21 +49,81 @@ export default function Sidebar({
   const [todayOpen, setTodayOpen] = useState(true);
   const [olderOpen, setOlderOpen] = useState(true);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
 
   const currentSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined;
 
+  // Version comparison function
+  const compareVersions = (version1: string, version2: string): number => {
+    const v1parts = version1.replace('v', '').split('.').map(Number);
+    const v2parts = version2.replace('v', '').split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(v1parts.length, v2parts.length); i++) {
+      const v1part = v1parts[i] || 0;
+      const v2part = v2parts[i] || 0;
+      if (v1part > v2part) return 1;
+      if (v1part < v2part) return -1;
+    }
+    return 0;
+  };
+
   useEffect(() => {
-    if (!currentSha) return; // no sha in env = dev mode, skip 
-    const check = async () => {
-      try {
-        const res = await fetch('/api/hash');
-        if (!res.ok) return;
-        const { sha } = await res.json();
-        if (sha && sha !== currentSha) setUpdateAvailable(true);
-      } catch { /* ignore network errors */ }
+    const checkUpdates = async () => {
+      // Check for web version updates (existing logic)
+      if (currentSha) {
+        try {
+          const res = await fetch('/api/hash');
+          if (res.ok) {
+            const { sha } = await res.json();
+            if (sha && sha !== currentSha) {
+              setUpdateAvailable(true);
+              return; // Web update takes priority
+            }
+          }
+        } catch { /* ignore network errors */ }
+      }
+
+      // Check for Tauri app updates
+      if (tauriUtils.isTauri) {
+        try {
+          const currentVersion = await tauriUtils.getVersion();
+          
+          // Skip update check for nightly builds
+          if (currentVersion.toLowerCase().includes('nightly')) {
+            return;
+          }
+
+          // Fetch latest releases from GitHub
+          const response = await fetch('https://api.github.com/repos/kokofixcomputers/lumina-chat/releases');
+          if (response.ok) {
+            const releases = await response.json();
+            
+            // Find the latest release (excluding pre-releases)
+            const latestRelease = releases.find((release: any) => 
+              !release.prerelease && !release.draft
+            );
+            
+            if (latestRelease && latestRelease.tag_name) {
+              const latestVersion = latestRelease.tag_name;
+              
+              // Compare versions
+              if (compareVersions(latestVersion, currentVersion) > 0) {
+                setUpdateAvailable(true);
+                setUpdateInfo({
+                  version: latestVersion,
+                  url: latestRelease.html_url
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error checking for updates:', error);
+        }
+      }
     };
-    check();
-    const id = setInterval(check, 5 * 60 * 1000); // every 5 min
+
+    checkUpdates();
+    const id = setInterval(checkUpdates, 5 * 60 * 1000); // every 5 min
     return () => clearInterval(id);
   }, [currentSha]);
 
@@ -240,10 +301,28 @@ export default function Sidebar({
         {updateAvailable && (
           <button
             className="sidebar-item w-full text-green-500 hover:text-green-400"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              if (updateInfo?.url) {
+                // For Tauri updates, open the release page in browser
+                if (tauriUtils.isTauri) {
+                  tauriUtils.openUrl(updateInfo.url);
+                } else {
+                  // For web updates, reload the page
+                  window.location.reload();
+                }
+              } else {
+                // Web update - reload page
+                window.location.reload();
+              }
+            }}
           >
-            <RefreshCw size={15} />
-            <span>Update Available</span>
+            {tauriUtils.isTauri && updateInfo ? <Download size={15} /> : <RefreshCw size={15} />}
+            <span>
+              {tauriUtils.isTauri && updateInfo 
+                ? `Update Available (${updateInfo.version})` 
+                : 'Update Available'
+              }
+            </span>
           </button>
         )}
         <button className="sidebar-item w-full" onClick={onOpenProviders}>

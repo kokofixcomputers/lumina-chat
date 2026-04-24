@@ -4,6 +4,7 @@
  */
 
 import { getVersion } from '@tauri-apps/api/app';
+import { openUrl as openUrlTauri } from '@tauri-apps/plugin-opener';
 
 // Centralized Tauri detection
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -29,9 +30,25 @@ export function checkIsTauri(): boolean {
   return isTauri;
 }
 
+// Open URL in external browser
+export async function openUrl(url: string): Promise<void> {
+  if (isTauri) {
+    try {
+      await openUrlTauri(url);
+    } catch (error) {
+      console.error('Error opening URL in Tauri:', error);
+      // Fallback to window.open
+      window.open(url, '_blank');
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
+
 // Tauri-specific utilities
 export const tauriUtils = {
   isTauri,
   getVersion: getTauriVersion,
   checkIsTauri,
+  openUrl,
 };

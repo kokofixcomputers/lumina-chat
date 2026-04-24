@@ -28,6 +28,31 @@ export default function AboutTab({ taglineIndex, fade }: AboutTabProps) {
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-4xl mx-auto">
+      {/* Nightly Build Warning */}
+      {tauriVersion && tauriVersion.includes('0.0.0') && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-center gap-2 text-yellow-800 dark:text-yellow-200">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 15.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span className="text-sm font-medium">
+              Warning: You are currently on the most unstable build of Lumina Chat. You are on nightly.
+            </span>
+          </div>
+          <div className="flex items-center justify-center mt-3">
+            <button
+              onClick={() => tauriUtils.openUrl('https://github.com/kokofixcomputers/lumina-chat/issues')}
+              className="btn-secondary text-xs py-2 px-4 gap-2 bg-yellow-100 dark:bg-yellow-800/30 hover:bg-yellow-200 dark:hover:bg-yellow-800/50 border-yellow-300 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Report Bugs
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="text-center space-y-6">
         <div className="w-full aspect-[1456/720] bg-gradient-to-br from-gray-100 via-blue-50/40 to-purple-50/30 dark:from-gray-800 dark:via-blue-950/20 dark:to-purple-950/10 rounded-2xl shadow-lg overflow-hidden border border-[rgb(var(--border))]">
           <img
@@ -71,28 +96,24 @@ export default function AboutTab({ taglineIndex, fade }: AboutTabProps) {
 
         {/* Links */}
         <div className="flex items-center justify-center gap-3 pt-4">
-          <a
-            href="https://github.com/kokofixcomputers/lumina-chat"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => tauriUtils.openUrl('https://github.com/kokofixcomputers/lumina-chat')}
             className="btn-secondary text-xs py-2 px-4 gap-2"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
             </svg>
             GitHub
-          </a>
-          <a
-            href="https://github.com/kokofixcomputers/lumina-chat/issues"
-            target="_blank"
-            rel="noopener noreferrer"
+          </button>
+          <button
+            onClick={() => tauriUtils.openUrl('https://github.com/kokofixcomputers/lumina-chat/issues')}
             className="btn-secondary text-xs py-2 px-4 gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             Report Issue
-          </a>
+          </button>
         </div>
 
         <div className="pt-2 text-xs text-[rgb(var(--muted))]">

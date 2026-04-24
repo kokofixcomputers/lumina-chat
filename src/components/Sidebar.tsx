@@ -89,7 +89,7 @@ export default function Sidebar({
           const currentVersion = await tauriUtils.getVersion();
           
           // Skip update check for nightly builds
-          if (currentVersion.toLowerCase().includes('nightly')) {
+          if (currentVersion.toLowerCase().includes('0.0.0')) {
             return;
           }
 

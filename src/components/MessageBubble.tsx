@@ -10,6 +10,7 @@ import { getModelInfo } from '../utils/models';
 import type { Message } from '../types';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { save } from '@tauri-apps/plugin-dialog';
+import { tauriUtils } from '../utils/tauri';
 import ChartComponent from './ChartComponent';
 
 function CopyBtn({ text }: { text: string }) {
@@ -20,6 +21,110 @@ function CopyBtn({ text }: { text: string }) {
       className="btn-icon w-6 h-6"
     >
       {done ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+}
+
+function DownloadBtn({ filename, dataUrl }: { filename: string; dataUrl: string }) {
+  const [downloading, setDownloading] = useState(false);
+  
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      console.log('🎯 DOWNLOAD: Raw dataUrl length:', dataUrl.length);
+      console.log('🎯 DOWNLOAD: Full dataUrl:', dataUrl);
+      console.log('🎯 DOWNLOAD: DataUrl starts with:', dataUrl.substring(0, 50));
+      console.log('🎯 DOWNLOAD: DataUrl contains comma:', dataUrl.includes(','));
+      
+      // Extract base64 data
+      const base64Data = dataUrl.split(',')[1];
+      console.log('🎯 DOWNLOAD: Base64 data length:', base64Data?.length || 0);
+      console.log('🎯 DOWNLOAD: Base64 data starts with:', base64Data?.substring(0, 20) || 'undefined');
+      
+      if (!base64Data) {
+        throw new Error('No base64 data found in dataUrl');
+      }
+      
+      const binaryData = atob(base64Data);
+      console.log('🎯 DOWNLOAD: Binary data length:', binaryData.length);
+      
+      const bytes = new Uint8Array(binaryData.length);
+      for (let i = 0; i < binaryData.length; i++) {
+        bytes[i] = binaryData.charCodeAt(i);
+      }
+      
+      if (tauriUtils.isTauri) {
+        // Use Tauri APIs for desktop app
+        const filePath = await save({
+          title: 'Save Presentation',
+          defaultPath: filename,
+          filters: [
+            {
+              name: 'PowerPoint Presentation',
+              extensions: ['pptx']
+            }
+          ]
+        });
+        
+        if (filePath) {
+          console.log('🎯 TAURI: Saving to path:', filePath);
+          console.log('🎯 TAURI: Bytes length:', bytes.length);
+          console.log('🎯 TAURI: First few bytes:', Array.from(bytes.slice(0, 10)));
+          
+          // Try different approaches for Tauri file writing
+          try {
+            // Method 1: Direct bytes
+            await writeFile(filePath, bytes);
+            console.log('🎯 TAURI: Saved with direct bytes');
+          } catch (error1) {
+            console.log('🎯 TAURI: Direct bytes failed, trying base64 string');
+            try {
+              // Method 2: Base64 string
+              await writeFile(filePath, base64Data, { base64: true });
+              console.log('🎯 TAURI: Saved with base64 string');
+            } catch (error2) {
+              console.log('🎯 TAURI: Base64 string failed, trying binary string');
+              try {
+                // Method 3: Binary string
+                await writeFile(filePath, binaryData);
+                console.log('🎯 TAURI: Saved with binary string');
+              } catch (error3) {
+                console.error('🎯 TAURI: All methods failed:', { error1, error2, error3 });
+                throw error1;
+              }
+            }
+          }
+          
+          console.log('Presentation saved to:', filePath);
+        }
+      } else {
+        // Use browser download for web
+        const blob = new Blob([bytes], { 
+          type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' 
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Download failed:', error);
+    } finally {
+      setDownloading(false);
+    }
+  };
+  
+  return (
+    <button
+      onClick={handleDownload}
+      disabled={downloading}
+      className="btn-icon w-6 h-6"
+    >
+      {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
     </button>
   );
 }
@@ -175,6 +280,52 @@ function renderContent(content: string) {
             <div key={k++} className="code-block max-w-full">
               <div className="code-block-header">
                 <span>chart (invalid config)</span>
+                <div className="flex gap-1">
+                  <CopyBtn text={code} />
+                </div>
+              </div>
+              <div className="code-block-body overflow-x-auto">
+                <SyntaxHighlighter language="json" style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
+                  {code}
+                </SyntaxHighlighter>
+              </div>
+            </div>
+          );
+        }
+      } else if (lang === 'presentation') {
+        // Handle presentation files
+        const lines = code.split('\n');
+        const filenameLine = lines.find(line => !line.startsWith('data:'));
+        const dataLine = lines.find(line => line.startsWith('data:'));
+        
+        if (filenameLine && dataLine) {
+          const filename = filenameLine.trim();
+          const dataUrl = dataLine.trim();
+          
+          out.push(
+            <div key={k++} className="my-4 p-4 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Download size={16} className="text-[rgb(var(--text))]" />
+                  <span className="text-sm font-medium text-[rgb(var(--text))]">PowerPoint Presentation</span>
+                </div>
+                <DownloadBtn filename={filename} dataUrl={dataUrl} />
+              </div>
+              <div className="text-center py-8">
+                <div className="w-16 h-16 mx-auto mb-3 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
+                  <Download size={24} className="text-orange-600 dark:text-orange-400" />
+                </div>
+                <p className="text-sm text-[rgb(var(--muted))] mb-1">{filename}</p>
+                <p className="text-xs text-[rgb(var(--muted))]">Click download to get your presentation</p>
+              </div>
+            </div>
+          );
+        } else {
+          // Invalid presentation format
+          out.push(
+            <div key={k++} className="code-block max-w-full">
+              <div className="code-block-header">
+                <span>presentation (invalid format)</span>
                 <div className="flex gap-1">
                   <CopyBtn text={code} />
                 </div>

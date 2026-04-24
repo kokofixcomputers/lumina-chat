@@ -30,6 +30,12 @@ export const toolsConfig: ToolConfig[] = [
     category: 'data'
   },
   {
+    name: 'presentation',
+    label: 'presentation',
+    description: 'Generate beautiful PowerPoint presentations',
+    category: 'utility'
+  },
+  {
     name: 'exec_python',
     label: 'exec_python',
     description: 'Execute Python code using Pyodide (numpy, pandas, matplotlib)',

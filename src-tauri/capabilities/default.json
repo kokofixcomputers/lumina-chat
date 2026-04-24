@@ -9,7 +9,7 @@
     "core:default",
     "fs:allow-write-text-file",
     "opener:default",
-    "dialog:allow-confirm",
+    "dialog:default",
     "fs:allow-write-file",
     "http:default",
     "http:allow-fetch",

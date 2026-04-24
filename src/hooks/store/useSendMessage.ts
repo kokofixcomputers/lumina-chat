@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AppSettings, Conversation, Message, ModelProvider, ModelConfig, FineTuning } from '../../types';
 import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../../tools';
 import { ChartTool } from '../../tools/chartTool';
+import { createPresentation } from '../../tools/presentationGenerator';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { universalFetch, universalStreamingFetch, processSSEStream } from '../../utils/tauriFetch';
 import { isTauri } from '../../utils/tauri';
@@ -573,6 +574,68 @@ export function useSendMessage({
               
               let messageUpdate: any = { content: JSON.stringify(result, null, 2), tool_status: 'success' as const };
               let chartMarkdown: string | undefined;
+              let presentationMarkdown: string | undefined;
+              
+              // Handle presentation markdown generation
+              if (toolCall.function.name === 'presentation' && result === "The result was automatically published to user") {
+                console.log('🎯 PRESENTATION: Detected presentation tool call');
+                messageUpdate.content = result; // Show simple message to user immediately
+                
+                // Generate presentation asynchronously
+                console.log('🎯 PRESENTATION: About to start async generation');
+                (async () => {
+                  console.log('🎯 PRESENTATION: Async IIFE started');
+                  try {
+                    console.log('🎯 PRESENTATION: Starting async generation');
+                    // Extract the presentation data from tool arguments
+                    const args = toolCall.function.arguments;
+                    console.log('🎯 PRESENTATION: Raw args type', typeof args);
+                    console.log('🎯 PRESENTATION: Raw args', args);
+                    
+                    let parsedArgs;
+                    if (typeof args === 'string') {
+                      parsedArgs = JSON.parse(args);
+                    } else {
+                      parsedArgs = args;
+                    }
+                    
+                    console.log('🎯 PRESENTATION: Parsed args', parsedArgs);
+                    const data = parsedArgs.data;
+                    console.log('🎯 PRESENTATION: Parsed data structure', JSON.stringify(data, null, 2));
+                    console.log('🎯 PRESENTATION: Data keys', Object.keys(data || {}));
+                    console.log('🎯 PRESENTATION: Data.deck', data.deck);
+                    
+                    // Generate the presentation markdown
+                    const pptxBuffer = await createPresentation(data);
+                    console.log('🎯 PRESENTATION: Generated presentation buffer', pptxBuffer.byteLength);
+                    console.log('🎯 PRESENTATION: Buffer type:', pptxBuffer.constructor.name);
+                    console.log('🎯 PRESENTATION: First few buffer bytes:', Array.from(new Uint8Array(pptxBuffer.slice(0, 10))));
+                    
+                    const base64Data = btoa(String.fromCharCode(...new Uint8Array(pptxBuffer)));
+                    console.log('🎯 PRESENTATION: Base64 data length:', base64Data.length);
+                    console.log('🎯 PRESENTATION: Base64 data starts with:', base64Data.substring(0, 20));
+                    
+                    const presentationMarkdown = `\`\`\`presentation
+${data.deck.title.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 20)}.pptx
+data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,${base64Data}
+\`\`\``;
+                    
+                    console.log('🎯 PRESENTATION: Created markdown, updating conversation');
+                    // Update conversation with presentation markdown
+                    setConversations(prev => prev.map(c => 
+                      c.id === convId ? { ...c, pendingPresentationMarkdown: presentationMarkdown } : c
+                    ));
+                    console.log('🎯 PRESENTATION: Updated conversation with pendingPresentationMarkdown');
+                  } catch (err) {
+                    console.error('🎯 PRESENTATION: Failed to generate presentation markdown:', err);
+                  }
+                })();
+              } else {
+                console.log('🎯 PRESENTATION: Not a presentation tool call or wrong result', {
+                  toolName: toolCall.function.name,
+                  result: typeof result === 'string' ? result.substring(0, 50) + '...' : result
+                });
+              }
               
               // Handle plot images from exec_python tool
               if (toolCall.function.name === 'exec_python' && result.plotImages && result.plotImages.length > 0) {
@@ -727,6 +790,7 @@ export function useSendMessage({
                 }
               }
               
+                            
               const messages = c.messages.map(m => m.id === loadingMsgId ? { ...m, ...messageUpdate } : m);
               const updates: any = { messages };
               if (toolCall.function.name === 'create_dev_env' && result.success && result.session) updates.devEnvSession = result.session;
@@ -737,6 +801,8 @@ export function useSendMessage({
                 updates.pendingChartMarkdown = chartMarkdown;
               }
               
+                            
+                            
               return { ...c, ...updates };
             }));
             toolMessages.push(makeToolMsg(toolCall.id, JSON.stringify(result), useResponsesApi));
@@ -892,6 +958,19 @@ export function useSendMessage({
         setConversations(prev => prev.map(c => 
           c.id === convId ? { ...c, pendingChartMarkdown: undefined } : c
         ));
+      }
+      
+      if (conv?.pendingPresentationMarkdown) {
+        console.log('🎯 PRESENTATION: Found pendingPresentationMarkdown, appending to final content');
+        finalContent = assistantContent + '\n\n' + conv.pendingPresentationMarkdown;
+        console.log('🎯 PRESENTATION: Final content length:', finalContent.length);
+        // Clear the pending presentation markdown
+        setConversations(prev => prev.map(c => 
+          c.id === convId ? { ...c, pendingPresentationMarkdown: undefined } : c
+        ));
+        console.log('🎯 PRESENTATION: Cleared pendingPresentationMarkdown');
+      } else {
+        console.log('🎯 PRESENTATION: No pendingPresentationMarkdown found in conversation');
       }
 
       const assistantMsg: Message = { id: uuidv4(), role: 'assistant', content: finalContent, timestamp: generateUniqueTimestamp(), model: model?.id, finishReason, tool_calls: toolCalls.length > 0 ? toolCalls : undefined, tokens: tokenCount > 0 ? tokenCount : undefined, tokensPerSecond, isStep, requestsAnotherTool };

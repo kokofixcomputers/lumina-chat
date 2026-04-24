@@ -12,6 +12,7 @@ import qanda from './qanda';
 import { buildFsTools } from './buildFs';
 import { memoryTools } from './memories';
 import chart from './chart';
+import presentation from './presentation';
 import { execPythonTool } from './execPython';
 import { extensionToolRegistry } from '../extensions/extensionToolRegistry';
 
@@ -25,6 +26,7 @@ const tools: Tool[] = [
   webRequest,
   qanda,
   chart,
+  presentation,
   execPythonTool,
   ...devEnvTools,
 ];

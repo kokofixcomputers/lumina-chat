@@ -46,6 +46,7 @@ export interface Conversation {
   hotelSearchKey?: string;
   buildMode?: boolean;
   pendingChartMarkdown?: string;
+  pendingPresentationMarkdown?: string;
   shareInfo?: {
     code: string;
     expiresAt: string;

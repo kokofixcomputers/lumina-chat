@@ -36,6 +36,20 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Update package.json version from release tag
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          node -e "
+            const fs = require('fs');
+            const path = 'package.json';
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          "
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:

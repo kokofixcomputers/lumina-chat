@@ -129,8 +129,8 @@ function parseChartConfig(chartText: string) {
       return null;
     }
     
-    // Labels are required for most charts except scatter
-    if (config.type !== 'scatter' && !config.data.labels) {
+    // Labels are required for most charts except scatter and bubble
+    if (config.type !== 'scatter' && config.type !== 'bubble' && !config.data.labels) {
       return null;
     }
     

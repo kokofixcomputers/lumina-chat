@@ -40,10 +40,10 @@ ChartJS.register(
 );
 
 interface ChartData {
-  labels: string[];
+  labels?: string[];
   datasets: Array<{
     label: string;
-    data: number[];
+    data: number[] | Array<{ x: number; y: number }> | Array<{ x: number; y: number; r: number }>;
     backgroundColor?: string | string[];
     borderColor?: string | string[];
     borderWidth?: number;
@@ -137,27 +137,37 @@ const ChartComponent = memo(({ config, className = "" }: ChartComponentProps) =>
 
   const chartData = useMemo(() => ({
     labels: config.data.labels || [],
-    datasets: config.data.datasets.map(dataset => ({
-      ...dataset,
-      backgroundColor: dataset.backgroundColor || [
-        'rgba(255, 99, 132, 0.5)',
-        'rgba(54, 162, 235, 0.5)',
-        'rgba(255, 206, 86, 0.5)',
-        'rgba(75, 192, 192, 0.5)',
-        'rgba(153, 102, 255, 0.5)',
-        'rgba(255, 159, 64, 0.5)',
-      ],
-      borderColor: dataset.borderColor || [
-        'rgba(255, 99, 132, 1)',
-        'rgba(54, 162, 235, 1)',
-        'rgba(255, 206, 86, 1)',
-        'rgba(75, 192, 192, 1)',
-        'rgba(153, 102, 255, 1)',
-        'rgba(255, 159, 64, 1)',
-      ],
-      borderWidth: dataset.borderWidth || 1,
-    })),
-  }), [config.data]);
+    datasets: config.data.datasets.map(dataset => {
+      // For bubble and scatter charts, don't override colors if they're already set
+      const isBubbleOrScatter = config.type === 'bubble' || config.type === 'scatter';
+      const hasCustomColors = dataset.backgroundColor || dataset.borderColor;
+      
+      return {
+        ...dataset,
+        backgroundColor: hasCustomColors ? dataset.backgroundColor : (
+          isBubbleOrScatter ? 'rgba(54, 162, 235, 0.5)' : [
+            'rgba(255, 99, 132, 0.5)',
+            'rgba(54, 162, 235, 0.5)',
+            'rgba(255, 206, 86, 0.5)',
+            'rgba(75, 192, 192, 0.5)',
+            'rgba(153, 102, 255, 0.5)',
+            'rgba(255, 159, 64, 0.5)',
+          ]
+        ),
+        borderColor: hasCustomColors ? dataset.borderColor : (
+          isBubbleOrScatter ? 'rgba(54, 162, 235, 1)' : [
+            'rgba(255, 99, 132, 1)',
+            'rgba(54, 162, 235, 1)',
+            'rgba(255, 206, 86, 1)',
+            'rgba(75, 192, 192, 1)',
+            'rgba(153, 102, 255, 1)',
+            'rgba(255, 159, 64, 1)',
+          ]
+        ),
+        borderWidth: dataset.borderWidth || 1,
+      };
+    }),
+  }), [config.data, config.type]);
 
   const renderChart = () => {
     const chartProps = {

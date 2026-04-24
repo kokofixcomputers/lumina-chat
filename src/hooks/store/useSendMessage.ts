@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { AppSettings, Conversation, Message, ModelProvider, ModelConfig, FineTuning } from '../../types';
 import { getToolDefinitions, getToolByName, getToolDefinitionsForResponsesApi } from '../../tools';
+import { ChartTool } from '../../tools/chartTool';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { universalFetch, universalStreamingFetch, processSSEStream } from '../../utils/tauriFetch';
 import { isTauri } from '../../utils/tauri';
@@ -571,6 +572,7 @@ export function useSendMessage({
               if (c.id !== convId) return c;
               
               let messageUpdate: any = { content: JSON.stringify(result, null, 2), tool_status: 'success' as const };
+              let chartMarkdown: string | undefined;
               
               // Handle plot images from exec_python tool
               if (toolCall.function.name === 'exec_python' && result.plotImages && result.plotImages.length > 0) {
@@ -583,10 +585,158 @@ export function useSendMessage({
                 console.log('Result keys:', Object.keys(result));
               }
               
+              // For chart tool, generate the chart markdown and store it for injection
+              if (toolCall.function.name === 'chart') {
+                try {
+                  const args = JSON.parse(toolCall.function.arguments || '{}');
+                  
+                  // Generate the actual chart markdown
+                  const { type, labels, data, title, xAxisLabel, yAxisLabel, colors } = args;
+                  
+                  if (type === 'scatter') {
+                    let parsedData = data;
+                    if (typeof data === 'string') {
+                      parsedData = JSON.parse(data);
+                    }
+                    if (Array.isArray(parsedData) && parsedData.length > 0 && typeof parsedData[0] === 'object' && 'x' in parsedData[0] && 'y' in parsedData[0]) {
+                      chartMarkdown = ChartTool.createScatterChart(parsedData, title);
+                    }
+                  } else if (type === 'bubble') {
+                    let parsedData = data;
+                    if (typeof data === 'string') {
+                      parsedData = JSON.parse(data);
+                    }
+                    if (Array.isArray(parsedData) && parsedData.length > 0 && typeof parsedData[0] === 'object' && 'x' in parsedData[0] && 'y' in parsedData[0] && 'r' in parsedData[0]) {
+                      // Create bubble chart using scatter chart with bubble data
+                      chartMarkdown = ChartTool.generateChart({
+                        type: 'bubble',
+                        data: {
+                          datasets: [{
+                            label: 'Bubble Data',
+                            data: parsedData,
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                          }]
+                        },
+                        options: {
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            title: title ? { display: true, text: title } : undefined,
+                            legend: { display: false }
+                          },
+                          scales: {
+                            x: {
+                              display: true,
+                              title: { display: true, text: xAxisLabel || 'X Axis' },
+                              beginAtZero: false
+                            },
+                            y: {
+                              display: true,
+                              title: { display: true, text: yAxisLabel || 'Y Axis' },
+                              beginAtZero: true
+                            }
+                          }
+                        }
+                      });
+                    }
+                  } else if (type === 'pie' || type === 'doughnut') {
+                    let parsedData = data;
+                    if (typeof data === 'string') {
+                      try { parsedData = JSON.parse(data); } catch { /* ignore */ }
+                    }
+                    if (typeof parsedData === 'object' && 'datasets' in parsedData) {
+                      chartMarkdown = ChartTool.generateChart({
+                        type: type as 'pie' | 'doughnut',
+                        data: parsedData as any,
+                        options: {
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            title: title ? { display: true, text: title } : undefined,
+                            legend: { display: true, position: 'right' }
+                          }
+                        }
+                      });
+                    } else {
+                      if (!labels || !Array.isArray(labels)) {
+                        throw new Error(`${type} charts require labels array`);
+                      }
+                      if (!Array.isArray(parsedData) || typeof parsedData[0] !== 'number') {
+                        throw new Error(`${type} charts require a data array of numbers`);
+                      }
+                      chartMarkdown = type === 'pie' 
+                        ? ChartTool.createPieChart(labels, parsedData, title, colors)
+                        : ChartTool.createDoughnutChart(labels, parsedData, title, colors);
+                    }
+                  } else if (['line', 'bar', 'radar'].includes(type)) {
+                    let parsedData = data;
+                    if (typeof data === 'string') {
+                      try { parsedData = JSON.parse(data); } catch { /* ignore */ }
+                    }
+                    if (typeof parsedData === 'object' && 'datasets' in parsedData) {
+                      chartMarkdown = ChartTool.generateChart({
+                        type: type as 'line' | 'bar' | 'radar',
+                        data: parsedData as any,
+                        options: {
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            title: title ? { display: true, text: title } : undefined,
+                            legend: { display: true, position: 'top' }
+                          },
+                          scales: type === 'radar' ? undefined : {
+                            x: {
+                              display: true,
+                              title: { display: true, text: xAxisLabel || 'X Axis' }
+                            },
+                            y: {
+                              display: true,
+                              title: { display: true, text: yAxisLabel || 'Y Axis' },
+                              beginAtZero: true
+                            }
+                          }
+                        }
+                      });
+                    } else {
+                      if (!labels || !Array.isArray(labels)) {
+                        throw new Error(`${type} charts require labels array`);
+                      }
+                      if (!Array.isArray(parsedData) || typeof parsedData[0] !== 'object' || !('label' in parsedData[0]) || !('data' in parsedData[0])) {
+                        throw new Error(`${type} charts require a data array of datasets with label and data properties`);
+                      }
+                      const datasets = parsedData as Array<{ label: string; data: number[]; color?: string }>;
+                      
+                      if (type === 'line') {
+                        chartMarkdown = ChartTool.createLineChart(labels, datasets, title, xAxisLabel, yAxisLabel);
+                      } else if (type === 'bar') {
+                        chartMarkdown = ChartTool.createBarChart(labels, datasets, title, xAxisLabel, yAxisLabel);
+                      } else if (type === 'radar') {
+                        chartMarkdown = ChartTool.createRadarChart(labels, datasets, title);
+                      }
+                    }
+                  }
+                  
+                  if (chartMarkdown) {
+                    messageUpdate.content = result; // Show the simple message to user
+                  }
+                } catch (err) {
+                  console.error('Failed to generate chart markdown:', err);
+                  messageUpdate.content = 'Failed to generate chart';
+                }
+              }
+              
               const messages = c.messages.map(m => m.id === loadingMsgId ? { ...m, ...messageUpdate } : m);
               const updates: any = { messages };
               if (toolCall.function.name === 'create_dev_env' && result.success && result.session) updates.devEnvSession = result.session;
               if (result._hotelSearchKey) updates.hotelSearchKey = result._hotelSearchKey;
+              
+              // Store the chart markdown for automatic injection
+              if (chartMarkdown) {
+                updates.pendingChartMarkdown = chartMarkdown;
+              }
+              
               return { ...c, ...updates };
             }));
             toolMessages.push(makeToolMsg(toolCall.id, JSON.stringify(result), useResponsesApi));
@@ -732,9 +882,21 @@ export function useSendMessage({
       const requestsAnotherTool = /\{"status"\s*:\s*"request_another_tool"\}\s*$/.test(assistantContent);
       const isStep = /\{"status"\s*:\s*"step"\}(\s*\{"status"\s*:\s*"request_another_tool"\})?\s*$/.test(assistantContent);
 
-      const assistantMsg: Message = { id: uuidv4(), role: 'assistant', content: assistantContent, timestamp: generateUniqueTimestamp(), model: model?.id, finishReason, tool_calls: toolCalls.length > 0 ? toolCalls : undefined, tokens: tokenCount > 0 ? tokenCount : undefined, tokensPerSecond, isStep, requestsAnotherTool };
+      // Check if there's a pending chart markdown to inject
+      const conv = conversationsRef.current.find(c => c.id === convId);
+      let finalContent = assistantContent;
+      
+      if (conv?.pendingChartMarkdown) {
+        finalContent = assistantContent + '\n\n' + conv.pendingChartMarkdown;
+        // Clear the pending chart markdown
+        setConversations(prev => prev.map(c => 
+          c.id === convId ? { ...c, pendingChartMarkdown: undefined } : c
+        ));
+      }
 
-      if (assistantContent || toolCalls.length > 0) addMessage(convId, assistantMsg);
+      const assistantMsg: Message = { id: uuidv4(), role: 'assistant', content: finalContent, timestamp: generateUniqueTimestamp(), model: model?.id, finishReason, tool_calls: toolCalls.length > 0 ? toolCalls : undefined, tokens: tokenCount > 0 ? tokenCount : undefined, tokensPerSecond, isStep, requestsAnotherTool };
+
+      if (finalContent || toolCalls.length > 0) addMessage(convId, assistantMsg);
 
       if (toolCalls.length === 0) {
         clearStreaming();

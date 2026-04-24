@@ -4,7 +4,7 @@ interface ChartToolConfig {
     labels?: string[];
     datasets: Array<{
       label: string;
-      data: number[] | Array<{ x: number; y: number }>;
+      data: number[] | Array<{ x: number; y: number }> | Array<{ x: number; y: number; r: number }>;
       backgroundColor?: string | string[];
       borderColor?: string | string[];
       borderWidth?: number;
@@ -297,13 +297,54 @@ ${JSON.stringify(config, null, 2)}
 
     return this.generateChart(config);
   }
+
+  static createBubbleChart(
+    data: Array<{ x: number; y: number; r: number }>,
+    title?: string,
+    color?: string
+  ): string {
+    const config: ChartToolConfig = {
+      type: 'bubble',
+      data: {
+        datasets: [{
+          label: 'Bubble Data',
+          data: data as any, // Bubble chart data format includes radius
+          backgroundColor: color || 'rgba(54, 162, 235, 0.5)',
+          borderColor: color ? color.replace('0.5)', '1)') : 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: title ? { display: true, text: title } : undefined,
+          legend: { display: false }
+        },
+        scales: {
+          x: {
+            display: true,
+            title: { display: true, text: 'X Axis' },
+            beginAtZero: false
+          },
+          y: {
+            display: true,
+            title: { display: true, text: 'Y Axis' },
+            beginAtZero: true
+          }
+        }
+      }
+    };
+
+    return this.generateChart(config);
+  }
 }
 
 // Helper function to create charts from simple data
 export function createChart(
   type: ChartToolConfig['type'],
   labels: string[],
-  data: number[] | Array<{ label: string; data: number[]; color?: string }> | Array<{ x: number; y: number }>,
+  data: number[] | Array<{ label: string; data: number[]; color?: string }> | Array<{ x: number; y: number }> | Array<{ x: number; y: number; r: number }>,
   title?: string,
   options?: Partial<ChartToolConfig['options']>
 ): string {
@@ -339,6 +380,12 @@ export function createChart(
         return ChartTool.createScatterChart(data as Array<{ x: number; y: number }>, title);
       }
       throw new Error('Scatter chart requires array of {x, y} objects');
+    
+    case 'bubble':
+      if (Array.isArray(data) && typeof data[0] === 'object' && 'x' in data[0] && 'y' in data[0] && 'r' in data[0]) {
+        return ChartTool.createBubbleChart(data as Array<{ x: number; y: number; r: number }>, title);
+      }
+      throw new Error('Bubble chart requires array of {x, y, r} objects');
     
     default:
       throw new Error(`Unsupported chart type: ${type}`);

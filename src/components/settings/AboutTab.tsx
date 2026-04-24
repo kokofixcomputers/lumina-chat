@@ -100,7 +100,7 @@ export default function AboutTab({ taglineIndex, fade }: AboutTabProps) {
         </div>
 
         <div className="text-sm text-[rgb(var(--muted))]">
-          <p>Build {shortSha}</p>
+          {!tauriVersion && <p>Build {shortSha}</p>}
           {tauriVersion && <p>Desktop App {tauriVersion}</p>}
         </div>
       </div>

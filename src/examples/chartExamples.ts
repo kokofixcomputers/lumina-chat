@@ -89,6 +89,22 @@ export const chartExamples = {
     ],
     'Correlation Analysis',
     'rgba(75, 192, 192, 1)'
+  ),
+
+  // Bubble chart example
+  bubbleChart: ChartTool.createBubbleChart(
+    [
+      { x: 10, y: 20, r: 5 },
+      { x: 15, y: 35, r: 8 },
+      { x: 25, y: 45, r: 12 },
+      { x: 30, y: 30, r: 6 },
+      { x: 35, y: 55, r: 10 },
+      { x: 40, y: 40, r: 7 },
+      { x: 45, y: 60, r: 15 },
+      { x: 50, y: 50, r: 9 }
+    ],
+    'Bubble Size Analysis',
+    'rgba(255, 99, 132, 1)'
   )
 };
 
@@ -192,6 +208,56 @@ export const chartTemplate = {
       "title": {
         "display": true,
         "text": "Chart Title"
+      }
+    }
+  }
+}
+\`\`\``,
+
+  bubble: `Use this format for bubble charts:
+\`\`\`chart
+{
+  "type": "bubble",
+  "data": {
+    "datasets": [{
+      "label": "Bubble Data",
+      "data": [
+        {"x": 10, "y": 20, "r": 5},
+        {"x": 15, "y": 35, "r": 8},
+        {"x": 25, "y": 45, "r": 12}
+      ],
+      "backgroundColor": "rgba(54, 162, 235, 0.5)",
+      "borderColor": "rgba(54, 162, 235, 1)",
+      "borderWidth": 1
+    }]
+  },
+  "options": {
+    "responsive": true,
+    "plugins": {
+      "title": {
+        "display": true,
+        "text": "Chart Title"
+      },
+      "legend": {
+        "display": false
+      }
+    },
+    "scales": {
+      "x": {
+        "display": true,
+        "title": {
+          "display": true,
+          "text": "X Axis"
+        },
+        "beginAtZero": false
+      },
+      "y": {
+        "display": true,
+        "title": {
+          "display": true,
+          "text": "Y Axis"
+        },
+        "beginAtZero": true
       }
     }
   }

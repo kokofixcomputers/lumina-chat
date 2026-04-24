@@ -37,6 +37,7 @@ jobs:
           cache: pnpm
 
       - name: Update package.json version from release tag
+        shell: bash
         run: |
           VERSION="${{ github.event.release.tag_name }}"
           VERSION="${VERSION#v}"

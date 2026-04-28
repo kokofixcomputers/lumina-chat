@@ -317,7 +317,7 @@
   p, li, h1, h2, h3, code:not(pre code) {
     word-wrap: break-word;
     overflow-wrap: break-word;
-    word-break: break-word;
+    word-break: normal;
   }
   
   /* Ensure pre and code blocks scroll horizontally instead of breaking layout */

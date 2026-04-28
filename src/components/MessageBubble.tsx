@@ -198,7 +198,7 @@ function parseInline(text: string): React.ReactNode {
       return (
         <code
           key={i}
-          className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.08] text-[12px] font-mono"
+          className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.08] text-[12px] font-mono break-words overflow-wrap-anywhere"
         >
           {p.slice(1, -1)}
         </code>
@@ -399,15 +399,15 @@ function renderContent(content: string) {
       }
     }
 
-    if (line.startsWith('### ')) { out.push(<h3 key={k++} className="text-[14px] font-semibold mt-4 mb-1">{parseInline(line.slice(4))}</h3>); }
-    else if (line.startsWith('#### ')) { out.push(<h4 key={k++} className="text-[13px] font-semibold mt-4 mb-1">{parseInline(line.slice(5))}</h4>); }
-    else if (line.startsWith('## ')) { out.push(<h2 key={k++} className="text-[15px] font-semibold mt-4 mb-1">{parseInline(line.slice(3))}</h2>); }
-    else if (line.startsWith('# ')) { out.push(<h1 key={k++} className="text-[16px] font-semibold mt-4 mb-2">{parseInline(line.slice(2))}</h1>); }
-    else if (line.match(/^[-*] /)) { out.push(<li key={k++} className="ml-5 list-disc text-[13.5px] leading-relaxed">{parseInline(line.slice(2))}</li>); }
-    else if (line.match(/^\d+\. /)) { out.push(<li key={k++} className="ml-5 list-decimal text-[13.5px] leading-relaxed">{parseInline(line.replace(/^\d+\. /, ''))}</li>); }
+    if (line.startsWith('### ')) { out.push(<h3 key={k++} className="text-[14px] font-semibold mt-4 mb-1 break-words overflow-wrap-anywhere">{parseInline(line.slice(4))}</h3>); }
+    else if (line.startsWith('#### ')) { out.push(<h4 key={k++} className="text-[13px] font-semibold mt-4 mb-1 break-words overflow-wrap-anywhere">{parseInline(line.slice(5))}</h4>); }
+    else if (line.startsWith('## ')) { out.push(<h2 key={k++} className="text-[15px] font-semibold mt-4 mb-1 break-words overflow-wrap-anywhere">{parseInline(line.slice(3))}</h2>); }
+    else if (line.startsWith('# ')) { out.push(<h1 key={k++} className="text-[16px] font-semibold mt-4 mb-2 break-words overflow-wrap-anywhere">{parseInline(line.slice(2))}</h1>); }
+    else if (line.match(/^[-*] /)) { out.push(<li key={k++} className="ml-5 list-disc text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere">{parseInline(line.slice(2))}</li>); }
+    else if (line.match(/^\d+\. /)) { out.push(<li key={k++} className="ml-5 list-decimal text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere">{parseInline(line.replace(/^\d+\. /, ''))}</li>); }
     else if (line === '') { out.push(<div key={k++} className="h-2.5" />); }
     else if (/^---+$/.test(line.trim())) { out.push(<hr key={k++} className="my-3 border-none h-px bg-[rgb(var(--border))]" />); }
-    else { out.push(<p key={k++} className="text-[13.5px] leading-relaxed">{parseInline(line)}</p>); }
+    else { out.push(<p key={k++} className="text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere">{parseInline(line)}</p>); }
     i++;
   }
   return out;

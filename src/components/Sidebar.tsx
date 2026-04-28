@@ -199,7 +199,7 @@ export default function Sidebar({
         />
       )}
       
-      <aside className={`sidebar fixed md:relative z-50 transition-transform duration-300 md:translate-x-0 ${
+      <aside className={`sidebar fixed inset-y-0 left-0 md:relative z-50 transition-transform duration-300 md:translate-x-0 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
       {/* User header */}

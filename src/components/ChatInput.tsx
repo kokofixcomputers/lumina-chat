@@ -315,21 +315,11 @@ export default function ChatInput({
   const ModelIcon = typeof modelInfo.icon === 'string' ? null : modelInfo.icon;
 
   // Group filtered models by provider
-  const normalizeSearch = (value: string) =>
-    value
-      .toLowerCase()
-      .trim()
-      .replace(/[-\s]+/g, " "); // treat "-" and spaces the same
-
-  const query = normalizeSearch(modelSearch);
-
-  const filteredModels = query
-    ? allModels.filter(m => {
-        const name = normalizeSearch(m.name);
-        const provider = normalizeSearch(m.providerName);
-
-        return name.includes(query) || provider.includes(query);
-      })
+  const filteredModels = modelSearch.trim()
+    ? allModels.filter(m =>
+        m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
+        m.providerName.toLowerCase().includes(modelSearch.toLowerCase())
+      )
     : allModels;
 
   const grouped = filteredModels.reduce<Record<string, Model[]>>((acc, m) => {
@@ -727,7 +717,7 @@ export default function ChatInput({
   if (qandaMode && qandaQuestions.length > 0) {
     const currentQ = qandaQuestions[currentQandaIndex];
     return (
-      <div className="w-full mx-auto px-2 sm:px-4 pb-5 pt-2 relative overflow-x-hidden min-w-0">
+      <div className="w-full sm:max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2">
         <div className="chat-input-box">
           <div className="px-4 pt-4 pb-3">
             <div className="text-xs text-[rgb(var(--muted))] mb-2">Question {currentQandaIndex + 1} of {qandaQuestions.length}</div>
@@ -1036,7 +1026,7 @@ export default function ChatInput({
           <button
             ref={modelBtnRef}
             onClick={openModelPicker}
-            className={`${overflowItems.includes('model') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0`}
+            className={`${overflowItems.includes('model') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
           >
             {typeof modelInfo.icon === 'string' ? (
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[rgb(var(--border))]">
@@ -1047,7 +1037,7 @@ export default function ChatInput({
                 <ModelIcon size={11} />
               </div>
             ) : null}
-            <span className="font-medium">{displayModelName}</span>
+            <span className="font-medium truncate">{displayModelName}</span>
             <ChevronDown size={11} />
           </button>
           <button

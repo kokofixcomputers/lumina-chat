@@ -426,7 +426,7 @@ function renderContent(content: string) {
         const rows = tableLines.slice(2).map(row => row.split('|').slice(1, -1).map(c => c.trim()));
         out.push(
           <div key={k++} className="overflow-x-auto my-3 rounded-xl overflow-hidden border border-[rgb(var(--border))]">
-            <table className="border-collapse text-[13px]">
+            <table className="min-w-full border-collapse text-[13px]">
               <thead className="bg-black/[0.03] dark:bg-white/[0.05]">
                 <tr>
                   {headers.map((h, idx) => (
@@ -720,7 +720,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
   }
 
   return (
-    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 mx-auto w-full mb-3 overflow-x-hidden ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-in-up`}>
+    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 sm:max-w-4xl mx-auto w-full mb-3 overflow-x-hidden ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-in-up`}>
       {/* Avatar */}
       {!isUser && (
         <div className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center text-white dark:text-black text-[11px] font-bold mt-0.5">
@@ -734,7 +734,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
         </div>
       )}
 
-      <div className={`flex flex-col ${isUser ? 'items-center sm:items-end' : 'items-start'} ${isUser ? 'w-auto' : 'flex-1'} min-w-0`}>
+      <div className={`flex flex-col ${isUser ? 'items-center sm:items-end' : 'items-start'} ${isUser ? 'w-full sm:w-auto sm:max-w-[70%]' : 'flex-1'} min-w-0`}>
         {!isUser && modelName && (
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[13px] font-medium text-[rgb(var(--text))]">{displayName}</span>

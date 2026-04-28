@@ -1026,7 +1026,7 @@ export default function ChatInput({
           <button
             ref={modelBtnRef}
             onClick={openModelPicker}
-            className={`${overflowItems.includes('model') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
+            className={`${overflowItems.includes('model') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0`}
           >
             {typeof modelInfo.icon === 'string' ? (
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[rgb(var(--border))]">
@@ -1037,7 +1037,7 @@ export default function ChatInput({
                 <ModelIcon size={11} />
               </div>
             ) : null}
-            <span className="font-medium truncate">{displayModelName}</span>
+            <span className="font-medium">{displayModelName}</span>
             <ChevronDown size={11} />
           </button>
           <button

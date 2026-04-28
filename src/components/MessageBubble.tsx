@@ -726,13 +726,13 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
             </div>
           ) : (
             <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[18px_18px_4px_18px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_1px_4px_rgba(0,0,0,0.15)] group max-w-full">
-              <p className="whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.content}</p>
+              <p className="message-text whitespace-pre-wrap">{message.content}</p>
             </div>
           )
         ) : (
           <div 
             ref={contentRef}
-            className={`text-[rgb(var(--text))] w-full min-w-0 break-words overflow-wrap-anywhere ${displayMessage.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}
+            className={`text-[rgb(var(--text))] w-full min-w-0 message-text ${displayMessage.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}
           >
             {displayMessage.isStep && (
               <div className="mb-2">

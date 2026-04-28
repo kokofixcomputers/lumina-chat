@@ -313,11 +313,13 @@
   /* ── Word wrapping ── */
   .overflow-wrap-anywhere { overflow-wrap: anywhere; }
   
-  /* Force word wrapping on all text elements within messages */
+  /* Force word wrapping on all message text elements */
+  .message-text,
   p, li, h1, h2, h3, code:not(pre code) {
-    word-wrap: break-word;
     overflow-wrap: break-word;
+    word-wrap: break-word;
     word-break: normal;
+    hyphens: auto;
   }
   
   /* Ensure pre and code blocks scroll horizontally instead of breaking layout */

@@ -767,7 +767,7 @@ export default function ChatInput({
   
   return (
     <div 
-      className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2 relative"
+      className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2 relative overflow-x-hidden"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
@@ -877,7 +877,7 @@ export default function ChatInput({
       <input ref={fileRef} type="file" accept="image/*,text/*,.txt,.md,.json,.csv,.log" multiple className="hidden" onChange={handleFileChange} />
 
       {/* Main input box */}
-      <div className="chat-input-box">
+      <div className="chat-input-box overflow-hidden">
         <div className="relative">
           {renderTextWithHighlight()}
           <textarea
@@ -943,7 +943,7 @@ export default function ChatInput({
         </div>
 
         {/* Bottom: mode + model picker + reasoning effort */}
-        <div ref={bottomBarRef} className="flex items-center px-3 pb-2.5 gap-2 overflow-hidden">
+        <div ref={bottomBarRef} className="flex flex-wrap items-center px-3 pb-2.5 gap-2 overflow-hidden min-w-0">
           {!useResponsesApi && onModeChange && (
             <div className="flex gap-1">
               <button

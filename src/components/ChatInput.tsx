@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
   Send, Paperclip, X, Loader2,
   Smile, Image as Table, LayoutGrid,
@@ -214,6 +214,9 @@ export default function ChatInput({
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [showContextWarning, setShowContextWarning] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [overflowItems, setOverflowItems] = useState<string[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
   const [quote, setQuote] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -227,6 +230,9 @@ export default function ChatInput({
   const reasoningMenuRef = useRef<HTMLDivElement>(null);
   const fineTuningBtnRef = useRef<HTMLButtonElement>(null);
   const fineTuningDropdownRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
   const fineTuningSearchRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
   const { fineTunings } = useFineTuningStore();
@@ -257,6 +263,49 @@ export default function ChatInput({
     window.addEventListener('addQuote', handleAddQuote as EventListener);
     return () => window.removeEventListener('addQuote', handleAddQuote as EventListener);
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!bottomBarRef.current) return;
+    if (!isMobile) {
+      if (overflowItems.length > 0) {
+        setOverflowItems([]);
+      }
+      return;
+    }
+
+    const overflowOrder = ['buildGroup', 'reasoning', 'fineTuning', 'model'];
+    const row = bottomBarRef.current;
+
+    if (row.scrollWidth > row.clientWidth && overflowItems.length < overflowOrder.length) {
+      const nextHide = overflowOrder.find(item => !overflowItems.includes(item));
+      if (nextHide) {
+        setOverflowItems(prev => [...prev, nextHide]);
+      }
+    } else if (row.scrollWidth <= row.clientWidth && overflowItems.length > 0) {
+      setOverflowItems(prev => prev.slice(0, -1));
+    }
+  }, [isMobile, overflowItems, selectedFineTuningId, buildMode, useResponsesApi, reasoningEffort, selectedModelId, allModels.length, fineTunings.length]);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node) &&
+        moreButtonRef.current && !moreButtonRef.current.contains(e.target as Node)
+      ) {
+        setShowMoreMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMoreMenu]);
 
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
   const canAttachImages = currentModel?.supportsImages ?? false;
@@ -894,7 +943,7 @@ export default function ChatInput({
         </div>
 
         {/* Bottom: mode + model picker + reasoning effort */}
-        <div className="flex items-center px-3 pb-2.5 gap-2">
+        <div ref={bottomBarRef} className="flex items-center px-3 pb-2.5 gap-2 overflow-hidden">
           {!useResponsesApi && onModeChange && (
             <div className="flex gap-1">
               <button
@@ -920,7 +969,7 @@ export default function ChatInput({
             </div>
           )}
           {onBuildModeChange && (
-            <div className="flex items-center gap-1.5">
+            <div className={`${overflowItems.includes('buildGroup') ? 'hidden' : 'flex'} items-center gap-1.5`}>
               <button
                 onClick={() => onBuildModeChange(!buildMode)}
                 className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all ${
@@ -943,28 +992,30 @@ export default function ChatInput({
             </div>
           )}
           {useResponsesApi && onReasoningEffortChange && (
-            <button
-              ref={reasoningBtnRef}
-              onClick={() => {
-                if (!reasoningBtnRef.current) return;
-                const rect = reasoningBtnRef.current.getBoundingClientRect();
-                setReasoningMenuPos({ top: rect.top, left: rect.left });
-                setShowReasoningMenu(!showReasoningMenu);
-              }}
-              className={`flex items-center gap-1.5 text-[12px] transition-colors rounded-md px-2 py-0.5 ${
-                reasoningEffort === 'off' 
-                  ? 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                  : reasoningEffort === 'low'
-                  ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
-                  : reasoningEffort === 'medium'
-                  ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
-                  : 'bg-red-500/20 text-red-600 dark:text-red-400'
-              }`}
-            >
-              <Sparkles size={13} />
-              <span className="font-medium capitalize">{reasoningEffort}</span>
-              <ChevronDown size={11} />
-            </button>
+            <div className={`${overflowItems.includes('reasoning') ? 'hidden' : 'flex'} items-center`}>
+              <button
+                ref={reasoningBtnRef}
+                onClick={() => {
+                  if (!reasoningBtnRef.current) return;
+                  const rect = reasoningBtnRef.current.getBoundingClientRect();
+                  setReasoningMenuPos({ top: rect.top, left: rect.left });
+                  setShowReasoningMenu(!showReasoningMenu);
+                }}
+                className={`flex items-center gap-1.5 text-[12px] transition-colors rounded-md px-2 py-0.5 ${
+                  reasoningEffort === 'off' 
+                    ? 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                    : reasoningEffort === 'low'
+                    ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
+                    : reasoningEffort === 'medium'
+                    ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
+                    : 'bg-red-500/20 text-red-600 dark:text-red-400'
+                }`}
+              >
+                <Sparkles size={13} />
+                <span className="font-medium capitalize">{reasoningEffort}</span>
+                <ChevronDown size={11} />
+              </button>
+            </div>
           )}
           {/* Separator divider */}
           <div className="w-px h-4 bg-[rgb(var(--border))] mx-1" />
@@ -975,7 +1026,7 @@ export default function ChatInput({
           <button
             ref={modelBtnRef}
             onClick={openModelPicker}
-            className="flex items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+            className={`${overflowItems.includes('model') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
           >
             {typeof modelInfo.icon === 'string' ? (
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[rgb(var(--border))]">
@@ -986,22 +1037,107 @@ export default function ChatInput({
                 <ModelIcon size={11} />
               </div>
             ) : null}
-            <span className="font-medium">{displayModelName}</span>
+            <span className="font-medium truncate">{displayModelName}</span>
             <ChevronDown size={11} />
           </button>
           <button
             ref={fineTuningBtnRef}
             onClick={openFineTuningPicker}
-            className="flex items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+            className={`${overflowItems.includes('fineTuning') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
           >
             <div className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
               <BookOpen size={11} />
             </div>
-            <span className="font-medium">
+            <span className="font-medium truncate" title={selectedFineTuningId ? fineTunings.find(ft => ft.id === selectedFineTuningId)?.name || 'Knowledge' : 'None'}>
               {selectedFineTuningId ? fineTunings.find(ft => ft.id === selectedFineTuningId)?.name || 'Knowledge' : 'None'}
             </span>
             <ChevronDown size={11} />
           </button>
+          {overflowItems.length > 0 && (
+            <div className="relative">
+              <button
+                ref={moreButtonRef}
+                type="button"
+                onClick={() => setShowMoreMenu(open => !open)}
+                className="toolbar-btn"
+                title="More options"
+              >
+                <MoreHorizontal size={15} />
+              </button>
+              {showMoreMenu && (
+                <div
+                  ref={moreMenuRef}
+                  className="absolute right-0 top-full mt-2 w-56 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl shadow-2xl p-2 z-50"
+                >
+                  {overflowItems.includes('buildGroup') && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onBuildModeChange?.(!buildMode);
+                          setShowMoreMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                      >
+                        {buildMode ? 'Disable Build' : 'Enable Build'}
+                      </button>
+                      {buildMode && onOpenBuildFS && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenBuildFS?.();
+                            setShowMoreMenu(false);
+                          }}
+                          className="w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                        >
+                          Open Build Files
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {overflowItems.includes('reasoning') && useResponsesApi && onReasoningEffortChange && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!reasoningBtnRef.current) return;
+                        const rect = reasoningBtnRef.current.getBoundingClientRect();
+                        setReasoningMenuPos({ top: rect.top, left: rect.left });
+                        setShowReasoningMenu(true);
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                    >
+                      Reasoning: {reasoningEffort}
+                    </button>
+                  )}
+                  {overflowItems.includes('model') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openModelPicker();
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                    >
+                      Model: {displayModelName}
+                    </button>
+                  )}
+                  {overflowItems.includes('fineTuning') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openFineTuningPicker();
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                    >
+                      Knowledge: {selectedFineTuningId ? fineTunings.find(ft => ft.id === selectedFineTuningId)?.name || 'Knowledge' : 'None'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

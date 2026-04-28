@@ -315,11 +315,21 @@ export default function ChatInput({
   const ModelIcon = typeof modelInfo.icon === 'string' ? null : modelInfo.icon;
 
   // Group filtered models by provider
-  const filteredModels = modelSearch.trim()
-    ? allModels.filter(m =>
-        m.name.toLowerCase().includes(modelSearch.toLowerCase()) ||
-        m.providerName.toLowerCase().includes(modelSearch.toLowerCase())
-      )
+  const normalizeSearch = (value: string) =>
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[-\s]+/g, " "); // treat "-" and spaces the same
+
+  const query = normalizeSearch(modelSearch);
+
+  const filteredModels = query
+    ? allModels.filter(m => {
+        const name = normalizeSearch(m.name);
+        const provider = normalizeSearch(m.providerName);
+
+        return name.includes(query) || provider.includes(query);
+      })
     : allModels;
 
   const grouped = filteredModels.reduce<Record<string, Model[]>>((acc, m) => {

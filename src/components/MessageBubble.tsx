@@ -179,7 +179,7 @@ function parseInline(text: string): React.ReactNode {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 dark:text-blue-400 underline underline-offset-2 break-words overflow-wrap-anywhere"
+            className="text-blue-600 dark:text-blue-400 underline underline-offset-2 break-words"
             onClick={e => openLink(url, e)}
           >
             {label}
@@ -399,15 +399,15 @@ function renderContent(content: string) {
       }
     }
 
-    if (line.startsWith('### ')) { out.push(<h3 key={k++} className="text-[14px] font-semibold mt-4 mb-1 break-words overflow-wrap-anywhere">{parseInline(line.slice(4))}</h3>); }
-    else if (line.startsWith('#### ')) { out.push(<h4 key={k++} className="text-[13px] font-semibold mt-4 mb-1 break-words overflow-wrap-anywhere">{parseInline(line.slice(5))}</h4>); }
-    else if (line.startsWith('## ')) { out.push(<h2 key={k++} className="text-[15px] font-semibold mt-4 mb-1 break-words overflow-wrap-anywhere">{parseInline(line.slice(3))}</h2>); }
-    else if (line.startsWith('# ')) { out.push(<h1 key={k++} className="text-[16px] font-semibold mt-4 mb-2 break-words overflow-wrap-anywhere">{parseInline(line.slice(2))}</h1>); }
-    else if (line.match(/^[-*] /)) { out.push(<li key={k++} className="ml-5 list-disc text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere">{parseInline(line.slice(2))}</li>); }
-    else if (line.match(/^\d+\. /)) { out.push(<li key={k++} className="ml-5 list-decimal text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere">{parseInline(line.replace(/^\d+\. /, ''))}</li>); }
+    if (line.startsWith('### ')) { out.push(<h3 key={k++} className="text-[14px] font-semibold mt-4 mb-1 break-words">{parseInline(line.slice(4))}</h3>); }
+    else if (line.startsWith('#### ')) { out.push(<h4 key={k++} className="text-[13px] font-semibold mt-4 mb-1 break-words">{parseInline(line.slice(5))}</h4>); }
+    else if (line.startsWith('## ')) { out.push(<h2 key={k++} className="text-[15px] font-semibold mt-4 mb-1 break-words">{parseInline(line.slice(3))}</h2>); }
+    else if (line.startsWith('# ')) { out.push(<h1 key={k++} className="text-[16px] font-semibold mt-4 mb-2 break-words">{parseInline(line.slice(2))}</h1>); }
+    else if (line.match(/^[-*] /)) { out.push(<li key={k++} className="ml-5 list-disc text-[13.5px] leading-relaxed break-words">{parseInline(line.slice(2))}</li>); }
+    else if (line.match(/^\d+\. /)) { out.push(<li key={k++} className="ml-5 list-decimal text-[13.5px] leading-relaxed break-words">{parseInline(line.replace(/^\d+\. /, ''))}</li>); }
     else if (line === '') { out.push(<div key={k++} className="h-2.5" />); }
     else if (/^---+$/.test(line.trim())) { out.push(<hr key={k++} className="my-3 border-none h-px bg-[rgb(var(--border))]" />); }
-    else { out.push(<p key={k++} className="text-[13.5px] leading-relaxed break-words overflow-wrap-anywhere">{parseInline(line)}</p>); }
+    else { out.push(<p key={k++} className="text-[13.5px] leading-relaxed break-words">{parseInline(line)}</p>); }
     i++;
   }
   return out;
@@ -725,14 +725,14 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
               </div>
             </div>
           ) : (
-            <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[18px_18px_4px_18px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_1px_4px_rgba(0,0,0,0.15)] group max-w-full">
-              <p className="message-text whitespace-pre-wrap">{message.content}</p>
+            <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[18px_18px_4px_18px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_1px_4px_rgba(0,0,0,0.15)] group max-w-full break-words">
+              <p className="message-text whitespace-pre-wrap break-words">{message.content}</p>
             </div>
           )
         ) : (
           <div 
             ref={contentRef}
-            className={`text-[rgb(var(--text))] w-full min-w-0 message-text ${displayMessage.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}
+            className={`text-[rgb(var(--text))] w-full min-w-0 message-text break-words ${displayMessage.isError ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-xl p-3' : ''}`}
           >
             {displayMessage.isStep && (
               <div className="mb-2">

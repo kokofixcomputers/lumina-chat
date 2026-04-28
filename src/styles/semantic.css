@@ -316,9 +316,9 @@
   /* Force word wrapping on all message text elements */
   .message-text,
   p, li, h1, h2, h3, code:not(pre code) {
-    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
     word-wrap: break-word;
-    word-break: normal;
+    word-break: break-word;
     hyphens: auto;
   }
   

@@ -46,7 +46,8 @@
   /* ── Sidebar ── */
   .sidebar {
     @apply flex flex-col bg-[rgb(var(--panel))] border-r border-[rgb(var(--border))]
-           w-[280px] md:w-[260px] shrink-0 h-full select-none;
+          min-w-[180px] max-w-[280px] w-[260px] shrink h-full select-none;
+    /*   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ NOW it can shrink from 260px down to 180px */
   }
 
   .sidebar-item {

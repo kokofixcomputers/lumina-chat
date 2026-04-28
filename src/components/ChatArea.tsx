@@ -254,8 +254,8 @@ export default function ChatArea({
 
   // ── Chat view ───────────────────────────────────────
   return (
-    <div className="flex-1 flex min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
-      <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex min-w-0 min-h-0 w-0 bg-[rgb(var(--bg))] animate-fade-in">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 w-0">
       {/* Header */}
       <div className="flex items-center px-5 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -308,7 +308,7 @@ export default function ChatArea({
 
           {/* Thinking */}
           {isGenerating && !streamingContent && (
-            <div className="flex gap-3 px-8 py-2 max-w-4xl mx-auto w-full">
+            <div className="flex gap-3 px-4 sm:px-8 py-2 sm:max-w-4xl mx-auto w-full">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0">
                 <Bot size={13} className="text-white dark:text-black" />
               </div>

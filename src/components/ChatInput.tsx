@@ -717,7 +717,7 @@ export default function ChatInput({
   if (qandaMode && qandaQuestions.length > 0) {
     const currentQ = qandaQuestions[currentQandaIndex];
     return (
-      <div className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2">
+      <div className="w-full mx-auto px-2 sm:px-4 pb-5 pt-2 relative overflow-x-hidden min-w-0">
         <div className="chat-input-box">
           <div className="px-4 pt-4 pb-3">
             <div className="text-xs text-[rgb(var(--muted))] mb-2">Question {currentQandaIndex + 1} of {qandaQuestions.length}</div>
@@ -767,7 +767,7 @@ export default function ChatInput({
   
   return (
     <div 
-      className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2 relative overflow-x-hidden"
+      className="w-full sm:max-w-3xl mx-auto px-2 sm:px-4 pb-5 pt-2 relative overflow-x-hidden"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}

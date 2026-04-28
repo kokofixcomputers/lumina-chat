@@ -211,12 +211,17 @@ function parseInline(text: string): React.ReactNode {
 }
 
 function getWrapLength() {
-  if (typeof window === 'undefined') return 45;
+  if (typeof window === 'undefined') return 35;
   const width = window.innerWidth;
-  if (width < 480) return 18;
-  if (width < 768) return 28;
-  if (width < 1024) return 36;
-  return 45;
+  // Calculate wrap length continuously based on screen width
+  // Ensure wrapping is always active on mobile
+  if (width < 360) return 10;
+  if (width < 1024) {
+    // Smooth scaling: each pixel of width adds to wrap length
+    // At 360px: 10, scales up to ~22 at 1024px
+    return Math.max(10, Math.floor(10 + (width - 360) * 12 / 664));
+  }
+  return 35;
 }
 
 function insertSoftBreaks(text: string, maxWordLength: number) {
@@ -238,7 +243,9 @@ function insertSoftBreaks(text: string, maxWordLength: number) {
       }
     } else {
       // Word: if it doesn't fit on current line, wrap it to next line entirely
-      if (lineLength > 0 && lineLength + segment.length > maxWordLength * 0.85) {
+      // Use lower threshold on very small screens for more aggressive wrapping
+      const threshold = maxWordLength <= 14 ? 0.65 : 0.8;
+      if (lineLength > 0 && lineLength + segment.length > maxWordLength * threshold) {
         result.push('\u200b');
         lineLength = 0;
       }
@@ -419,7 +426,7 @@ function renderContent(content: string) {
         const rows = tableLines.slice(2).map(row => row.split('|').slice(1, -1).map(c => c.trim()));
         out.push(
           <div key={k++} className="overflow-x-auto my-3 rounded-xl overflow-hidden border border-[rgb(var(--border))]">
-            <table className="min-w-full border-collapse text-[13px]">
+            <table className="border-collapse text-[13px]">
               <thead className="bg-black/[0.03] dark:bg-white/[0.05]">
                 <tr>
                   {headers.map((h, idx) => (
@@ -561,7 +568,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
     const hasArtifacts = message.artifacts && message.artifacts.length > 0;
     
     return (
-      <div className="flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 max-w-4xl mx-auto w-full mb-3">
+      <div className="flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 mx-auto w-full mb-3">
         <div className="shrink-0 w-7 h-7 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mt-0.5">
           {message.tool_status === 'loading' && <Loader2 size={14} className="animate-spin text-purple-600 dark:text-purple-400" />}
           {message.tool_status === 'success' && <CheckCircle size={14} className="text-green-600 dark:text-green-400" />}
@@ -713,7 +720,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
   }
 
   return (
-    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 max-w-4xl mx-auto w-full mb-3 overflow-x-hidden ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-in-up`}>
+    <div className={`flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 mx-auto w-full mb-3 overflow-x-hidden ${isUser ? 'flex-row-reverse' : 'flex-row'} animate-slide-in-up`}>
       {/* Avatar */}
       {!isUser && (
         <div className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center text-white dark:text-black text-[11px] font-bold mt-0.5">
@@ -727,7 +734,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
         </div>
       )}
 
-      <div className={`flex flex-col ${isUser ? 'items-center sm:items-end' : 'items-start'} ${isUser ? 'w-full sm:w-auto sm:max-w-[70%]' : 'flex-1'} min-w-0`}>
+      <div className={`flex flex-col ${isUser ? 'items-center sm:items-end' : 'items-start'} ${isUser ? 'w-full sm:w-auto' : 'flex-1'} min-w-0`}>
         {!isUser && modelName && (
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[13px] font-medium text-[rgb(var(--text))]">{displayName}</span>

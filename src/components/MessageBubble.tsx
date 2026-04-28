@@ -182,7 +182,7 @@ function parseInline(text: string): React.ReactNode {
             className="text-blue-600 dark:text-blue-400 underline underline-offset-2 break-words"
             onClick={e => openLink(url, e)}
           >
-            {label}
+            {insertSoftBreaks(label, getWrapLength())}
           </a>
         );
       }
@@ -200,14 +200,30 @@ function parseInline(text: string): React.ReactNode {
           key={i}
           className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/[0.08] text-[12px] font-mono break-words"
         >
-          {p.slice(1, -1)}
+          {insertSoftBreaks(p.slice(1, -1), getWrapLength())}
         </code>
       );
     }
 
 
-    return p;
+    return insertSoftBreaks(p, getWrapLength());
   });
+}
+
+function getWrapLength() {
+  if (typeof window === 'undefined') return 45;
+  const width = window.innerWidth;
+  if (width < 480) return 18;
+  if (width < 768) return 28;
+  if (width < 1024) return 36;
+  return 45;
+}
+
+function insertSoftBreaks(text: string, maxWordLength: number) {
+  return text.split(/(\s+)/).map(segment => {
+    if (segment.length <= maxWordLength || /\s+/.test(segment)) return segment;
+    return segment.replace(new RegExp(`(.{1,${maxWordLength}})`, 'g'), '$1\u200b');
+  }).join('');
 }
 
 
@@ -726,7 +742,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
             </div>
           ) : (
             <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[18px_18px_4px_18px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_1px_4px_rgba(0,0,0,0.15)] group max-w-full break-words">
-              <p className="message-text whitespace-pre-wrap break-words">{message.content}</p>
+              <p className="message-text whitespace-pre-wrap break-words">{insertSoftBreaks(message.content, getWrapLength())}</p>
             </div>
           )
         ) : (

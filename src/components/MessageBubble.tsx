@@ -734,7 +734,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
         </div>
       )}
 
-      <div className={`flex flex-col ${isUser ? 'items-center sm:items-end' : 'items-start'} ${isUser ? 'w-full sm:w-auto' : 'flex-1'} min-w-0`}>
+      <div className={`flex flex-col ${isUser ? 'items-center sm:items-end' : 'items-start'} ${isUser ? 'w-auto' : 'flex-1'} min-w-0`}>
         {!isUser && modelName && (
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-[13px] font-medium text-[rgb(var(--text))]">{displayName}</span>

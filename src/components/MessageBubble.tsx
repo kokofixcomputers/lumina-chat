@@ -179,7 +179,7 @@ function parseInline(text: string): React.ReactNode {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 dark:text-blue-400 underline underline-offset-2"
+            className="text-blue-600 dark:text-blue-400 underline underline-offset-2 break-words overflow-wrap-anywhere"
             onClick={e => openLink(url, e)}
           >
             {label}

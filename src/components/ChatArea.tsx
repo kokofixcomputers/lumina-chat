@@ -280,7 +280,7 @@ export default function ChatArea({
       </div>
 
       {/* Messages */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto py-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden py-6">
         <div className="overflow-x-hidden">
           {conversation.messages.map((msg, idx) => (
             <MemoMessageBubble

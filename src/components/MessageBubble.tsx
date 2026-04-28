@@ -220,10 +220,42 @@ function getWrapLength() {
 }
 
 function insertSoftBreaks(text: string, maxWordLength: number) {
-  return text.split(/(\s+)/).map(segment => {
-    if (segment.length <= maxWordLength || /\s+/.test(segment)) return segment;
-    return segment.replace(new RegExp(`(.{1,${maxWordLength}})`, 'g'), '$1\u200b');
-  }).join('');
+  const segments = text.split(/(\s+)/);
+  let lineLength = 0;
+  const result: string[] = [];
+
+  for (const segment of segments) {
+    if (!segment) continue;
+
+    if (/\s+/.test(segment)) {
+      // Whitespace: if adding it would exceed wrap limit, replace with soft break
+      if (lineLength > 0 && lineLength + segment.length > maxWordLength) {
+        result.push('\u200b');
+        lineLength = 0;
+      } else {
+        result.push(segment);
+        lineLength += segment.length;
+      }
+    } else {
+      // Word: if it doesn't fit on current line, wrap it to next line entirely
+      if (lineLength > 0 && lineLength + segment.length > maxWordLength * 0.85) {
+        result.push('\u200b');
+        lineLength = 0;
+      }
+
+      // If word itself is too long, split it into chunks
+      if (segment.length > maxWordLength) {
+        const chunks = segment.match(new RegExp(`.{1,${maxWordLength}}`, 'g')) || [];
+        result.push(chunks.join('\u200b'));
+        lineLength = chunks[chunks.length - 1]?.length || 0;
+      } else {
+        result.push(segment);
+        lineLength += segment.length;
+      }
+    }
+  }
+
+  return result.join('');
 }
 
 

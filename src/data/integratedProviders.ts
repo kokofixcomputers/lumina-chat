@@ -92,4 +92,12 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
       { id: 'codestral', name: 'Codestral', contextLength: 32768, supportsImages: false, supportsStreaming: true },
     ],
   },
+  {
+    id: 'lmstudio',
+    name: 'LM Studio',
+    description: 'Local AI models via LM Studio API. Requires desktop app running with API enabled.',
+    baseUrlTemplate: 'http://localhost:1234/v1',
+    requireAuth: false,
+    defaultModels: [],
+  }
 ];

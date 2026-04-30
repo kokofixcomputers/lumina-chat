@@ -17,7 +17,8 @@
       "identifier": "http:allow-fetch",
       "allow": [
         { "url": "https://**" },
-        { "url": "https://enter.pollinations.ai/**" }
+        { "url": "https://enter.pollinations.ai/**" },
+	      { "url": "http://localhost:1234/**" }
       ]
     }
   ]

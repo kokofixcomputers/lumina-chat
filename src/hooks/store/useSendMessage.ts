@@ -183,6 +183,11 @@ export function useSendMessage({
     const apiMessages: Array<{ type?: string; role: string; content: unknown; tool_call_id?: string; tool_calls?: any[] }> = [];
     const responsesApiMessages: Array<{ type?: string; role: string; content: unknown; tool_call_id?: string }> = [];
 
+    // Helper to wrap content for Responses API format
+    const wrapResponsesApiContent = (text: string): Array<{ type: 'input_text'; text: string }> => {
+      return [{ type: 'input_text', text }];
+    };
+
     // Build system prompt - either from settings or create a default one for knowledge injection
     let systemPrompt = '';
     let shouldInjectKnowledge = false;
@@ -214,7 +219,7 @@ export function useSendMessage({
         systemPrompt += `\n\nMemories are enabled. When you learn important facts about the user (timezone, location, preferred languages, name, etc.), save them with memory_save so you can recall them in future conversations.`;
       }
       apiMessages.push({ role: 'system', content: systemPrompt });
-      responsesApiMessages.push({ type: 'message', role: 'system', content: systemPrompt });
+      responsesApiMessages.push({ type: 'message', role: 'system', content: wrapResponsesApiContent(systemPrompt) });
     }
 
     const currentConv = conversationsRef.current.find(c => c.id === convId);
@@ -243,8 +248,12 @@ export function useSendMessage({
         });
         parts.push({ type: 'text', text: m.content });
         apiMessages.push({ role: m.role, content: parts });
-        if (m.role === 'user') responsesApiMessages.push({ type: 'message', role: m.role, content: parts });
-        else responsesApiMessages.push({ type: 'message', role: m.role, content: m.content });
+        const responsesContent: unknown[] = [];
+        m.images.forEach(img => {
+          responsesContent.push({ type: 'input_image', image_url: img });
+        });
+        responsesContent.push({ type: 'input_text', text: m.content });
+        responsesApiMessages.push({ type: 'message', role: m.role, content: responsesContent });
       } else {
         const msg: any = { role: m.role, content: m.content };
         if (m.tool_calls && m.tool_calls.length > 0) {
@@ -261,7 +270,31 @@ export function useSendMessage({
           }
         }
         apiMessages.push(msg);
-        responsesApiMessages.push({ type: 'message', role: m.role, content: m.content });
+        
+        // For Responses API: Handle assistant messages with tool calls differently
+        if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+          // Assistant message with tool calls: use proper tool call format
+          const toolCallContent: any[] = [];
+          if (m.content) {
+            toolCallContent.push({ type: 'input_text', text: m.content });
+          }
+          m.tool_calls.forEach((tc: any) => {
+            toolCallContent.push({
+              type: 'tool_call',
+              id: tc.id,
+              function: {
+                name: tc.function.name,
+                arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments)
+              }
+            });
+          });
+          responsesApiMessages.push({ type: 'message', role: 'assistant', content: toolCallContent });
+        } else if (m.role === 'assistant') {
+          // For Responses API: Assistant messages use type: "output_text"
+          responsesApiMessages.push({ type: 'output_text', text: m.content });
+        } else {
+          responsesApiMessages.push({ type: 'message', role: m.role, content: wrapResponsesApiContent(m.content) });
+        }
       }
     }
 
@@ -995,8 +1028,22 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
 
       if (toolCalls.length > 0) {
         const isAnthropic = activeApiFormat?.id === 'anthropic';
+        const assistantMsgContent: any[] = [];
+        if (assistantContent) {
+          assistantMsgContent.push({ type: 'input_text', text: assistantContent });
+        }
+        toolCalls.forEach((tc: any) => {
+          assistantMsgContent.push({
+            type: 'tool_call',
+            id: tc.id,
+            function: {
+              name: tc.function.name,
+              arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments)
+            }
+          });
+        });
         const messagesToPass = useResponsesApi
-          ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: assistantContent || '' }, ...toolCalls.map(tc => ({ type: 'function_call', id: tc.fc_id || tc.id, name: tc.function.name, arguments: tc.function.arguments, call_id: tc.id, status: 'completed' }))]
+          ? [...responsesApiMessages, { type: 'output_text', text: assistantContent || '' }, ...toolCalls.map(tc => ({ type: 'function_call', id: tc.fc_id || tc.id, name: tc.function.name, arguments: tc.function.arguments, call_id: tc.id, status: 'completed' }))]
           : isAnthropic
             ? [...apiMessages, { role: 'assistant', content: toolCalls.map((tc: any) => ({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })() })) }]
             : [...apiMessages, { role: 'assistant', content: assistantContent || '', tool_calls: toolCalls }];
@@ -1005,7 +1052,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         setTimeout(async () => {
           try {
             const contMsgs = useResponsesApi
-              ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: assistantContent }, { type: 'message', role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }]
+              ? [...responsesApiMessages, { type: 'output_text', text: assistantContent }, { type: 'message', role: 'user', content: wrapResponsesApiContent(JSON.stringify({ status: 'tool_call_message_given' })) }]
               : [...apiMessages, { role: 'assistant', content: assistantContent }, { role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }];
             const contBody = useResponsesApi ? { model: model?.id || 'gpt-4o', input: contMsgs, store: false, stream: settings.modelSettings.stream, top_p: settings.modelSettings.topP, frequency_penalty: settings.modelSettings.frequencyPenalty, presence_penalty: settings.modelSettings.presencePenalty, tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration, buildMode), tool_choice: 'auto', ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}) } : { ...requestBody, messages: contMsgs, stream: settings.modelSettings.stream };
             const contRes = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(contBody) });

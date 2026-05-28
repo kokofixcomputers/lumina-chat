@@ -36,21 +36,32 @@ export default async function handler(req: Request) {
       });
     }
 
+    console.log('Hyping for:', { os, arch });
+    console.log('REDIS URL set:', !!process.env.UPSTASH_REDIS_REST_URL);
+    console.log('REDIS TOKEN set:', !!process.env.UPSTASH_REDIS_REST_TOKEN);
+
     // Increment counter for this os/arch combination
-    await redis.incr(`vote:${os}:${arch}`);
+    const result = await redis.incr(`vote:${os}:${arch}`);
+    
+    console.log('Redis incr result:', result);
 
     return new Response(JSON.stringify({ 
       success: true, 
       message: 'Thanks for hyping!',
       os,
-      arch
+      arch,
+      newCount: result
     }), {
       status: 200,
       headers: corsHeaders(),
     });
   } catch (error) {
     console.error('Hype error:', error);
-    return new Response(JSON.stringify({ error: 'Hype request failed' }), {
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+    return new Response(JSON.stringify({ 
+      error: 'Hype request failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }), {
       status: 500,
       headers: corsHeaders(),
     });

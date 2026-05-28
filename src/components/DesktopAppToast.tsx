@@ -35,10 +35,6 @@ export default function DesktopAppToast() {
     localStorage.setItem('desktop-app-toast-dismissed', 'true');
   };
 
-  const handleDownloadClick = () => {
-    window.open('/download', '_blank');
-  };
-
   if (!isVisible || isTauri() || isDismissed || isExcluded) {
     return null;
   }
@@ -56,12 +52,14 @@ export default function DesktopAppToast() {
           </h4>
           <p className="text-xs text-[rgb(var(--muted))] leading-relaxed mb-2">
             The desktop app offers more features and optimizations.{' '}
-            <button
-              onClick={handleDownloadClick}
+            <a
+              href="/download"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[rgb(var(--accent))] hover:underline font-medium"
             >
               Click here
-            </button>{' '}
+            </a>{' '}
             to download
           </p>
         </div>

@@ -4,10 +4,10 @@ export const config = {
 
 import { Redis } from '@upstash/redis';
 
-// Initialize Redis using environment variables
+// Initialize Redis using Vercel-configured Upstash env vars
 const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  url: process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
 });
 
 export default async function handler(req: Request) {
@@ -37,8 +37,6 @@ export default async function handler(req: Request) {
     }
 
     console.log('Hyping for:', { os, arch });
-    console.log('REDIS URL set:', !!process.env.UPSTASH_REDIS_REST_URL);
-    console.log('REDIS TOKEN set:', !!process.env.UPSTASH_REDIS_REST_TOKEN);
 
     // Increment counter for this os/arch combination
     const result = await redis.incr(`vote:${os}:${arch}`);

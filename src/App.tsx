@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Menu, Sparkles } from 'lucide-react';
+import { Routes, Route, useParams, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import SettingsPanel from './components/SettingsPanel';
@@ -9,6 +10,9 @@ import ViewChatModal from './components/ViewChatModal';
 import DesktopAppToast from './components/DesktopAppToast';
 import FineTuningList from './pages/FineTuningList';
 import FineTuningDetail from './pages/FineTuningDetail';
+import DownloadPage from './components/DownloadPage';
+import VersionsPage from './components/VersionsPage';
+import InstallationPage from './components/InstallationPage';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { mergeConversations } from './utils/mergeConversations';
@@ -21,7 +25,9 @@ import type { Panel, Message } from './types';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
+
 export default function App() {
+  const location = useLocation();
   const store = useAppStore();
   const [panel, setPanel] = useState<Panel>('chat');
   const [homeMode, setHomeMode] = useState<'chat' | 'image'>('chat');
@@ -32,6 +38,22 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
   const [showViewChatModal, setShowViewChatModal] = useState(false);
   const [fineTuningView, setFineTuningView] = useState<'list' | { id: string }>('list');
+  const navigate = useNavigate();
+
+  // Extract conversationId from pathname
+  const conversationId = location.pathname !== '/' ? location.pathname.slice(1) : null;
+
+  console.log('[APP RENDER] conversationId:', conversationId, 'pathname:', location.pathname, 'store.activeConvId:', store.activeConvId);
+
+  // Sync URL to store when URL changes
+  useEffect(() => {
+    console.log('[SYNC] conversationId:', conversationId, 'store.activeConvId:', store.activeConvId);
+    if (conversationId) {
+      console.log('[SYNC] Calling store.setActiveConvId with:', conversationId);
+      store.setActiveConvId(conversationId);
+      console.log('[SYNC] After calling, store.activeConvId:', store.activeConvId);
+    }
+  }, [conversationId]);
 
   const handleGetStarted = () => {
     localStorage.setItem('notfirsttime', 'true');
@@ -130,6 +152,7 @@ export default function App() {
     if (!convId) {
       convId = store.newConversation(homeMode, homeAttachments);
       store.setActiveConvId(convId);
+      navigate(`/${convId}`);
       if (homeBuildMode) store.setBuildMode(convId, true);
     }
     const conv = store.conversations.find(c => c.id === convId);
@@ -1273,168 +1296,136 @@ export default function App() {
           </div>
         </>
       )}
-      <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
-        {/* Mobile menu button */}
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="fixed top-4 left-4 z-30 md:hidden btn-icon shadow-lg"
-        >
-          <Menu size={20} />
-        </button>
+      <Routes>
+        <Route path="/download" element={<DownloadPage />} />
+        <Route path="/versions" element={<VersionsPage />} />
+        <Route path="/install" element={<InstallationPage />} />
+        <Route path="*" element={
+          <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
+            {/* Mobile menu button */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="fixed top-4 left-4 z-30 md:hidden btn-icon shadow-lg"
+            >
+              <Menu size={20} />
+            </button>
 
-        <Sidebar
-          conversations={store.conversations}
-          activeConvId={store.activeConvId}
-          currentPanel={panel}
-          settings={store.settings}
-          onSelectConv={(convId) => {
-            store.setActiveConvId(convId);
-            handleExitFineTuning();
-          }}
-          onGoHome={() => {
-            store.setActiveConvId(null);
-            handleExitFineTuning();
-          }}
-          onDeleteConv={store.deleteConversation}
-          onUpdateTitle={store.updateConversationTitle}
-          onOpenSettings={() => setPanel(p => p === 'settings' ? 'chat' : 'settings')}
-          onOpenProviders={openProviders}
-          onOpenViewChat={() => setShowViewChatModal(true)}
-          onOpenFineTuning={openFineTuning}
-          onToggleTheme={toggleTheme}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          syncStatus={syncStatus}
-        />
+            <Sidebar
+              conversations={store.conversations}
+              activeConvId={store.activeConvId}
+              currentPanel={panel}
+              settings={store.settings}
+              onSelectConv={(convId) => {
+                navigate(`/${convId}`);
+                handleExitFineTuning();
+              }}
+              onGoHome={() => {
+                navigate('/');
+                handleExitFineTuning();
+              }}
+              onDeleteConv={store.deleteConversation}
+              onUpdateTitle={store.updateConversationTitle}
+              onOpenSettings={() => setPanel(p => p === 'settings' ? 'chat' : 'settings')}
+              onOpenProviders={openProviders}
+              onOpenViewChat={() => setShowViewChatModal(true)}
+              onOpenFineTuning={openFineTuning}
+              onToggleTheme={toggleTheme}
+              isOpen={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+              syncStatus={syncStatus}
+            />
 
-        <div className="flex-1 flex min-w-0 overflow-hidden">
-          {panel === 'fine-tuning' ? (
-            fineTuningView === 'list' ? (
-              <FineTuningList onOpenFineTuningDetail={handleOpenFineTuningDetail} />
-            ) : (
-              <FineTuningDetail 
-                fineTuningId={typeof fineTuningView === 'object' ? fineTuningView.id : ''} 
-                onBack={() => setFineTuningView('list')} 
-              />
-            )
-          ) : (
-            <>
-              <ChatArea
-                conversation={store.activeConversation}
-                isGenerating={store.isGenerating}
-                streamingContent={store.streamingContent}
-                streamingContentRef={store.streamingContentRef}
-                allModels={store.allProviderModels}
-                onSend={handleSend}
-                onModelChange={handleModelChange}
-                defaultModelId={store.settings.defaultProviderModelId}
-                onTogglePanel={togglePanel}
-                onOpenProviders={openProviders}
-                onRetry={handleRetry}
-                onStopGeneration={store.stopGeneration}
-                onEditMessage={handleEditMessage}
-                onDeleteMessage={handleDeleteMessage}
-                onContinue={handleContinue}
-                onModeChange={handleModeChange}
-                onAttachmentsChange={handleAttachmentsChange}
-                onBuildModeChange={handleBuildModeChange}
-                homeBuildMode={homeBuildMode}
-                onGenerateTitle={handleGenerateTitle}
-                onGenerateFollowUps={handleGenerateFollowUps}
-                homeMode={homeMode}
-                homeAttachments={homeAttachments}
-                prettifyModelNames={store.settings.prettifyModelNames}
-                workflows={store.settings.workflows || []}
-                useResponsesApi={store.settings.modelSettings.useResponsesApi}
-                reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
-                onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
-                onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
-                onVersionChange={handleVersionChange}
-                onOpenShare={openSharePanel}
-                onForkConversation={handleForkConversation}
-                selectedFineTuningId={store.selectedFineTuningId}
-                onFineTuningChange={store.selectFineTuning}
-              />
+            <div className="flex-1 flex min-w-0 overflow-hidden">
+              {panel === 'fine-tuning' ? (
+                fineTuningView === 'list' ? (
+                  <FineTuningList onOpenFineTuningDetail={handleOpenFineTuningDetail} />
+                ) : (
+                  <FineTuningDetail 
+                    fineTuningId={typeof fineTuningView === 'object' ? fineTuningView.id : ''} 
+                    onBack={() => setFineTuningView('list')} 
+                  />
+                )
+              ) : (
+                <>
+                  <ChatArea
+                    conversation={store.activeConversation}
+                    isGenerating={store.isGenerating}
+                    streamingContent={store.streamingContent}
+                    streamingContentRef={store.streamingContentRef}
+                    allModels={store.allProviderModels}
+                    onSend={handleSend}
+                    onModelChange={handleModelChange}
+                    defaultModelId={store.settings.defaultProviderModelId}
+                    onTogglePanel={togglePanel}
+                    onOpenProviders={openProviders}
+                    onRetry={handleRetry}
+                    onStopGeneration={store.stopGeneration}
+                    onEditMessage={handleEditMessage}
+                    onDeleteMessage={handleDeleteMessage}
+                    onContinue={handleContinue}
+                    onModeChange={handleModeChange}
+                    onAttachmentsChange={handleAttachmentsChange}
+                    onBuildModeChange={handleBuildModeChange}
+                    homeBuildMode={homeBuildMode}
+                    onGenerateTitle={handleGenerateTitle}
+                    onGenerateFollowUps={handleGenerateFollowUps}
+                    homeMode={homeMode}
+                    homeAttachments={homeAttachments}
+                    prettifyModelNames={store.settings.prettifyModelNames}
+                    workflows={store.settings.workflows || []}
+                    useResponsesApi={store.settings.modelSettings.useResponsesApi}
+                    reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
+                    onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
+                    onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
+                    onVersionChange={handleVersionChange}
+                    onOpenShare={openSharePanel}
+                    onForkConversation={handleForkConversation}
+                    selectedFineTuningId={store.selectedFineTuningId}
+                    onFineTuningChange={store.selectFineTuning}
+                  />
 
-              {panel === 'settings' && (
-                <SettingsPanel
-                  settings={store.settings}
-                  conversations={store.conversations}
-                  onUpdateModelSettings={store.updateModelSettings}
-                  onUpdateSettings={store.updateSettings}
-                  onUpdateProvider={store.updateProvider}
-                  onAddProvider={store.addProvider}
-                  onAddIntegratedProvider={store.addIntegratedProvider}
-                  onDeleteProvider={store.deleteProvider}
-                  onUpsertApiFormat={store.upsertApiFormat}
-                  onDeleteApiFormat={store.deleteApiFormat}
-                  onImportData={handleImportData}
-                  onClose={() => setPanel('chat')}
-                />
+                  {panel === 'settings' && (
+                    <SettingsPanel
+                      settings={store.settings}
+                      conversations={store.conversations}
+                      onUpdateModelSettings={store.updateModelSettings}
+                      onUpdateSettings={store.updateSettings}
+                      onUpdateProvider={store.updateProvider}
+                      onAddProvider={store.addProvider}
+                      onAddIntegratedProvider={store.addIntegratedProvider}
+                      onDeleteProvider={store.deleteProvider}
+                      onUpsertApiFormat={store.upsertApiFormat}
+                      onDeleteApiFormat={store.deleteApiFormat}
+                      onImportData={handleImportData}
+                      onClose={() => setPanel('chat')}
+                    />
+                  )}
+
+                  {panel === 'share' && (
+                    <SharePanel
+                      conversation={store.activeConversation}
+                      onShare={handleShare}
+                      onUnshare={handleUnshare}
+                      onClose={() => setPanel('chat')}
+                    />
+                  )}
+                </>
               )}
-
-              {panel === 'share' && (
-                <SharePanel
-                  conversation={store.activeConversation}
-                  onShare={handleShare}
-                  onUnshare={handleUnshare}
-                  onClose={() => setPanel('chat')}
-                />
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      
-      {/* Modals */}
-      {showWelcome && (
-        <OnboardingScreen 
-          onGetStarted={handleGetStarted}
-          onAddProvider={store.addProvider}
-          onAddIntegratedProvider={store.addIntegratedProvider}
-        />
-      )}
-      {store.storageQuotaExceeded && (
-        <>
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" />
-          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
-            <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
-              <h3 className="text-base font-semibold">Storage quota exceeded</h3>
-              <p className="text-sm text-[rgb(var(--muted))]">Please select an option to continue saving your conversations.</p>
-              <div className="space-y-2">
-                <button
-                  onClick={() => store.resolveStorageQuota('evict')}
-                  className="w-full btn-primary justify-center"
-                >
-                  Remove oldest 3 conversations
-                </button>
-                <button
-                  onClick={() => store.resolveStorageQuota('retry')}
-                  className="w-full btn-secondary justify-center"
-                >
-                  Retry
-                </button>
-                <button
-                  onClick={() => store.resolveStorageQuota('ignore')}
-                  className="w-full btn-secondary justify-center text-red-500 hover:text-red-600"
-                >
-                  Ignore
-                </button>
-              </div>
             </div>
           </div>
-        </>
-      )}
-      
-      {showViewChatModal && (
-        <ViewChatModal
-          isOpen={showViewChatModal}
-          onClose={() => setShowViewChatModal(false)}
-          onLoadConversation={handleLoadSharedConversation}
-        />
-      )}
-      
-      <DesktopAppToast />
+        } />
+      </Routes>
+    
+    {/* Modals */}
+    {showViewChatModal && (
+      <ViewChatModal
+        isOpen={showViewChatModal}
+        onClose={() => setShowViewChatModal(false)}
+        onLoadConversation={handleLoadSharedConversation}
+      />
+    )}
+    
+    <DesktopAppToast />
     </>
   );
 }

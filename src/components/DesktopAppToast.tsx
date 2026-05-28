@@ -28,7 +28,7 @@ export default function DesktopAppToast() {
   };
 
   const handleDownloadClick = () => {
-    window.open('https://github.com/kokofixcomputers/lumina-chat', '_blank');
+    window.open('/download', '_blank');
   };
 
   if (!isVisible || isTauri() || isDismissed) {

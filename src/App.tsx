@@ -52,6 +52,9 @@ export default function App() {
       console.log('[SYNC] Calling store.setActiveConvId with:', conversationId);
       store.setActiveConvId(conversationId);
       console.log('[SYNC] After calling, store.activeConvId:', store.activeConvId);
+    } else {
+      console.log('[SYNC] Clearing active conversation ID');
+      store.setActiveConvId(null);
     }
   }, [conversationId]);
 

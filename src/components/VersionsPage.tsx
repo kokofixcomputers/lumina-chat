@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 
 type Step = 'os' | 'arch' | 'versions';
 
+type HypeLoadingState = Record<string, boolean>;
+
 const OS_OPTIONS = [
   { id: 'macos', name: 'macOS', icon: faApple },
   { id: 'windows', name: 'Windows', icon: faMicrosoft },
@@ -40,6 +42,8 @@ export default function VersionsPage() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showPrereleases, setShowPrereleases] = useState(false);
+  const [hypedArches, setHypedArches] = useState<Set<string>>(new Set());
+  const [hypeLoading, setHypeLoading] = useState<HypeLoadingState>({});
 
   // Fetch releases from GitHub API
   useEffect(() => {
@@ -85,6 +89,44 @@ export default function VersionsPage() {
 
   // Filter releases based on prerelease toggle
   const filteredReleases = releases.filter(release => showPrereleases || !release.prerelease);
+
+  // Load hyped arches from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('hyped-arches');
+    if (stored) {
+      setHypedArches(new Set(JSON.parse(stored)));
+    }
+  }, []);
+
+  const handleHypeClick = async (os: string, arch: string) => {
+    const key = `${os}-${arch}`;
+    if (hypedArches.has(key)) return;
+
+    setHypeLoading({ ...hypeLoading, [key]: true });
+
+    try {
+      const response = await fetch('/api/hype', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ os, arch }),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to hype:', response.status);
+        setHypeLoading({ ...hypeLoading, [key]: false });
+        return;
+      }
+
+      const newHyped = new Set(hypedArches);
+      newHyped.add(key);
+      setHypedArches(newHyped);
+      localStorage.setItem('hyped-arches', JSON.stringify([...newHyped]));
+    } catch (error) {
+      console.error('Failed to hype:', error);
+    } finally {
+      setHypeLoading({ ...hypeLoading, [key]: false });
+    }
+  };
 
   const handleOSSelect = (osId: string) => {
     setSelectedOS(osId);
@@ -183,8 +225,25 @@ export default function VersionsPage() {
                       )}
                     </div>
                     {isUnavailable ? (
-                      <button className="btn-primary px-4 py-2 rounded-full text-sm">
-                        Hype for this
+                      <button
+                        onClick={() => handleHypeClick(selectedOS!, arch.id)}
+                        disabled={hypedArches.has(`${selectedOS}-${arch.id}`)}
+                        className={`px-4 py-2 rounded-full text-sm flex items-center gap-2 ${
+                          hypedArches.has(`${selectedOS}-${arch.id}`)
+                            ? 'btn-secondary cursor-default'
+                            : 'btn-primary'
+                        }`}
+                      >
+                        {hypeLoading[`${selectedOS}-${arch.id}`] ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            Hype for this
+                          </>
+                        ) : hypedArches.has(`${selectedOS}-${arch.id}`) ? (
+                          'Hyped'
+                        ) : (
+                          'Hype for this'
+                        )}
                       </button>
                     ) : (
                       <button

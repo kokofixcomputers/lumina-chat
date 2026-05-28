@@ -1,25 +1,33 @@
 import { useState, useEffect } from 'react';
 import { X, Download } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
 export default function DesktopAppToast() {
+  const location = useLocation();
+
+  const EXCLUDED_PATHS = ['/download', '/install', '/versions'];
+  const isExcluded = EXCLUDED_PATHS.some(path =>
+    location.pathname.startsWith(path)
+  );
+
   const [isVisible, setIsVisible] = useState(false);
   const [isDismissed, setIsDismissed] = useState(() => {
     return localStorage.getItem('desktop-app-toast-dismissed') === 'true';
   });
 
   useEffect(() => {
-    // Only show if not running in Tauri and not previously dismissed
-    if (!isTauri() && !isDismissed) {
+    // Only show if not running in Tauri, not previously dismissed, and not on excluded pages
+    if (!isTauri() && !isDismissed && !isExcluded) {
       // Show toast after a short delay to let page load
       const timer = setTimeout(() => {
         setIsVisible(true);
       }, 2000);
-      
+
       return () => clearTimeout(timer);
     }
-  }, [isDismissed]);
+  }, [isDismissed, isExcluded]);
 
   const handleDismiss = () => {
     setIsVisible(false);
@@ -31,7 +39,7 @@ export default function DesktopAppToast() {
     window.open('/download', '_blank');
   };
 
-  if (!isVisible || isTauri() || isDismissed) {
+  if (!isVisible || isTauri() || isDismissed || isExcluded) {
     return null;
   }
 
@@ -41,7 +49,7 @@ export default function DesktopAppToast() {
         <div className="flex-shrink-0 w-8 h-8 bg-[rgb(var(--accent))]/20 rounded-full flex items-center justify-center">
           <Download size={16} className="text-[rgb(var(--accent))]" />
         </div>
-        
+
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-semibold text-[rgb(var(--text))] mb-1">
             Download the desktop app for a better experience
@@ -57,7 +65,7 @@ export default function DesktopAppToast() {
             to download
           </p>
         </div>
-        
+
         <button
           onClick={handleDismiss}
           className="flex-shrink-0 p-1 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"

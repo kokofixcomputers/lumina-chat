@@ -290,8 +290,14 @@ export function useSendMessage({
           });
           responsesApiMessages.push({ type: 'message', role: 'assistant', content: toolCallContent });
         } else if (m.role === 'assistant') {
-          // For Responses API: Assistant messages use type: "output_text"
-          responsesApiMessages.push({ type: 'output_text', text: m.content });
+          // For Responses API: Assistant messages must be wrapped in message object with role
+          responsesApiMessages.push({ 
+            type: 'message', 
+            role: 'assistant', 
+            content: [
+              { type: 'output_text', text: m.content }
+            ] 
+          });
         } else {
           responsesApiMessages.push({ type: 'message', role: m.role, content: wrapResponsesApiContent(m.content) });
         }

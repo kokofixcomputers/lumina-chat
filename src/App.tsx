@@ -8,6 +8,7 @@ import OnboardingScreen from './components/OnboardingScreen';
 import SharePanel from './components/SharePanel';
 import ViewChatModal from './components/ViewChatModal';
 import DesktopAppToast from './components/DesktopAppToast';
+import WelcomeBackModal from './components/WelcomeBackModal';
 import FineTuningList from './pages/FineTuningList';
 import FineTuningDetail from './pages/FineTuningDetail';
 import DownloadPage from './components/DownloadPage';
@@ -19,6 +20,7 @@ import { mergeConversations } from './utils/mergeConversations';
 import { extensionLoader } from './extensions/extensionLoader';
 import { handleDeepLinkOrShare, registerDeepLinkProtocol } from './utils/deepLink';
 import { registerDeepLinkHandler, checkForDeepLinkOnStartup } from './utils/tauriDeepLink';
+import { isVersionUpdated, setStoredVersion, getCurrentVersion, fetchLatestRelease } from './utils/versionCheck';
 import './utils/storageMigration'; // Load migration utilities
 import './utils/syncIndexedDB'; // Load IndexedDB sync utilities
 import type { Panel, Message } from './types';
@@ -38,6 +40,8 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
   const [showViewChatModal, setShowViewChatModal] = useState(false);
   const [fineTuningView, setFineTuningView] = useState<'list' | { id: string }>('list');
+  const [showWelcomeBack, setShowWelcomeBack] = useState(false);
+  const [latestRelease, setLatestRelease] = useState<any>(null);
   const navigate = useNavigate();
 
   // Extract conversationId from pathname
@@ -97,6 +101,31 @@ export default function App() {
         };
       });
     }
+  }, []);
+
+  // Check for app updates on desktop startup
+  useEffect(() => {
+    if (!isTauri()) return;
+    
+    const checkForUpdates = async () => {
+      const updated = isVersionUpdated();
+      console.log('[VERSION CHECK] Version updated:', updated);
+      
+      if (updated) {
+        console.log('[VERSION CHECK] Fetching latest release...');
+        const release = await fetchLatestRelease();
+        if (release) {
+          console.log('[VERSION CHECK] Latest release:', release.tag_name);
+          setLatestRelease(release);
+          setShowWelcomeBack(true);
+        }
+      }
+      
+      // Store current version
+      setStoredVersion(getCurrentVersion());
+    };
+    
+    checkForUpdates();
   }, []);
 
   // Handle deep links and shared conversations
@@ -1425,6 +1454,15 @@ export default function App() {
         isOpen={showViewChatModal}
         onClose={() => setShowViewChatModal(false)}
         onLoadConversation={handleLoadSharedConversation}
+      />
+    )}
+    
+    {showWelcomeBack && (
+      <WelcomeBackModal
+        isOpen={showWelcomeBack}
+        onClose={() => setShowWelcomeBack(false)}
+        release={latestRelease}
+        currentVersion={getCurrentVersion()}
       />
     )}
     

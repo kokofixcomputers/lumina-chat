@@ -130,6 +130,12 @@ export const toolsConfig: ToolConfig[] = [
     label: 'artifact_dev_env',
     description: 'Download files from dev environment',
     category: 'development'
+  },
+  {
+    name: 'remotion',
+    label: 'remotion',
+    description: 'Generate animation videos using Remotion framework',
+    category: 'utility'
   }
 ];
 

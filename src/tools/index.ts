@@ -15,6 +15,7 @@ import chart from './chart';
 import presentation from './presentation';
 import { execPythonTool } from './execPython';
 import { extensionToolRegistry } from '../extensions/extensionToolRegistry';
+import remotion from './remotion';
 
 const tools: Tool[] = [
   getCurrentTime,
@@ -28,6 +29,7 @@ const tools: Tool[] = [
   chart,
   presentation,
   execPythonTool,
+  remotion,
   ...devEnvTools,
 ];
 

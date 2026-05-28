@@ -12,6 +12,7 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { save } from '@tauri-apps/plugin-dialog';
 import { tauriUtils } from '../utils/tauri';
 import ChartComponent from './ChartComponent';
+import RemotionPreview from './RemotionPreview';
 
 function CopyBtn({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -567,6 +568,16 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
     const hasImages = message.images && message.images.length > 0;
     const hasArtifacts = message.artifacts && message.artifacts.length > 0;
     
+    // Check if this is a Remotion tool response
+    let remotionData = null;
+    if (message.tool_name === 'remotion' && message.content) {
+      try {
+        remotionData = JSON.parse(message.content);
+      } catch {
+        // Not valid JSON, ignore
+      }
+    }
+    
     return (
       <div className="flex gap-2 sm:gap-3 px-4 sm:px-8 py-1 sm:max-w-4xl mx-auto w-full mb-3">
         <div className="shrink-0 w-7 h-7 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mt-0.5">
@@ -576,10 +587,10 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
         </div>
         <div className="flex-1 min-w-0">
           <div 
-            className={`text-[13px] text-[rgb(var(--muted))] flex items-center gap-1.5 ${message.tool_status !== 'loading' && !hasImages && !hasArtifacts ? 'cursor-pointer hover:text-[rgb(var(--text))]' : ''}`}
-            onClick={() => message.tool_status !== 'loading' && !hasImages && !hasArtifacts && setExpanded(p => !p)}
+            className={`text-[13px] text-[rgb(var(--muted))] flex items-center gap-1.5 ${message.tool_status !== 'loading' && !hasImages && !hasArtifacts && !remotionData ? 'cursor-pointer hover:text-[rgb(var(--text))]' : ''}`}
+            onClick={() => message.tool_status !== 'loading' && !hasImages && !hasArtifacts && !remotionData && setExpanded(p => !p)}
           >
-            {message.tool_status !== 'loading' && !hasImages && !hasArtifacts && (
+            {message.tool_status !== 'loading' && !hasImages && !hasArtifacts && !remotionData && (
               expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
             )}
             <span className="font-medium">{message.tool_name}</span>
@@ -709,7 +720,18 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
               ))}
             </div>
           )}
-          {message.tool_status !== 'loading' && message.content && (expanded) && !hasImages && !hasArtifacts && (
+          {remotionData && remotionData.success && remotionData.code && (
+            <div className="mt-2">
+              <RemotionPreview
+                code={remotionData.code}
+                durationInFrames={remotionData.durationInFrames || 150}
+                fps={remotionData.fps || 30}
+                compositionWidth={remotionData.compositionWidth || 1920}
+                compositionHeight={remotionData.compositionHeight || 1080}
+              />
+            </div>
+          )}
+          {message.tool_status !== 'loading' && message.content && (expanded) && !hasImages && !hasArtifacts && !remotionData && (
             <pre className="text-[11px] text-[rgb(var(--muted))] mt-1 font-mono bg-black/[0.03] dark:bg-white/[0.05] p-2 rounded overflow-x-auto max-h-[300px] overflow-y-auto">
               {message.content}
             </pre>

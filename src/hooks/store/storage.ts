@@ -17,6 +17,24 @@ After using a tool, if another is needed, add:
 While using tools, please tell the user what you are doing by adding {"status": "step"} on the same line as {"status": "request_another_tool"} Keep these messages brief, 2-8 words Example: "Installing Node.js." {"status": "step"} {"status": "request_another_tool"}`,
     stream: true,
   },
+  disabledTools: [
+    'get_current_time',
+    'calculate',
+    'chart',
+    'presentation',
+    'exec_python',
+    'google_search',
+    'amazon_search',
+    'city_search',
+    'hotel_search',
+    'hotel_search_page',
+    'web_request',
+    'qanda',
+    'create_dev_env',
+    'command_dev_env',
+    'artifact_dev_env',
+    'remotion',
+  ],
 };
 
 export function loadFromStorage<T>(key: string, fallback: T): T {

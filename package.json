@@ -10,10 +10,13 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@babel/standalone": "^7.29.7",
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/free-brands-svg-icons": "^7.2.0",
     "@fortawesome/react-fontawesome": "^3.3.1",
     "@neondatabase/serverless": "^1.0.2",
+    "@remotion/media": "^4.0.468",
+    "@remotion/player": "^4.0.468",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-deep-link": "^2.4.8",
     "@tauri-apps/plugin-dialog": "^2.7.0",
@@ -35,6 +38,7 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.16.0",
     "react-syntax-highlighter": "^15.6.6",
+    "remotion": "^4.0.468",
     "turndown": "^7.2.4",
     "uuid": "^9.0.0",
     "ws": "^8.19.0",
@@ -43,6 +47,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.10.1",
+    "@types/babel__standalone": "^7.1.9",
     "@types/crypto-js": "^4.2.2",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

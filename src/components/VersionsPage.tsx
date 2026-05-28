@@ -203,7 +203,8 @@ export default function VersionsPage() {
             {ARCH_OPTIONS.map((arch) => {
               const isUnavailable =
                 (selectedOS === 'macos' && arch.id === 'x64') ||
-                (selectedOS === 'windows' && arch.id === 'arm64');
+                (selectedOS === 'windows' && arch.id === 'arm64') ||
+                (selectedOS === 'ubuntu' && arch.id === 'arm64')
 
               return (
                 <div

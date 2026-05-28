@@ -4,6 +4,7 @@ export const config = {
 
 import { Redis } from '@upstash/redis';
 
+// Initialize Redis using environment variables
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -35,7 +36,7 @@ export default async function handler(req: Request) {
       });
     }
 
-    // Increment counter for this os/arch combination (anonymous, no user tracking)
+    // Increment counter for this os/arch combination
     await redis.incr(`vote:${os}:${arch}`);
 
     return new Response(JSON.stringify({ 

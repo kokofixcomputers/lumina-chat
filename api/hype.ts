@@ -35,20 +35,7 @@ export default async function handler(req: Request) {
       });
     }
 
-    // Get user identifier (from Authorization header, cookie, or IP)
-    const userId = req.headers.get('authorization')?.split(' ')[1] 
-                   || req.headers.get('x-user-id') 
-                   || req.headers.get('x-forwarded-for') 
-                   || 'anonymous';
-
-    const userKey = `hype:${userId}`;
-
-    // Store the hype vote (atomic SET with 1-year TTL)
-    await redis.set(userKey, JSON.stringify({ os, arch }), {
-      ex: 31536000,
-    });
-
-    // Increment counter for this os/arch combination
+    // Increment counter for this os/arch combination (anonymous, no user tracking)
     await redis.incr(`vote:${os}:${arch}`);
 
     return new Response(JSON.stringify({ 

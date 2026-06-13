@@ -121,6 +121,10 @@ function normalizeConversation(raw: any): Conversation {
   };
 }
 
+function isMessageLike(value: any): boolean {
+  return value && typeof value === 'object' && (Array.isArray(value.messages) || Array.isArray(value.chat) || typeof value.content === 'string');
+}
+
 function normalizeTypingmindData(raw: any): Conversation[] {
   if (Array.isArray(raw)) {
     return raw.map(normalizeConversation);
@@ -131,7 +135,31 @@ function normalizeTypingmindData(raw: any): Conversation[] {
     return items.map(normalizeConversation);
   }
 
-  if (raw.messages) {
+  if (items && typeof items === 'object') {
+    if (items.conversations && !Array.isArray(items.conversations)) {
+      return Object.values(items.conversations).map(normalizeConversation);
+    }
+
+    if (items.threads && !Array.isArray(items.threads)) {
+      return Object.values(items.threads).map(normalizeConversation);
+    }
+
+    if (items.data && !Array.isArray(items.data) && Object.values(items.data).every((value) => isMessageLike(value) || Array.isArray(value))) {
+      return Object.values(items.data).flatMap((value) => Array.isArray(value) ? value.map(normalizeConversation) : normalizeConversation(value));
+    }
+
+    const values = Object.values(items);
+    const conversationValues = values.filter((value) => isMessageLike(value) || Array.isArray(value));
+    if (conversationValues.length > 0 && conversationValues.length <= 10) {
+      return conversationValues.flatMap((value) =>
+        Array.isArray(value)
+          ? value.map(normalizeConversation)
+          : normalizeConversation(value)
+      );
+    }
+  }
+
+  if (raw.messages || raw.chat || raw.events) {
     return [normalizeConversation(raw)];
   }
 
@@ -144,8 +172,10 @@ function isLuminaExport(value: any): boolean {
 
 function isTypingmindExport(value: any): boolean {
   if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.every(item => !!item.messages || !!item.chat || !!item.conversations || !!item.title);
-  return !!value.conversations || !!value.threads || !!value.messages || !!value.chat || !!value.threadsList || !!value.data;
+  if (Array.isArray(value)) return value.every(item => !!item.messages || !!item.chat || !!item.conversations || !!item.title || !!item.text);
+  if (value.messages || value.chat || value.events) return true;
+  if (value.conversations || value.threads || value.threadsList || value.data || value.items) return true;
+  return false;
 }
 
 export async function importLuminaFile(file: File): Promise<ImportPayload> {

@@ -122,7 +122,47 @@ function normalizeConversation(raw: any): Conversation {
 }
 
 function isMessageLike(value: any): boolean {
-  return value && typeof value === 'object' && (Array.isArray(value.messages) || Array.isArray(value.chat) || typeof value.content === 'string');
+  return value && typeof value === 'object' && (
+    Array.isArray(value.messages) ||
+    Array.isArray(value.chat) ||
+    Array.isArray(value.events) ||
+    typeof value.content === 'string'
+  );
+}
+
+function isConversationLike(value: any): boolean {
+  return value && typeof value === 'object' && (
+    Array.isArray(value.messages) ||
+    Array.isArray(value.chat) ||
+    Array.isArray(value.events) ||
+    typeof value.title === 'string' ||
+    typeof value.name === 'string'
+  );
+}
+
+function flattenConversationContainer(container: any): Conversation[] {
+  if (!container || typeof container !== 'object') return [];
+
+  if (Array.isArray(container)) {
+    return container.map(normalizeConversation);
+  }
+
+  if (container.messages || container.chat || container.events) {
+    return [normalizeConversation(container)];
+  }
+
+  const values = Object.values(container);
+  const entries = values.flatMap((value) => {
+    if (Array.isArray(value)) {
+      return value.map((item) => normalizeConversation(item));
+    }
+    if (isConversationLike(value)) {
+      return normalizeConversation(value);
+    }
+    return [] as Conversation[];
+  });
+
+  return entries;
 }
 
 function normalizeTypingmindData(raw: any): Conversation[] {
@@ -130,37 +170,28 @@ function normalizeTypingmindData(raw: any): Conversation[] {
     return raw.map(normalizeConversation);
   }
 
-  const items = raw.conversations ?? raw.threads ?? raw.threadsList ?? raw.data ?? raw.items ?? raw;
-  if (Array.isArray(items)) {
-    return items.map(normalizeConversation);
-  }
+  const containers = [raw.conversations, raw.threads, raw.threadsList, raw.data, raw.items, raw];
 
-  if (items && typeof items === 'object') {
-    if (items.conversations && !Array.isArray(items.conversations)) {
-      return Object.values(items.conversations).map(normalizeConversation);
-    }
-
-    if (items.threads && !Array.isArray(items.threads)) {
-      return Object.values(items.threads).map(normalizeConversation);
-    }
-
-    if (items.data && !Array.isArray(items.data) && Object.values(items.data).every((value) => isMessageLike(value) || Array.isArray(value))) {
-      return Object.values(items.data).flatMap((value) => Array.isArray(value) ? value.map(normalizeConversation) : normalizeConversation(value));
-    }
-
-    const values = Object.values(items);
-    const conversationValues = values.filter((value) => isMessageLike(value) || Array.isArray(value));
-    if (conversationValues.length > 0 && conversationValues.length <= 10) {
-      return conversationValues.flatMap((value) =>
-        Array.isArray(value)
-          ? value.map(normalizeConversation)
-          : normalizeConversation(value)
-      );
+  for (const container of containers) {
+    if (!container) continue;
+    const conversations = flattenConversationContainer(container);
+    if (conversations.length > 0) {
+      return conversations;
     }
   }
 
   if (raw.messages || raw.chat || raw.events) {
     return [normalizeConversation(raw)];
+  }
+
+  const nestedConversations = Object.values(raw).flatMap((value) => {
+    if (isConversationLike(value)) return [normalizeConversation(value)];
+    if (Array.isArray(value)) return value.map(normalizeConversation);
+    return [] as Conversation[];
+  });
+
+  if (nestedConversations.length > 0) {
+    return nestedConversations;
   }
 
   throw new Error('Typingmind export format not recognized.');

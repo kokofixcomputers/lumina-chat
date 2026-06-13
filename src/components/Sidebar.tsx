@@ -301,8 +301,8 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Chat / Code / Image mode toggle — desktop only */}
-      {tauriUtils.isTauri && onModeChange && (
+      {/* Chat / Code / Image mode toggle */}
+      {onModeChange && (
         <div className="px-3 pt-2 pb-1">
           <div className="flex rounded-xl bg-black/[0.05] dark:bg-white/[0.06] p-0.5">
             {(['chat', 'code', 'image'] as const).map(mode => (

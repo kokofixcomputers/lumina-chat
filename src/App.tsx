@@ -4,6 +4,7 @@ import { Routes, Route, useParams, useNavigate, useLocation } from 'react-router
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import CodeMode from './components/CodeMode';
+import ImageMode from './components/ImageMode';
 import SplitViewChat from './components/SplitViewChat';
 import SettingsPanel from './components/SettingsPanel';
 import OnboardingScreen from './components/OnboardingScreen';
@@ -48,7 +49,8 @@ export default function App() {
   const [splitViewEnabled, setSplitViewEnabled] = useState(false);
   const [secondConvId, setSecondConvId] = useState<string | null>(null);
   const [dividerPosition, setDividerPosition] = useState(50);
-  const [appMode, setAppMode] = useState<'chat' | 'code'>('chat');
+  const [appMode, setAppMode] = useState<'chat' | 'code' | 'image'>('chat');
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [codeSessions, setCodeSessions] = useState<CodeSession[]>([]);
   const [activeCodeSessionId, setActiveCodeSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -1432,6 +1434,7 @@ export default function App() {
               }}
               onDeleteCodeSession={handleDeleteCodeSession}
               onRenameCodeSession={handleRenameCodeSession}
+              onSelectImage={(id) => { setSelectedImageId(id); setAppMode('image'); }}
             />
 
             <div className="flex-1 flex min-w-0 overflow-hidden">
@@ -1442,6 +1445,14 @@ export default function App() {
                   onNewSession={handleNewCodeSession}
                   onOpenProviders={openProviders}
                   onTogglePanel={togglePanel}
+                />
+              ) : appMode === 'image' ? (
+                <ImageMode
+                  settings={store.settings}
+                  allModels={store.allProviderModels}
+                  onTogglePanel={togglePanel}
+                  onOpenProviders={openProviders}
+                  selectedImageId={selectedImageId}
                 />
               ) : panel === 'fine-tuning' ? (
                 fineTuningView === 'list' ? (

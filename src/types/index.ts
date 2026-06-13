@@ -145,6 +145,8 @@ export interface AppSettings {
   scrapingBeeApiKey?: string;
   sttModel?: string;
   sttBaseUrl?: string;
+  imagePromptOptimizeModel?: string;
+  imagePromptOptimizeBaseUrl?: string;
   workflows?: Workflow[];
   cloudSync?: {
     enabled: boolean;

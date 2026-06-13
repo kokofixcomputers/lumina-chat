@@ -16,6 +16,11 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
   const [sttCollapsedProviders, setSttCollapsedProviders] = useState<Set<string>>(new Set());
   const sttDropdownRef = useRef<HTMLDivElement>(null);
 
+  const [showImgOptPicker, setShowImgOptPicker] = useState(false);
+  const [imgOptModelSearch, setImgOptModelSearch] = useState('');
+  const [imgOptCollapsedProviders, setImgOptCollapsedProviders] = useState<Set<string>>(new Set());
+  const imgOptDropdownRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!showSttPicker) return;
     const handler = (e: MouseEvent) => {
@@ -27,6 +32,18 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showSttPicker]);
+
+  useEffect(() => {
+    if (!showImgOptPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (imgOptDropdownRef.current && !imgOptDropdownRef.current.contains(e.target as Node)) {
+        setShowImgOptPicker(false);
+        setImgOptModelSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showImgOptPicker]);
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-2xl">
@@ -271,6 +288,131 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
             Model used for microphone transcription. Picks the provider's base URL automatically.
           </p>
         </div>
+
+        {/* Image Prompt Optimizer Model */}
+        <div className="form-group">
+          <label className="form-label">Image Prompt Optimizer Model</label>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowImgOptPicker(v => !v)}
+              className="input text-sm w-full flex items-center gap-2 text-left"
+            >
+              {(() => {
+                const baseUrl = settings.imagePromptOptimizeBaseUrl;
+                const model = settings.imagePromptOptimizeModel || 'gpt-4o-mini';
+                const matched = settings.providers.find(
+                  p => p.enabled && p.baseUrl && baseUrl &&
+                    p.baseUrl.replace(/\/$/, '') === baseUrl.replace(/\/$/, '')
+                );
+                const providerName = matched?.name ?? 'Custom';
+                return (
+                  <>
+                    {matched && <ProviderDot providerId={matched.id} providerName={matched.name} />}
+                    <span className="flex-1 truncate">{providerName} — {model}</span>
+                    <ChevronDown size={13} className="text-[rgb(var(--muted))] shrink-0" />
+                  </>
+                );
+              })()}
+            </button>
+
+            {showImgOptPicker && (
+              <div
+                ref={imgOptDropdownRef}
+                className="model-picker-dropdown absolute z-50 w-full"
+                style={{ bottom: '100%', marginBottom: 8 }}
+              >
+                <div className="flex items-center gap-2 mx-2 mb-1 px-2.5 py-1.5 rounded-lg bg-[rgb(var(--bg))] border border-[rgb(var(--border))]">
+                  <Search size={13} className="text-[rgb(var(--muted))] shrink-0" />
+                  <input
+                    value={imgOptModelSearch}
+                    onChange={e => setImgOptModelSearch(e.target.value)}
+                    placeholder="Search models..."
+                    className="flex-1 bg-transparent text-[13px] outline-none text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+                  />
+                </div>
+                {(() => {
+                  const grouped = settings.providers
+                    .filter(p => p.enabled && p.models.length > 0)
+                    .reduce<Record<string, { providerId: string; providerName: string; fullId: string; modelId: string; modelName: string }[]>>(
+                      (acc, p) => {
+                        const filtered = p.models.filter(m =>
+                          !imgOptModelSearch ||
+                          m.id.toLowerCase().includes(imgOptModelSearch.toLowerCase()) ||
+                          (m.name ?? '').toLowerCase().includes(imgOptModelSearch.toLowerCase())
+                        );
+                        if (filtered.length > 0) {
+                          acc[p.name] = filtered.map(m => ({
+                            providerId: p.id,
+                            providerName: p.name,
+                            fullId: `${p.id}/${m.id}`,
+                            modelId: m.id,
+                            modelName: m.name || m.id,
+                          }));
+                        }
+                        return acc;
+                      }, {}
+                    );
+                  const currentBaseUrl = settings.imagePromptOptimizeBaseUrl;
+                  const currentModel = settings.imagePromptOptimizeModel || 'gpt-4o-mini';
+                  const currentProvider = settings.providers.find(
+                    p => p.enabled && p.baseUrl && currentBaseUrl &&
+                      p.baseUrl.replace(/\/$/, '') === currentBaseUrl.replace(/\/$/, '')
+                  );
+                  const currentFullId = currentProvider ? `${currentProvider.id}/${currentModel}` : `__bare__/${currentModel}`;
+
+                  if (Object.keys(grouped).length === 0) {
+                    return <p className="text-[12px] text-[rgb(var(--muted))] text-center py-4">No models found</p>;
+                  }
+                  return Object.entries(grouped).map(([providerName, models]) => {
+                    const isCollapsed = imgOptCollapsedProviders.has(providerName);
+                    return (
+                      <div key={providerName} className="mb-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newSet = new Set(imgOptCollapsedProviders);
+                            if (isCollapsed) newSet.delete(providerName); else newSet.add(providerName);
+                            setImgOptCollapsedProviders(newSet);
+                          }}
+                          className="flex items-center gap-2 px-3 py-1.5 mt-1 w-full hover:bg-black/[0.03] dark:hover:bg-white/[0.03] rounded-lg transition-colors"
+                        >
+                          <ProviderDot providerId={models[0].providerId} providerName={providerName} />
+                          <span className="text-[11px] font-semibold text-[rgb(var(--muted))] uppercase tracking-wider flex-1 text-left">{providerName}</span>
+                          <ChevronDown size={12} className={`text-[rgb(var(--muted))] transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                        </button>
+                        {!isCollapsed && models.map(m => {
+                          const isSelected = currentFullId === m.fullId;
+                          return (
+                            <button
+                              key={m.fullId}
+                              type="button"
+                              onClick={() => {
+                                const provider = settings.providers.find(p => p.id === m.providerId);
+                                onUpdateSettings({
+                                  imagePromptOptimizeModel: m.modelId,
+                                  imagePromptOptimizeBaseUrl: provider?.baseUrl || '',
+                                });
+                                setShowImgOptPicker(false);
+                                setImgOptModelSearch('');
+                              }}
+                              className={`model-option w-full text-left ${isSelected ? 'selected' : ''}`}
+                            >
+                              <span className="flex-1 font-medium truncate">{m.modelName}</span>
+                              {isSelected && <Check size={13} className="text-[rgb(var(--accent))] shrink-0 ml-2" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
+          </div>
+          <p className="form-help">LLM used to enhance image prompts when the ✨ optimizer is toggled on in Image mode.</p>
+        </div>
+
         <div className="form-group">
           <label className="form-label">Max History</label>
           <div className="flex items-center gap-3">

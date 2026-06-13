@@ -5,7 +5,7 @@ import {
   Type, List, Eraser, MoreHorizontal, ChevronDown,
   Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
   Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, X as ImgOut, Video,
-  Share2, GitFork, Quote
+  Share2, GitFork, Quote, Wand2
 } from 'lucide-react';
 import { getModelInfo } from '../utils/models';
 import { 
@@ -53,6 +53,10 @@ interface ChatInputProps {
   conversation?: { messages: Message[] };
   selectedFineTuningId?: string | null;
   onFineTuningChange?: (fineTuningId: string | null) => void;
+  imageGenerateMode?: boolean;
+  placeholder?: string;
+  onOptimizePrompt?: (prompt: string) => Promise<string>;
+  onBeforeSend?: (originalText: string) => void;
 }
 
 // Color per provider
@@ -184,6 +188,10 @@ export default function ChatInput({
   conversation,
   selectedFineTuningId = null,
   onFineTuningChange,
+  imageGenerateMode = false,
+  placeholder,
+  onOptimizePrompt,
+  onBeforeSend,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -212,6 +220,8 @@ export default function ChatInput({
   const [overflowItems, setOverflowItems] = useState<string[]>([]);
   const [isMobile, setIsMobile] = useState(false);
   const [quote, setQuote] = useState<string | null>(null);
+  const [promptOptimize, setPromptOptimize] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -408,27 +418,36 @@ export default function ChatInput({
     return () => document.removeEventListener('mousedown', handler);
   }, [showModelPicker]);
 
-  const handleSend = useCallback(() => {
-    if ((!text.trim() && !images.length && !attachments.length && !quote) || isGenerating) return;
-    
+  const handleSend = useCallback(async () => {
+    if ((!text.trim() && !images.length && !attachments.length && !quote) || isGenerating || isOptimizing) return;
+
     let messageText = text.trim();
     if (quote) {
       messageText = `"${quote}"\n\n${messageText}`;
       setQuote(null);
     }
-    
+
+    if (imageGenerateMode && promptOptimize && onOptimizePrompt && messageText) {
+      onBeforeSend?.(messageText);
+      setIsOptimizing(true);
+      try {
+        messageText = await onOptimizePrompt(messageText);
+      } catch { /* fallback to original */ }
+      setIsOptimizing(false);
+    }
+
     const allAttachments = [...images, ...attachments];
     onSend(messageText, allAttachments);
     setText('');
     setImages([]);
     if (onAttachmentsChange) onAttachmentsChange([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [text, images, attachments, quote, isGenerating, onSend, onAttachmentsChange]);
+  }, [text, images, attachments, quote, isGenerating, isOptimizing, imageGenerateMode, promptOptimize, onOptimizePrompt, onSend, onAttachmentsChange]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { 
-      e.preventDefault(); 
-      
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+
       // Check if there's a workflow match
       const match = text.match(/^\/([a-zA-Z0-9_]+)\s+(.*)$/);
       if (match) {
@@ -449,8 +468,8 @@ export default function ChatInput({
           return;
         }
       }
-      
-      handleSend(); 
+
+      void handleSend();
     }
   };
 
@@ -879,7 +898,7 @@ export default function ChatInput({
             value={text}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
-            placeholder="Ask, create, or start a task..."
+            placeholder={placeholder ?? (imageGenerateMode ? "Describe the image you want to create..." : "Ask, create, or start a task...")}
             rows={1}
             className="w-full bg-transparent px-3 sm:px-4 pt-3.5 pb-2
                       text-base sm:text-[13.5px] text-[rgb(var(--text))]
@@ -891,54 +910,65 @@ export default function ChatInput({
 
         {/* Toolbar */}
         <div className="flex items-center gap-0.5 px-3 pb-2.5 pt-0.5">
-          <button title="Generate Title" className="toolbar-btn" onClick={onGenerateTitle}><Type size={15} /></button>
-          <button title="Generate Follow-ups" className="toolbar-btn" onClick={onGenerateFollowUps}><MessageSquarePlus size={15} /></button>
-          <div className="w-px h-4 bg-[rgb(var(--border))] mx-1" />
-          <button 
-            className="toolbar-btn" 
-            onClick={onOpenShare}
-            disabled={!conversation?.messages || conversation.messages.length === 0}
-            title={!conversation?.messages || conversation.messages.length === 0 ? "No conversation to share" : "Share conversation"}
-          >
-            <Share2 size={15} />
-          </button>
-          <button 
-            className="toolbar-btn" 
-            onClick={onForkConversation}
-            disabled={!conversation?.messages || conversation.messages.length === 0}
-            title={!conversation?.messages || conversation.messages.length === 0 ? "No conversation to fork" : "Fork conversation"}
-          >
-            <GitFork size={15} />
-          </button>
-          <button className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
-          <button className="toolbar-btn" onClick={() => setText('')}><Eraser size={15} /></button>
-          {onRetry && <button className="toolbar-btn" onClick={onRetry}><RotateCcw size={15} /></button>}
-          <button
-            onClick={handleMicClick}
-            disabled={isTranscribing}
-            className={`toolbar-btn transition-colors ${
-              isRecording
-                ? 'text-yellow-400 animate-pulse'
-                : isTranscribing
-                ? 'text-orange-400'
-                : 'text-[rgb(var(--muted))]'
-            }`}
-          >
-            <Mic size={15} />
-          </button>
+          {imageGenerateMode && onOptimizePrompt && (
+            <button
+              title={promptOptimize ? 'Prompt optimizer on' : 'Prompt optimizer off'}
+              onClick={() => setPromptOptimize(v => !v)}
+              className={`toolbar-btn transition-colors ${promptOptimize ? 'text-violet-500 bg-violet-500/10' : ''}`}
+            >
+              <Wand2 size={15} />
+            </button>
+          )}
+          {!imageGenerateMode && <>
+            <button title="Generate Title" className="toolbar-btn" onClick={onGenerateTitle}><Type size={15} /></button>
+            <button title="Generate Follow-ups" className="toolbar-btn" onClick={onGenerateFollowUps}><MessageSquarePlus size={15} /></button>
+            <div className="w-px h-4 bg-[rgb(var(--border))] mx-1" />
+            <button
+              className="toolbar-btn"
+              onClick={onOpenShare}
+              disabled={!conversation?.messages || conversation.messages.length === 0}
+              title={!conversation?.messages || conversation.messages.length === 0 ? "No conversation to share" : "Share conversation"}
+            >
+              <Share2 size={15} />
+            </button>
+            <button
+              className="toolbar-btn"
+              onClick={onForkConversation}
+              disabled={!conversation?.messages || conversation.messages.length === 0}
+              title={!conversation?.messages || conversation.messages.length === 0 ? "No conversation to fork" : "Fork conversation"}
+            >
+              <GitFork size={15} />
+            </button>
+            <button className="toolbar-btn" onClick={() => fileRef.current?.click()}><Paperclip size={15} /></button>
+            <button className="toolbar-btn" onClick={() => setText('')}><Eraser size={15} /></button>
+            {onRetry && <button className="toolbar-btn" onClick={onRetry}><RotateCcw size={15} /></button>}
+            <button
+              onClick={handleMicClick}
+              disabled={isTranscribing}
+              className={`toolbar-btn transition-colors ${
+                isRecording
+                  ? 'text-yellow-400 animate-pulse'
+                  : isTranscribing
+                  ? 'text-orange-400'
+                  : 'text-[rgb(var(--muted))]'
+              }`}
+            >
+              <Mic size={15} />
+            </button>
+          </>}
 
           <button
-            onClick={isGenerating ? onStopGeneration : handleSend}
-            disabled={!isGenerating && (!text.trim() && !images.length && !attachments.length && !quote)}
+            onClick={isGenerating ? onStopGeneration : () => void handleSend()}
+            disabled={isOptimizing || (!isGenerating && (!text.trim() && !images.length && !attachments.length && !quote))}
             className="send-btn ml-auto"
           >
-            {isGenerating ? <X size={15} /> : <Send size={15} />}
+            {isOptimizing ? <Loader2 size={15} className="animate-spin" /> : isGenerating ? <X size={15} /> : <Send size={15} />}
           </button>
         </div>
 
         {/* Bottom: mode + model picker + reasoning effort */}
         <div ref={bottomBarRef} className="flex flex-wrap items-center px-3 pb-2.5 gap-2 overflow-hidden min-w-0">
-          {!useResponsesApi && onModeChange && (
+          {!imageGenerateMode && !useResponsesApi && onModeChange && (
             <div className="flex gap-1">
               <button
                 onClick={() => onModeChange('chat')}
@@ -962,7 +992,7 @@ export default function ChatInput({
               </button>
             </div>
           )}
-          {useResponsesApi && onReasoningEffortChange && (
+          {!imageGenerateMode && useResponsesApi && onReasoningEffortChange && (
             <div className={`${overflowItems.includes('reasoning') ? 'hidden' : 'flex'} items-center`}>
               <button
                 ref={reasoningBtnRef}
@@ -1011,7 +1041,7 @@ export default function ChatInput({
             <span className="font-medium truncate">{displayModelName}</span>
             <ChevronDown size={11} />
           </button>
-          <button
+          {!imageGenerateMode && <button
             ref={fineTuningBtnRef}
             onClick={openFineTuningPicker}
             className={`${overflowItems.includes('fineTuning') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
@@ -1023,7 +1053,7 @@ export default function ChatInput({
               {selectedFineTuningId ? fineTunings.find(ft => ft.id === selectedFineTuningId)?.name || 'Knowledge' : 'None'}
             </span>
             <ChevronDown size={11} />
-          </button>
+          </button>}
           {overflowItems.length > 0 && (
             <div className="relative">
               <button

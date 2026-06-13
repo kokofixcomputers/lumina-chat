@@ -46,7 +46,7 @@
   /* ── Sidebar ── */
   .sidebar {
     @apply flex flex-col bg-[rgb(var(--panel))] border-r border-[rgb(var(--border))]
-          min-w-[180px] max-w-[280px] w-[260px] shrink h-full select-none;
+          min-w-[200px] max-w-[290px] w-[290px] shrink h-full select-none;
     /*   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ NOW it can shrink from 260px down to 180px */
   }
 
@@ -304,6 +304,17 @@
   @keyframes scaleIn {
     from { transform: scale(0.95); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes gradientShift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  @keyframes dotBounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.7; }
+    40%            { transform: translateY(-8px); opacity: 1; }
   }
 
   .animate-fade-in { animation: fadeIn 0.15s ease-out; }

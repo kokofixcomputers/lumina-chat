@@ -17,6 +17,7 @@
     "opener:default",
     "dialog:default",
     "dialog:allow-open",
+    "dialog:allow-save",
     "fs:allow-write-file",
     "fs:allow-read-file",
     "fs:allow-read-text-file",

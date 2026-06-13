@@ -2,10 +2,11 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
   Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download,
-  Code2, MessageCircle, FolderOpen, Plus
+  Code2, MessageCircle, FolderOpen, Plus, Image
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
 import type { CodeSession } from '../utils/codeSessionDB';
+import { imageDB, type GeneratedImage } from '../utils/imageDB';
 import { tauriUtils } from '../utils/tauri';
 
 interface SidebarProps {
@@ -25,15 +26,16 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disabled';
-  // Code mode
-  appMode?: 'chat' | 'code';
-  onModeChange?: (mode: 'chat' | 'code') => void;
+  // App mode
+  appMode?: 'chat' | 'code' | 'image';
+  onModeChange?: (mode: 'chat' | 'code' | 'image') => void;
   codeSessions?: CodeSession[];
   activeCodeSessionId?: string | null;
   onSelectCodeSession?: (id: string) => void;
   onNewCodeSession?: () => void;
   onDeleteCodeSession?: (id: string) => void;
   onRenameCodeSession?: (id: string, title: string) => void;
+  onSelectImage?: (id: string) => void;
 }
 
 export default function Sidebar({
@@ -53,7 +55,7 @@ export default function Sidebar({
   isOpen,
   onClose,
   syncStatus = 'disabled',
-  appMode = 'chat',
+  appMode = 'chat' as 'chat' | 'code' | 'image',
   onModeChange,
   codeSessions = [],
   activeCodeSessionId,
@@ -61,6 +63,7 @@ export default function Sidebar({
   onNewCodeSession,
   onDeleteCodeSession,
   onRenameCodeSession,
+  onSelectImage,
 }: SidebarProps) {
   const [hoverDel, setHoverDel] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -69,6 +72,7 @@ export default function Sidebar({
   const [olderOpen, setOlderOpen] = useState(true);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
+  const [sidebarImages, setSidebarImages] = useState<GeneratedImage[]>([]);
 
   const currentSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined;
 
@@ -145,6 +149,11 @@ export default function Sidebar({
     const id = setInterval(checkUpdates, 5 * 60 * 1000); // every 5 min
     return () => clearInterval(id);
   }, [currentSha]);
+
+  useEffect(() => {
+    if (appMode !== 'image') return;
+    imageDB.getAll().then(setSidebarImages);
+  }, [appMode]);
 
   const now = Date.now();
 
@@ -292,32 +301,26 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Chat / Code mode toggle — desktop only */}
+      {/* Chat / Code / Image mode toggle — desktop only */}
       {tauriUtils.isTauri && onModeChange && (
         <div className="px-3 pt-2 pb-1">
           <div className="flex rounded-xl bg-black/[0.05] dark:bg-white/[0.06] p-0.5">
-            <button
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12px] font-medium transition-all ${
-                appMode === 'chat'
-                  ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm'
-                  : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
-              }`}
-              onClick={() => onModeChange('chat')}
-            >
-              <MessageCircle size={12} />
-              Chat
-            </button>
-            <button
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12px] font-medium transition-all ${
-                appMode === 'code'
-                  ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm'
-                  : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
-              }`}
-              onClick={() => onModeChange('code')}
-            >
-              <Code2 size={12} />
-              Code
-            </button>
+            {(['chat', 'code', 'image'] as const).map(mode => (
+              <button
+                key={mode}
+                className={`flex-1 flex items-center justify-center gap-1 rounded-[10px] py-1.5 text-[11px] font-medium transition-all ${
+                  appMode === mode
+                    ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm'
+                    : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
+                }`}
+                onClick={() => onModeChange(mode)}
+              >
+                {mode === 'chat' && <MessageCircle size={11} />}
+                {mode === 'code' && <Code2 size={11} />}
+                {mode === 'image' && <Image size={11} />}
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -430,6 +433,27 @@ export default function Sidebar({
                   />
                 );
               })
+            )}
+          </>
+        )}
+
+        {appMode === 'image' && (
+          <>
+            {sidebarImages.length === 0 ? (
+              <p className="text-[12px] text-[rgb(var(--muted))] text-center py-6 px-4">No images yet.<br/>Generate one to get started.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1.5 px-2 pt-1">
+                {sidebarImages.map(img => (
+                  <button
+                    key={img.id}
+                    onClick={() => { onSelectImage?.(img.id); onClose(); }}
+                    className="aspect-square rounded-lg overflow-hidden hover:ring-2 hover:ring-[rgb(var(--accent))] transition-all"
+                    title={img.prompt}
+                  >
+                    <img src={img.b64} alt={img.prompt} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
             )}
           </>
         )}

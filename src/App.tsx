@@ -37,7 +37,7 @@ export default function App() {
   const location = useLocation();
   const store = useAppStore();
   const [panel, setPanel] = useState<Panel>('chat');
-  const [homeMode, setHomeMode] = useState<'chat' | 'image'>('chat');
+  const [homeMode, setHomeMode] = useState<'chat' | 'image' | 'code'>('chat');
   const [homeAttachments, setHomeAttachments] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
@@ -359,7 +359,12 @@ export default function App() {
     store.sendMessage(continuePrompt, [], store.activeConvId);
   };
 
-  const handleModeChange = (mode: 'chat' | 'image') => {
+  const handleModeChange = (mode: 'chat' | 'image' | 'code') => {
+    if (mode === 'code') {
+      // Switch to app-level code mode
+      setAppMode('code');
+      return;
+    }
     if (store.activeConvId) {
       store.setConversationMode(store.activeConvId, mode);
     } else {

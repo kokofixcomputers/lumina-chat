@@ -7,6 +7,7 @@ import {
   Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, X as ImgOut, Video,
   Share2, GitFork, Quote, Wand2
 } from 'lucide-react';
+import { checkIsTauri } from '../utils/tauri';
 import { getModelInfo } from '../utils/models';
 import { 
   calculateConversationTokens, 
@@ -38,8 +39,8 @@ interface ChatInputProps {
   onRetry?: () => void;
   onGenerateTitle?: () => void;
   onGenerateFollowUps?: () => void;
-  mode?: 'chat' | 'image';
-  onModeChange?: (mode: 'chat' | 'image') => void;
+  mode?: 'chat' | 'image' | 'code';
+  onModeChange?: (mode: 'chat' | 'image' | 'code') => void;
   attachments?: string[];
   onAttachmentsChange?: (attachments: string[])=> void;
   prettifyModelNames?: boolean;
@@ -219,6 +220,7 @@ export default function ChatInput({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [overflowItems, setOverflowItems] = useState<string[]>([]);
   const [isMobile, setIsMobile] = useState(false);
+  const isDesktop = checkIsTauri();
   const [quote, setQuote] = useState<string | null>(null);
   const [promptOptimize, setPromptOptimize] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -907,6 +909,21 @@ export default function ChatInput({
           />
         </div>
 
+        {/* Code-only notice for non-desktop */}
+        {mode === 'code' && !isDesktop && (
+          <div className="px-3 sm:px-4 py-3">
+            <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg p-3 flex items-center gap-3">
+              <div className="flex-1 text-sm text-[rgb(var(--muted))]">Code sessions are only available in the Lumina desktop app.</div>
+              <button
+                onClick={() => { window.location.href = '/download'; }}
+                className="btn-primary"
+              >
+                Download
+              </button>
+            </div>
+          </div>
+        )}
+
 
         {/* Toolbar */}
         <div className="flex items-center gap-0.5 px-3 pb-2.5 pt-0.5">
@@ -973,18 +990,28 @@ export default function ChatInput({
               <button
                 onClick={() => onModeChange('chat')}
                 className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all ${
-                  mode === 'chat' 
-                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]' 
+                  mode === 'chat'
+                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
                     : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                 }`}
               >
                 Chat
               </button>
               <button
+                onClick={() => onModeChange('code')}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all ${
+                  mode === 'code'
+                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                    : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                }`}
+              >
+                Code
+              </button>
+              <button
                 onClick={() => onModeChange('image')}
                 className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all ${
-                  mode === 'image' 
-                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]' 
+                  mode === 'image'
+                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
                     : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                 }`}
               >

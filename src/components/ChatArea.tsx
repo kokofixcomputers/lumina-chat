@@ -72,11 +72,11 @@ interface ChatAreaProps {
   onEditMessage?: (msgId: string, newContent: string) => void;
   onDeleteMessage?: (msgId: string) => void;
   onContinue?: (msgId: string) => void;
-  onModeChange?: (mode: 'chat' | 'image') => void;
+  onModeChange?: (mode: 'chat' | 'image' | 'code') => void;
   onAttachmentsChange?: (attachments: string[]) => void;
   onGenerateTitle?: () => void;
   onGenerateFollowUps?: () => void;
-  homeMode?: 'chat' | 'image';
+  homeMode?: 'chat' | 'image' | 'code';
   homeAttachments?: string[];
   prettifyModelNames?: boolean;
   workflows?: Array<{ id: string; slug: string; prompt: string }>;

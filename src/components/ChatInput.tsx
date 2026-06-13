@@ -48,9 +48,6 @@ interface ChatInputProps {
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
   onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
   onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
-  buildMode?: boolean;
-  onBuildModeChange?: (on: boolean) => void;
-  onOpenBuildFS?: () => void;
   onOpenShare?: () => void;
   onForkConversation?: () => void;
   conversation?: { messages: Message[] };
@@ -182,9 +179,6 @@ export default function ChatInput({
   reasoningEffort = 'off',
   onReasoningEffortChange,
   onTranscribeAudio,
-  buildMode = false,
-  onBuildModeChange,
-  onOpenBuildFS,
   onOpenShare,
   onForkConversation,
   conversation,
@@ -291,7 +285,7 @@ export default function ChatInput({
     } else if (row.scrollWidth <= row.clientWidth && overflowItems.length > 0) {
       setOverflowItems(prev => prev.slice(0, -1));
     }
-  }, [isMobile, overflowItems, selectedFineTuningId, buildMode, useResponsesApi, reasoningEffort, selectedModelId, allModels.length, fineTunings.length]);
+  }, [isMobile, overflowItems, selectedFineTuningId, useResponsesApi, reasoningEffort, selectedModelId, allModels.length, fineTunings.length]);
 
   useEffect(() => {
     if (!showMoreMenu) return;
@@ -968,29 +962,6 @@ export default function ChatInput({
               </button>
             </div>
           )}
-          {onBuildModeChange && (
-            <div className={`${overflowItems.includes('buildGroup') ? 'hidden' : 'flex'} items-center gap-1.5`}>
-              <button
-                onClick={() => onBuildModeChange(!buildMode)}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all ${
-                  buildMode
-                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
-                    : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                }`}
-              >
-                <span>⚒</span>
-                Build
-              </button>
-              {buildMode && onOpenBuildFS && (
-                <button
-                  onClick={onOpenBuildFS}
-                  className="px-2 py-0.5 rounded-lg text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-all"
-                >
-                  Files
-                </button>
-              )}
-            </div>
-          )}
           {useResponsesApi && onReasoningEffortChange && (
             <div className={`${overflowItems.includes('reasoning') ? 'hidden' : 'flex'} items-center`}>
               <button
@@ -1069,32 +1040,6 @@ export default function ChatInput({
                   ref={moreMenuRef}
                   className="absolute right-0 top-full mt-2 w-56 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl shadow-2xl p-2 z-50"
                 >
-                  {overflowItems.includes('buildGroup') && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onBuildModeChange?.(!buildMode);
-                          setShowMoreMenu(false);
-                        }}
-                        className="w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
-                      >
-                        {buildMode ? 'Disable Build' : 'Enable Build'}
-                      </button>
-                      {buildMode && onOpenBuildFS && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onOpenBuildFS?.();
-                            setShowMoreMenu(false);
-                          }}
-                          className="w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
-                        >
-                          Open Build Files
-                        </button>
-                      )}
-                    </>
-                  )}
                   {overflowItems.includes('reasoning') && useResponsesApi && onReasoningEffortChange && (
                     <button
                       type="button"

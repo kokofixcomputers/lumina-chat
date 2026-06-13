@@ -14,6 +14,215 @@ import { tauriUtils } from '../utils/tauri';
 import ChartComponent from './ChartComponent';
 import RemotionPreview from './RemotionPreview';
 
+function formatToolLabel(name?: string, path?: string, status?: string): string {
+  const file = path ? path.split('/').pop() : undefined;
+  const loading = status === 'loading';
+  switch (name) {
+    case 'read_file':        return file ? `Reading ${file}…` : (loading ? 'Reading…' : 'Read file');
+    case 'write_file':       return file ? (loading ? `Writing ${file}…` : `Wrote ${file}`) : (loading ? 'Writing…' : 'Wrote file');
+    case 'edit_file':        return file ? (loading ? `Editing ${file}…` : `Edited ${file}`) : (loading ? 'Editing…' : 'Edited file');
+    case 'delete_file':      return file ? (loading ? `Deleting ${file}…` : `Deleted ${file}`) : (loading ? 'Deleting…' : 'Deleted file');
+    case 'create_directory': return file ? (loading ? `Creating ${file}/…` : `Created ${file}/`) : (loading ? 'Creating directory…' : 'Created directory');
+    case 'list_directory':   return file ? (loading ? `Listing ${file}/…` : `Listed ${file}/`) : (loading ? 'Listing…' : 'Listed directory');
+    case 'execute_command':  return path ? (loading ? `Running: ${path}` : `Ran: ${path}`) : (loading ? 'Running command…' : 'Ran command');
+    default:                 return name || 'Tool';
+  }
+}
+
+type DiffLine = { kind: 'same' | 'add' | 'remove'; text: string };
+
+function computeDiff(before: string, after: string): DiffLine[] {
+  const a = before.split('\n');
+  const b = after.split('\n');
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--)
+    for (let j = n - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const result: DiffLine[] = [];
+  let i = 0, j = 0;
+  while (i < m || j < n) {
+    if (i < m && j < n && a[i] === b[j]) { result.push({ kind: 'same', text: a[i++] }); j++; }
+    else if (j < n && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) result.push({ kind: 'add', text: b[j++] });
+    else result.push({ kind: 'remove', text: a[i++] });
+  }
+  return result;
+}
+
+function getLang(path?: string): string {
+  const ext = path?.split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+    py: 'python', rs: 'rust', go: 'go', css: 'css', scss: 'scss',
+    html: 'markup', json: 'json', md: 'markdown', sh: 'bash',
+    bash: 'bash', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+    sql: 'sql', rb: 'ruby', java: 'java', kt: 'kotlin',
+    swift: 'swift', c: 'c', cpp: 'cpp', cs: 'csharp',
+  };
+  return map[ext] || 'text';
+}
+
+function renderNode(node: any, key: number, stylesheet?: any): React.ReactNode {
+  if (!node) return null;
+  if (node.type === 'text') return node.value;
+  const props = node.properties ?? {};
+  // inline styles come in props.style; class-based come in props.className
+  let style: React.CSSProperties = props.style ?? {};
+  if (!props.style && props.className && stylesheet) {
+    const cls = Array.isArray(props.className) ? props.className : [props.className];
+    for (const c of cls) {
+      if (stylesheet[c]) style = { ...style, ...stylesheet[c] };
+    }
+  }
+  return (
+    <span key={key} style={style}>
+      {(node.children ?? []).map((child: any, i: number) => renderNode(child, i, stylesheet))}
+    </span>
+  );
+}
+
+function DiffLines({ lines, path, isDark }: { lines: DiffLine[]; path?: string; isDark: boolean }) {
+  const lang = getLang(path);
+  const content = lines.map(l => l.text).join('\n');
+
+  // colours
+  const C = isDark ? {
+    bg:        '#0d1117',
+    addBg:     '#1a4d2e', addGutter: '#163d24', addNum: '#3fb950', addSign: '#3fb950', addText: '#e6edf3',
+    remBg:     '#4d1a1a', remGutter: '#3d1616', remNum: '#f85149', remSign: '#f85149', remText: '#e6edf3',
+    sameBg:    'transparent', sameNum: '#8b949e', sameSign: '#8b949e', sameText: '#8b949e',
+    border:    '#30363d',
+  } : {
+    bg:        '#fafafa',
+    addBg:     '#e8f5ec', addGutter: '#d0ecda', addNum: '#3a8a5a', addSign: '#3a8a5a', addText: '#1f2328',
+    remBg:     '#faebeb', remGutter: '#f2d0d0', remNum: '#b84040', remSign: '#b84040', remText: '#1f2328',
+    sameBg:    'transparent', sameNum: '#8b949e', sameSign: '#8b949e', sameText: '#57606a',
+    border:    '#d0d7de',
+  };
+
+  const renderer = ({ rows, stylesheet, useInlineStyles: inlineStyles }: { rows: any[]; stylesheet: any; useInlineStyles: boolean }) => {
+    let bLine = 0, aLine = 0;
+    return (
+      <>
+        {rows.map((row, i) => {
+          const kind = lines[i]?.kind ?? 'same';
+          if (kind === 'same')   { bLine++; aLine++; }
+          if (kind === 'remove') { bLine++; }
+          if (kind === 'add')    { aLine++; }
+
+          const bNum = kind !== 'add'    ? bLine : null;
+          const aNum = kind !== 'remove' ? aLine : null;
+          const sign = kind === 'add' ? '+' : kind === 'remove' ? '-' : ' ';
+
+          const col = kind === 'add' ? C : kind === 'remove'
+            ? { bg: C.remBg, gutter: C.remGutter, num: C.remNum, sign: C.remSign, text: C.remText }
+            : { bg: C.sameBg, gutter: 'transparent', num: C.sameNum, sign: C.sameSign, text: C.sameText };
+
+          const addC  = { bg: C.addBg,  gutter: C.addGutter,  num: C.addNum,  sign: C.addSign,  text: C.addText  };
+          const remC  = { bg: C.remBg,  gutter: C.remGutter,  num: C.remNum,  sign: C.remSign,  text: C.remText  };
+          const samC  = { bg: C.sameBg, gutter: 'transparent',num: C.sameNum, sign: C.sameSign, text: C.sameText };
+          const cc = kind === 'add' ? addC : kind === 'remove' ? remC : samC;
+
+          const gutterStyle: React.CSSProperties = {
+            display: 'inline-block', width: 36, textAlign: 'right', paddingRight: 6, flexShrink: 0,
+            fontSize: 10, color: cc.num, background: cc.gutter,
+            borderRight: `1px solid ${C.border}`, userSelect: 'none',
+          };
+          const signStyle: React.CSSProperties = {
+            display: 'inline-block', width: 20, textAlign: 'center', flexShrink: 0,
+            color: cc.sign, background: cc.gutter,
+            borderRight: `1px solid ${C.border}`, userSelect: 'none',
+          };
+
+          return (
+            <div key={i} style={{ display: 'flex', background: cc.bg, lineHeight: '20px' }}>
+              <span style={gutterStyle}>{bNum ?? ''}</span>
+              <span style={gutterStyle}>{aNum ?? ''}</span>
+              <span style={signStyle}>{sign}</span>
+              <span style={{ paddingLeft: 8, whiteSpace: 'pre', flex: 1, color: cc.text }}>
+                {(row.children ?? []).map((node: any, j: number) => renderNode(node, j, stylesheet))}
+              </span>
+            </div>
+          );
+        })}
+      </>
+    );
+  };
+
+  return (
+    <SyntaxHighlighter
+      language={lang}
+      style={isDark ? oneDark : oneLight}
+      renderer={renderer}
+      PreTag="div"
+      CodeTag="div"
+      useInlineStyles={true}
+      customStyle={{ margin: 0, padding: 0, background: C.bg, fontSize: 11 }}
+    >
+      {content}
+    </SyntaxHighlighter>
+  );
+}
+
+function ToolDiffView({ diff }: { diff: NonNullable<Message['toolDiff']> }) {
+  const isDark = document.documentElement.classList.contains('dark');
+
+  if (diff.type === 'output') {
+    return (
+      <pre className="mt-2 text-[11px] font-mono bg-black/[0.04] dark:bg-white/[0.04] rounded-lg px-3 py-2.5 overflow-x-auto max-h-[300px] overflow-y-auto text-[rgb(var(--text))] whitespace-pre-wrap">
+        {diff.output || '(no output)'}
+      </pre>
+    );
+  }
+
+  const containerBg = isDark ? '#0d1117' : '#ffffff';
+  const headerBg    = isDark ? '#161b22' : '#f6f8fa';
+  const headerText  = isDark ? '#8b949e' : '#57606a';
+  const headerBorder= isDark ? '#30363d' : '#d0d7de';
+  const border      = isDark ? '#30363d' : '#d0d7de';
+
+  const DiffContainer = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: `1px solid ${border}`, maxHeight: 300, overflowY: 'auto', fontSize: 11, fontFamily: 'monospace', background: containerBg }}>
+      <div style={{ padding: '4px 12px', background: headerBg, color: headerText, fontSize: 10, borderBottom: `1px solid ${headerBorder}` }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+
+  if (diff.type === 'write') {
+    const hasBefore = diff.before !== undefined;
+    const lines = hasBefore
+      ? computeDiff(diff.before!, diff.after ?? '')
+      : (diff.after ?? '').split('\n').map(t => ({ kind: 'add' as const, text: t }));
+    return (
+      <DiffContainer label={`${hasBefore ? 'modified' : 'created'} — ${diff.path}`}>
+        <DiffLines lines={lines} path={diff.path} isDark={isDark} />
+      </DiffContainer>
+    );
+  }
+
+  if (diff.type === 'delete') {
+    const lines = (diff.before ?? '').split('\n').map(t => ({ kind: 'remove' as const, text: t }));
+    return (
+      <DiffContainer label={`deleted — ${diff.path}`}>
+        <DiffLines lines={lines} path={diff.path} isDark={isDark} />
+      </DiffContainer>
+    );
+  }
+
+  if (diff.type === 'edit') {
+    const lines = computeDiff(diff.before ?? '', diff.after ?? '');
+    return (
+      <DiffContainer label={`edited — ${diff.path}`}>
+        <DiffLines lines={lines} path={diff.path} isDark={isDark} />
+      </DiffContainer>
+    );
+  }
+
+  return null;
+}
+
 function CopyBtn({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
@@ -593,10 +802,8 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
             {message.tool_status !== 'loading' && !hasImages && !hasArtifacts && !remotionData && (
               expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
             )}
-            <span className="font-medium">{message.tool_name}</span>
-            {message.tool_status === 'loading' && <span> - Running...</span>}
-            {message.tool_status === 'success' && <span> - Completed</span>}
-            {message.tool_status === 'error' && <span> - Failed</span>}
+            <span className="font-medium">{formatToolLabel(message.tool_name, message.toolDiff?.path, message.tool_status)}</span>
+            {message.tool_status === 'error' && <span className="text-red-500"> — Failed</span>}
           </div>
           {hasImages && (
             <div className="flex flex-wrap gap-2 mt-2">
@@ -731,10 +938,14 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
               />
             </div>
           )}
-          {message.tool_status !== 'loading' && message.content && (expanded) && !hasImages && !hasArtifacts && !remotionData && (
-            <pre className="text-[11px] text-[rgb(var(--muted))] mt-1 font-mono bg-black/[0.03] dark:bg-white/[0.05] p-2 rounded overflow-x-auto max-h-[300px] overflow-y-auto">
-              {message.content}
-            </pre>
+          {message.tool_status !== 'loading' && expanded && !hasImages && !hasArtifacts && !remotionData && (
+            message.toolDiff ? (
+              <ToolDiffView diff={message.toolDiff} />
+            ) : message.content ? (
+              <pre className="text-[11px] text-[rgb(var(--muted))] mt-1 font-mono bg-black/[0.03] dark:bg-white/[0.05] p-2 rounded overflow-x-auto max-h-[300px] overflow-y-auto">
+                {message.content}
+              </pre>
+            ) : null
           )}
         </div>
       </div>

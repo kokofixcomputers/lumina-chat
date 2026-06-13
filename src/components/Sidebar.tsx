@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
-  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download
+  Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download,
+  Code2, MessageCircle, FolderOpen, Plus
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
+import type { CodeSession } from '../utils/codeSessionDB';
 import { tauriUtils } from '../utils/tauri';
 
 interface SidebarProps {
@@ -23,6 +25,15 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disabled';
+  // Code mode
+  appMode?: 'chat' | 'code';
+  onModeChange?: (mode: 'chat' | 'code') => void;
+  codeSessions?: CodeSession[];
+  activeCodeSessionId?: string | null;
+  onSelectCodeSession?: (id: string) => void;
+  onNewCodeSession?: () => void;
+  onDeleteCodeSession?: (id: string) => void;
+  onRenameCodeSession?: (id: string, title: string) => void;
 }
 
 export default function Sidebar({
@@ -42,6 +53,14 @@ export default function Sidebar({
   isOpen,
   onClose,
   syncStatus = 'disabled',
+  appMode = 'chat',
+  onModeChange,
+  codeSessions = [],
+  activeCodeSessionId,
+  onSelectCodeSession,
+  onNewCodeSession,
+  onDeleteCodeSession,
+  onRenameCodeSession,
 }: SidebarProps) {
   const [hoverDel, setHoverDel] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -189,6 +208,57 @@ export default function Sidebar({
     );
   };
 
+  const CodeSessionItem = ({ session, isActive, workspaceName, onSelect, onDelete, onRename }: {
+    session: CodeSession; isActive: boolean; workspaceName: string;
+    onSelect: () => void; onDelete: () => void; onRename: (title: string) => void;
+  }) => {
+    const [editing, setEditing] = useState(false);
+    const [editTitle, setEditTitle] = useState(session.title || 'Untitled Session');
+    const commit = () => { onRename(editTitle); setEditing(false); };
+    return (
+      <div
+        className={`sidebar-item group relative ${isActive ? 'active' : ''}`}
+        onClick={() => { if (!editing) onSelect(); }}
+      >
+        <Code2 size={13} className="shrink-0 opacity-50" />
+        <div className="flex-1 min-w-0">
+          {editing ? (
+            <input
+              value={editTitle}
+              onChange={e => setEditTitle(e.target.value)}
+              onBlur={commit}
+              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+              className="w-full bg-transparent text-[13px] outline-none"
+              autoFocus
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <p className="truncate text-[13px]" onDoubleClick={e => { e.stopPropagation(); setEditing(true); }}>
+              {session.title || 'Untitled Session'}
+            </p>
+          )}
+          <p className={`truncate text-[11px] ${isActive ? 'opacity-60' : 'text-[rgb(var(--muted))]'}`}>{workspaceName}</p>
+        </div>
+        {!editing && (
+          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-all">
+            <button
+              onClick={e => { e.stopPropagation(); setEditing(true); }}
+              className="w-5 h-5 rounded flex items-center justify-center text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors"
+            >
+              <Edit2 size={11} />
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(); }}
+              className="w-5 h-5 rounded flex items-center justify-center text-[rgb(var(--muted))] hover:text-red-500 transition-colors"
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Mobile overlay */}
@@ -222,6 +292,36 @@ export default function Sidebar({
         </button>
       </div>
 
+      {/* Chat / Code mode toggle — desktop only */}
+      {tauriUtils.isTauri && onModeChange && (
+        <div className="px-3 pt-2 pb-1">
+          <div className="flex rounded-xl bg-black/[0.05] dark:bg-white/[0.06] p-0.5">
+            <button
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12px] font-medium transition-all ${
+                appMode === 'chat'
+                  ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm'
+                  : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
+              }`}
+              onClick={() => onModeChange('chat')}
+            >
+              <MessageCircle size={12} />
+              Chat
+            </button>
+            <button
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12px] font-medium transition-all ${
+                appMode === 'code'
+                  ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm'
+                  : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
+              }`}
+              onClick={() => onModeChange('code')}
+            >
+              <Code2 size={12} />
+              Code
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       <div className="px-1 py-2">
         {searchOpen ? (
@@ -247,50 +347,89 @@ export default function Sidebar({
       </div>
 
       {/* Nav */}
-      <div className="px-1 space-y-0.5">
-        <button className="sidebar-item w-full" onClick={() => { onGoHome(); onClose(); }}>
-          <Home size={15} />
-          <span>New Chat</span>
-        </button>
-        <button className="sidebar-item w-full" onClick={onOpenViewChat}>
-          <Link size={15} />
-          <span>View Chat</span>
-        </button>
-        <button className={`sidebar-item w-full ${currentPanel === 'fine-tuning' ? 'active' : ''}`} onClick={() => { onOpenFineTuning(); onClose(); }}>
-          <BookOpen size={15} />
-          <span>Fine-tuning</span>
-        </button>
-      </div>
+      {appMode === 'chat' && (
+        <div className="px-1 space-y-0.5">
+          <button className="sidebar-item w-full" onClick={() => { onGoHome(); onClose(); }}>
+            <Home size={15} />
+            <span>New Chat</span>
+          </button>
+          <button className="sidebar-item w-full" onClick={onOpenViewChat}>
+            <Link size={15} />
+            <span>View Chat</span>
+          </button>
+          <button className={`sidebar-item w-full ${currentPanel === 'fine-tuning' ? 'active' : ''}`} onClick={() => { onOpenFineTuning(); onClose(); }}>
+            <BookOpen size={15} />
+            <span>Fine-tuning</span>
+          </button>
+        </div>
+      )}
 
-      {/* Conversations */}
+      {appMode === 'code' && (
+        <div className="px-1 space-y-0.5">
+          <button className="sidebar-item w-full" onClick={() => { onNewCodeSession?.(); onClose(); }}>
+            <Plus size={15} />
+            <span>New Session</span>
+          </button>
+        </div>
+      )}
+
+      {/* Conversations / Code sessions list */}
       <div className="flex-1 overflow-y-auto mt-3">
-        {filtered.length === 0 && searchQ ? (
-          <p className="text-[12px] text-[rgb(var(--muted))] text-center py-6 px-4">No conversations match "{searchQ}"</p>
-        ) : (
+        {appMode === 'chat' && (
           <>
-            {today.length > 0 && (
-              <div className="mb-1">
-                <button
-                  className="flex items-center gap-1 px-5 py-1 text-[11px] font-medium text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors w-full"
-                  onClick={() => setTodayOpen(p => !p)}
-                >
-                  <ChevronDown size={11} className={`transition-transform ${todayOpen ? '' : '-rotate-90'}`} />
-                  <span>Today</span>
-                </button>
-                {todayOpen && today.map(c => <ConvItem key={c.id} conv={c} />)}
-              </div>
+            {filtered.length === 0 && searchQ ? (
+              <p className="text-[12px] text-[rgb(var(--muted))] text-center py-6 px-4">No conversations match "{searchQ}"</p>
+            ) : (
+              <>
+                {today.length > 0 && (
+                  <div className="mb-1">
+                    <button
+                      className="flex items-center gap-1 px-5 py-1 text-[11px] font-medium text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors w-full"
+                      onClick={() => setTodayOpen(p => !p)}
+                    >
+                      <ChevronDown size={11} className={`transition-transform ${todayOpen ? '' : '-rotate-90'}`} />
+                      <span>Today</span>
+                    </button>
+                    {todayOpen && today.map(c => <ConvItem key={c.id} conv={c} />)}
+                  </div>
+                )}
+                {older.length > 0 && (
+                  <div className="mb-1">
+                    <button
+                      className="flex items-center gap-1 px-5 py-1 text-[11px] font-medium text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors w-full"
+                      onClick={() => setOlderOpen(p => !p)}
+                    >
+                      <ChevronDown size={11} className={`transition-transform ${olderOpen ? '' : '-rotate-90'}`} />
+                      <span>Earlier</span>
+                    </button>
+                    {olderOpen && older.map(c => <ConvItem key={c.id} conv={c} />)}
+                  </div>
+                )}
+              </>
             )}
-            {older.length > 0 && (
-              <div className="mb-1">
-                <button
-                  className="flex items-center gap-1 px-5 py-1 text-[11px] font-medium text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors w-full"
-                  onClick={() => setOlderOpen(p => !p)}
-                >
-                  <ChevronDown size={11} className={`transition-transform ${olderOpen ? '' : '-rotate-90'}`} />
-                  <span>Earlier</span>
-                </button>
-                {olderOpen && older.map(c => <ConvItem key={c.id} conv={c} />)}
-              </div>
+          </>
+        )}
+
+        {appMode === 'code' && (
+          <>
+            {codeSessions.length === 0 ? (
+              <p className="text-[12px] text-[rgb(var(--muted))] text-center py-6 px-4">No sessions yet.<br/>Click New Session to start.</p>
+            ) : (
+              codeSessions.map(s => {
+                const workspaceName = s.workspace.split('/').pop() || s.workspace;
+                const isActive = s.id === activeCodeSessionId;
+                return (
+                  <CodeSessionItem
+                    key={s.id}
+                    session={s}
+                    isActive={isActive}
+                    workspaceName={workspaceName}
+                    onSelect={() => { onSelectCodeSession?.(s.id); onClose(); }}
+                    onDelete={() => onDeleteCodeSession?.(s.id)}
+                    onRename={(title) => onRenameCodeSession?.(s.id, title)}
+                  />
+                );
+              })
             )}
           </>
         )}

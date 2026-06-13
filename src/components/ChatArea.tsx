@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Settings, Bot } from 'lucide-react';
+import { Settings, Bot, Columns, FolderOpen } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
-import BuildModeFS from './BuildModeFS';
 import PreviewSidebar from './PreviewSidebar';
 
 // Memoized bubble — only re-renders when its own message object changes
@@ -86,13 +85,15 @@ interface ChatAreaProps {
   onReasoningEffortChange?: (effort: 'off' | 'low' | 'medium' | 'high') => void;
   onVersionChange?: (msgId: string, versionIndex: number) => void;
   onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
-  onBuildModeChange?: (on: boolean) => void;
-  onOpenBuildFS?: () => void;
   onOpenShare?: () => void;
   onForkConversation?: () => void;
-  homeBuildMode?: boolean;
   selectedFineTuningId?: string | null;
   onFineTuningChange?: (fineTuningId: string | null) => void;
+  onEnableSplitView?: (convId: string) => void;
+  allConversations?: Conversation[];
+  isCode?: boolean;
+  codeWorkspace?: string;
+  onChangeWorkspace?: () => void;
 }
 
 const QUICK_ACTIONS = [
@@ -124,7 +125,6 @@ export default function ChatArea({
   onGenerateFollowUps,
   onOpenShare,
   onForkConversation,
-  onOpenBuildFS,
   homeMode = 'chat',
   homeAttachments = [],
   prettifyModelNames = true,
@@ -134,16 +134,19 @@ export default function ChatArea({
   onReasoningEffortChange,
   onVersionChange,
   onTranscribeAudio,
-  onBuildModeChange,
-  homeBuildMode = false,
   selectedFineTuningId = null,
   onFineTuningChange,
+  onEnableSplitView,
+  allConversations = [],
+  isCode = false,
+  codeWorkspace,
+  onChangeWorkspace,
 }: ChatAreaProps) {
+  const [showSplitDropdown, setShowSplitDropdown] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const prevConvIdRef = useRef<string | null>(null);
-  const [showFS, setShowFS] = useState(false);
 
   // Eased scroll — 12% of remaining per frame, feels smooth during streaming
   const easeToBottom = () => {
@@ -224,9 +227,6 @@ export default function ChatArea({
               reasoningEffort={reasoningEffort}
               onReasoningEffortChange={onReasoningEffortChange}
               onTranscribeAudio={onTranscribeAudio}
-              buildMode={homeBuildMode}
-              onBuildModeChange={onBuildModeChange}
-              onOpenBuildFS={onOpenBuildFS}
               onOpenShare={onOpenShare}
               onForkConversation={onForkConversation}
               conversation={{ messages: [] }}
@@ -254,30 +254,68 @@ export default function ChatArea({
 
   // ── Chat view ───────────────────────────────────────
   return (
-    <div className="flex-1 flex min-w-0 min-h-0 w-0 bg-[rgb(var(--bg))] animate-fade-in">
-      <div className="flex-1 flex flex-col min-w-0 min-h-0 w-0">
+    <div className={`flex-1 flex min-w-0 min-h-0 bg-[rgb(var(--bg))] animate-fade-in ${isCode ? 'w-full' : 'w-0'}`}>
+      <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${isCode ? 'w-full' : 'w-0'}`}>
       {/* Header */}
-      <div className="flex items-center px-5 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0">
-            <Bot size={13} className="text-white dark:text-black" />
-          </div>
-          <span className="text-[13px] font-medium truncate text-[rgb(var(--text))]">{conversation.title}</span>
-          <span className="text-[rgb(var(--muted))] text-[12px] shrink-0">· {modelDisplayName}</span>
-        </div>
-        <div className="ml-auto flex items-center gap-1 shrink-0">
-          {conversation.buildMode && (
-            <button
-              onClick={() => setShowFS(s => !s)}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${showFS ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'}`}
-              title="Browse virtual filesystem"
-            >
-              <span>⚒</span> Files
+      {isCode ? (
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
+          <FolderOpen size={14} className="text-[rgb(var(--muted))] shrink-0" />
+          <span className="text-[12px] text-[rgb(var(--muted))] font-mono truncate flex-1" title={codeWorkspace}>
+            {codeWorkspace}
+          </span>
+          {onChangeWorkspace && (
+            <button className="btn-ghost text-[12px] gap-1.5 shrink-0 py-1" onClick={onChangeWorkspace}>
+              <FolderOpen size={12} />
+              Change
             </button>
           )}
           <button className="btn-icon" onClick={onTogglePanel}><Settings size={15} /></button>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center px-5 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0">
+              <Bot size={13} className="text-white dark:text-black" />
+            </div>
+            <span className="text-[13px] font-medium truncate text-[rgb(var(--text))]">{conversation.title}</span>
+            <span className="text-[rgb(var(--muted))] text-[12px] shrink-0">· {modelDisplayName}</span>
+          </div>
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            {conversation && onEnableSplitView && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowSplitDropdown(s => !s)}
+                  className="btn-icon"
+                  title="Split view"
+                >
+                  <Columns size={15} />
+                </button>
+                {showSplitDropdown && (
+                  <div className="absolute right-0 top-full mt-1 w-48 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg shadow-lg z-50 p-2">
+                    <p className="text-xs text-[rgb(var(--muted))] px-2 py-1">Select conversation for split view:</p>
+                    {allConversations.filter(c => c.id !== conversation?.id).slice(0, 5).map(conv => (
+                      <button
+                        key={conv.id}
+                        onClick={() => {
+                          onEnableSplitView?.(conv.id);
+                          setShowSplitDropdown(false);
+                        }}
+                        className="w-full text-left px-2 py-1.5 text-sm hover:bg-black/[0.04] dark:hover:bg-white/[0.06] rounded truncate"
+                      >
+                        {conv.title}
+                      </button>
+                    ))}
+                    {allConversations.filter(c => c.id !== conversation?.id).length === 0 && (
+                      <p className="text-xs text-[rgb(var(--muted))] px-2 py-1">No other conversations</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <button className="btn-icon" onClick={onTogglePanel}><Settings size={15} /></button>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden py-6">
@@ -335,31 +373,25 @@ export default function ChatArea({
         selectedModelId={selectedModelId}
         onModelChange={onModelChange}
         onOpenProviders={onOpenProviders}
-        onRetry={onRetry}
-        onGenerateTitle={onGenerateTitle}
-        onGenerateFollowUps={onGenerateFollowUps}
-        mode={conversation.mode || 'chat'}
-        onModeChange={onModeChange}
-        attachments={conversation.attachments || []}
-        onAttachmentsChange={onAttachmentsChange}
+        onRetry={isCode ? undefined : onRetry}
+        onGenerateTitle={isCode ? undefined : onGenerateTitle}
+        onGenerateFollowUps={isCode ? undefined : onGenerateFollowUps}
+        mode={isCode ? 'chat' : (conversation.mode || 'chat')}
+        onModeChange={isCode ? undefined : onModeChange}
+        attachments={isCode ? [] : (conversation.attachments || [])}
+        onAttachmentsChange={isCode ? undefined : onAttachmentsChange}
         prettifyModelNames={prettifyModelNames}
-        workflows={workflows}
-        useResponsesApi={useResponsesApi}
+        workflows={isCode ? [] : workflows}
+        useResponsesApi={isCode ? false : useResponsesApi}
         reasoningEffort={reasoningEffort}
-        onReasoningEffortChange={onReasoningEffortChange}
-        buildMode={conversation.buildMode}
-        onBuildModeChange={onBuildModeChange ? (on) => onBuildModeChange(on) : undefined}
-        onOpenBuildFS={() => setShowFS(s => !s)}
-        onOpenShare={onOpenShare}
-        onForkConversation={onForkConversation}
+        onReasoningEffortChange={isCode ? undefined : onReasoningEffortChange}
+        onOpenShare={isCode ? undefined : onOpenShare}
+        onForkConversation={isCode ? undefined : onForkConversation}
         conversation={conversation}
-        selectedFineTuningId={selectedFineTuningId}
-        onFineTuningChange={onFineTuningChange}
+        selectedFineTuningId={isCode ? null : selectedFineTuningId}
+        onFineTuningChange={isCode ? undefined : onFineTuningChange}
       />
       </div>
-      {showFS && conversation.id && (
-        <BuildModeFS convId={conversation.id} onClose={() => setShowFS(false)} />
-      )}
       <PreviewSidebar />
     </div>
   );

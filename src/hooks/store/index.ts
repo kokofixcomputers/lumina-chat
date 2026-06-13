@@ -23,7 +23,7 @@ export function useAppStore() {
     newConversation, deleteConversation, updateConversationTitle, addMessage,
     setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,
     updateMessageVersions, setConversationMode, setConversationAttachments,
-    setBuildMode, setConversationDevEnvSession,
+    setConversationDevEnvSession,
   } = convSlice;
 
   const generateSlice = useGenerate({
@@ -63,7 +63,7 @@ export function useAppStore() {
     setActiveConvId, newConversation, deleteConversation, updateConversationTitle,
     setConversations, setConversationModel, deleteLastMessage, editMessage, deleteMessagesFrom,
     updateMessageVersions, setConversationMode, setConversationAttachments,
-    setBuildMode, setConversationDevEnvSession, addMessage,
+    setConversationDevEnvSession, addMessage,
     // settings actions
     updateSettings, updateModelSettings, updateProvider,
     addIntegratedProvider, addProvider, deleteProvider,

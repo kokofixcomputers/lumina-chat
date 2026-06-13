@@ -3,6 +3,8 @@ import { Menu, Sparkles } from 'lucide-react';
 import { Routes, Route, useParams, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
+import CodeMode from './components/CodeMode';
+import SplitViewChat from './components/SplitViewChat';
 import SettingsPanel from './components/SettingsPanel';
 import OnboardingScreen from './components/OnboardingScreen';
 import SharePanel from './components/SharePanel';
@@ -24,6 +26,8 @@ import { isVersionUpdated, setStoredVersion, getCurrentVersion, fetchLatestRelea
 import './utils/storageMigration'; // Load migration utilities
 import './utils/syncIndexedDB'; // Load IndexedDB sync utilities
 import type { Panel, Message } from './types';
+import type { CodeSession } from './utils/codeSessionDB';
+import { codeSessionDB } from './utils/codeSessionDB';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
@@ -34,7 +38,6 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>('chat');
   const [homeMode, setHomeMode] = useState<'chat' | 'image'>('chat');
   const [homeAttachments, setHomeAttachments] = useState<string[]>([]);
-  const [homeBuildMode, setHomeBuildMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
@@ -42,6 +45,12 @@ export default function App() {
   const [fineTuningView, setFineTuningView] = useState<'list' | { id: string }>('list');
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
   const [latestRelease, setLatestRelease] = useState<any>(null);
+  const [splitViewEnabled, setSplitViewEnabled] = useState(false);
+  const [secondConvId, setSecondConvId] = useState<string | null>(null);
+  const [dividerPosition, setDividerPosition] = useState(50);
+  const [appMode, setAppMode] = useState<'chat' | 'code'>('chat');
+  const [codeSessions, setCodeSessions] = useState<CodeSession[]>([]);
+  const [activeCodeSessionId, setActiveCodeSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Extract conversationId from pathname
@@ -167,6 +176,51 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
+  // Load code sessions on mount (desktop only)
+  useEffect(() => {
+    if (!isTauri()) return;
+    codeSessionDB.getAll().then(setCodeSessions).catch(console.error);
+  }, []);
+
+  const handleCodeSessionUpdate = async (session: CodeSession) => {
+    await codeSessionDB.save(session);
+    setCodeSessions(prev => {
+      const idx = prev.findIndex(s => s.id === session.id);
+      if (idx === -1) return [session, ...prev];
+      const next = [...prev];
+      next[idx] = session;
+      return next.sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+  };
+
+  const handleNewCodeSession = (workspace: string) => {
+    const session: CodeSession = {
+      id: crypto.randomUUID(),
+      title: workspace.split('/').pop() || 'New Session',
+      workspace,
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    codeSessionDB.save(session).catch(console.error);
+    setCodeSessions(prev => [session, ...prev]);
+    setActiveCodeSessionId(session.id);
+  };
+
+  const handleDeleteCodeSession = async (id: string) => {
+    await codeSessionDB.delete(id);
+    setCodeSessions(prev => prev.filter(s => s.id !== id));
+    if (activeCodeSessionId === id) setActiveCodeSessionId(null);
+  };
+
+  const handleRenameCodeSession = async (id: string, title: string) => {
+    const session = codeSessions.find(s => s.id === id);
+    if (!session) return;
+    const updated = { ...session, title, updatedAt: Date.now() };
+    await codeSessionDB.save(updated);
+    setCodeSessions(prev => prev.map(s => s.id === id ? updated : s));
+  };
+
   const toggleTheme = () => {
     const themes = ['light', 'dark', 'system'] as const;
     const idx = themes.indexOf(store.settings.theme);
@@ -185,7 +239,6 @@ export default function App() {
       convId = store.newConversation(homeMode, homeAttachments);
       store.setActiveConvId(convId);
       navigate(`/${convId}`);
-      if (homeBuildMode) store.setBuildMode(convId, true);
     }
     const conv = store.conversations.find(c => c.id === convId);
     if (conv?.mode === 'image') {
@@ -312,13 +365,6 @@ export default function App() {
     }
   };
 
-  const handleBuildModeChange = (on: boolean) => {
-    if (store.activeConvId) {
-      store.setBuildMode(store.activeConvId, on);
-    } else {
-      setHomeBuildMode(on);
-    }
-  };
 
   const handleAttachmentsChange = (attachments: string[]) => {
     if (store.activeConvId) {
@@ -436,6 +482,16 @@ export default function App() {
   const handleModelChange = (modelId: string) => {
     if (store.activeConvId) store.setConversationModel(store.activeConvId, modelId);
     store.updateSettings({ defaultProviderModelId: modelId });
+  };
+
+  const handleEnableSplitView = (convId: string) => {
+    setSecondConvId(convId);
+    setSplitViewEnabled(true);
+  };
+
+  const handleCloseSplitView = () => {
+    setSplitViewEnabled(false);
+    setSecondConvId(null);
   };
 
   const handleImportData = async (data: any) => {
@@ -1365,10 +1421,29 @@ export default function App() {
               isOpen={sidebarOpen}
               onClose={() => setSidebarOpen(false)}
               syncStatus={syncStatus}
+              appMode={appMode}
+              onModeChange={setAppMode}
+              codeSessions={codeSessions}
+              activeCodeSessionId={activeCodeSessionId}
+              onSelectCodeSession={setActiveCodeSessionId}
+              onNewCodeSession={() => {
+                // Trigger the workspace picker inside CodeMode by setting a sentinel
+                setActiveCodeSessionId(null);
+              }}
+              onDeleteCodeSession={handleDeleteCodeSession}
+              onRenameCodeSession={handleRenameCodeSession}
             />
 
             <div className="flex-1 flex min-w-0 overflow-hidden">
-              {panel === 'fine-tuning' ? (
+              {appMode === 'code' ? (
+                <CodeMode
+                  session={codeSessions.find(s => s.id === activeCodeSessionId) ?? null}
+                  onUpdate={handleCodeSessionUpdate}
+                  onNewSession={handleNewCodeSession}
+                  onOpenProviders={openProviders}
+                  onTogglePanel={togglePanel}
+                />
+              ) : panel === 'fine-tuning' ? (
                 fineTuningView === 'list' ? (
                   <FineTuningList onOpenFineTuningDetail={handleOpenFineTuningDetail} />
                 ) : (
@@ -1379,69 +1454,115 @@ export default function App() {
                 )
               ) : (
                 <>
-                  <ChatArea
-                    conversation={store.activeConversation}
-                    isGenerating={store.isGenerating}
-                    streamingContent={store.streamingContent}
-                    streamingContentRef={store.streamingContentRef}
-                    allModels={store.allProviderModels}
-                    onSend={handleSend}
-                    onModelChange={handleModelChange}
-                    defaultModelId={store.settings.defaultProviderModelId}
-                    onTogglePanel={togglePanel}
-                    onOpenProviders={openProviders}
-                    onRetry={handleRetry}
-                    onStopGeneration={store.stopGeneration}
-                    onEditMessage={handleEditMessage}
-                    onDeleteMessage={handleDeleteMessage}
-                    onContinue={handleContinue}
-                    onModeChange={handleModeChange}
-                    onAttachmentsChange={handleAttachmentsChange}
-                    onBuildModeChange={handleBuildModeChange}
-                    homeBuildMode={homeBuildMode}
-                    onGenerateTitle={handleGenerateTitle}
-                    onGenerateFollowUps={handleGenerateFollowUps}
-                    homeMode={homeMode}
-                    homeAttachments={homeAttachments}
-                    prettifyModelNames={store.settings.prettifyModelNames}
-                    workflows={store.settings.workflows || []}
-                    useResponsesApi={store.settings.modelSettings.useResponsesApi}
-                    reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
-                    onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
-                    onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
-                    onVersionChange={handleVersionChange}
-                    onOpenShare={openSharePanel}
-                    onForkConversation={handleForkConversation}
-                    selectedFineTuningId={store.selectedFineTuningId}
-                    onFineTuningChange={store.selectFineTuning}
-                  />
-
-                  {panel === 'settings' && (
-                    <SettingsPanel
-                      settings={store.settings}
-                      conversations={store.conversations}
-                      onUpdateModelSettings={store.updateModelSettings}
-                      onUpdateSettings={store.updateSettings}
-                      onUpdateProvider={store.updateProvider}
-                      onAddProvider={store.addProvider}
-                      onAddIntegratedProvider={store.addIntegratedProvider}
-                      onDeleteProvider={store.deleteProvider}
-                      onUpsertApiFormat={store.upsertApiFormat}
-                      onDeleteApiFormat={store.deleteApiFormat}
-                      onImportData={handleImportData}
-                      onClose={() => setPanel('chat')}
+                  {splitViewEnabled && secondConvId ? (
+                    <SplitViewChat
+                      leftConversation={store.activeConversation}
+                      rightConversation={store.conversations.find(c => c.id === secondConvId) || null}
+                      isGenerating={store.isGenerating}
+                      streamingContent={store.streamingContent}
+                      streamingContentRef={store.streamingContentRef}
+                      allModels={store.allProviderModels}
+                      onSend={handleSend}
+                      onModelChange={handleModelChange}
+                      defaultModelId={store.settings.defaultProviderModelId}
+                      onTogglePanel={togglePanel}
+                      onOpenProviders={openProviders}
+                      onRetry={handleRetry}
+                      onStopGeneration={store.stopGeneration}
+                      onEditMessage={handleEditMessage}
+                      onDeleteMessage={handleDeleteMessage}
+                      onContinue={handleContinue}
+                      onModeChange={handleModeChange}
+                      onAttachmentsChange={handleAttachmentsChange}
+                      onGenerateTitle={handleGenerateTitle}
+                      onGenerateFollowUps={handleGenerateFollowUps}
+                      homeMode={homeMode}
+                      homeAttachments={homeAttachments}
+                      prettifyModelNames={store.settings.prettifyModelNames}
+                      workflows={store.settings.workflows || []}
+                      useResponsesApi={store.settings.modelSettings.useResponsesApi}
+                      reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
+                      onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
+                      onVersionChange={handleVersionChange}
+                      onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
+                      onOpenShare={openSharePanel}
+                      onForkConversation={handleForkConversation}
+                      selectedFineTuningId={store.selectedFineTuningId}
+                      onFineTuningChange={store.selectFineTuning}
+                      onCloseSplitView={handleCloseSplitView}
+                      onSwitchToRight={() => {
+                        if (secondConvId) {
+                          store.setActiveConvId(secondConvId);
+                          navigate(`/${secondConvId}`);
+                        }
+                      }}
                     />
-                  )}
-
-                  {panel === 'share' && (
-                    <SharePanel
+                  ) : (
+                    <ChatArea
                       conversation={store.activeConversation}
-                      onShare={handleShare}
-                      onUnshare={handleUnshare}
-                      onClose={() => setPanel('chat')}
+                      isGenerating={store.isGenerating}
+                      streamingContent={store.streamingContent}
+                      streamingContentRef={store.streamingContentRef}
+                      allModels={store.allProviderModels}
+                      onSend={handleSend}
+                      onModelChange={handleModelChange}
+                      defaultModelId={store.settings.defaultProviderModelId}
+                      onTogglePanel={togglePanel}
+                      onOpenProviders={openProviders}
+                      onRetry={handleRetry}
+                      onStopGeneration={store.stopGeneration}
+                      onEditMessage={handleEditMessage}
+                      onDeleteMessage={handleDeleteMessage}
+                      onContinue={handleContinue}
+                      onModeChange={handleModeChange}
+                      onAttachmentsChange={handleAttachmentsChange}
+                      onGenerateTitle={handleGenerateTitle}
+                      onGenerateFollowUps={handleGenerateFollowUps}
+                      homeMode={homeMode}
+                      homeAttachments={homeAttachments}
+                      prettifyModelNames={store.settings.prettifyModelNames}
+                      workflows={store.settings.workflows || []}
+                      useResponsesApi={store.settings.modelSettings.useResponsesApi}
+                      reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
+                      onReasoningEffortChange={(effort) => store.updateModelSettings({ reasoningEffort: effort })}
+                      onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
+                      onVersionChange={handleVersionChange}
+                      onOpenShare={openSharePanel}
+                      onForkConversation={handleForkConversation}
+                      selectedFineTuningId={store.selectedFineTuningId}
+                      onFineTuningChange={store.selectFineTuning}
+                      onEnableSplitView={handleEnableSplitView}
+                      allConversations={store.conversations}
                     />
                   )}
+
                 </>
+              )}
+
+              {panel === 'settings' && (
+                <SettingsPanel
+                  settings={store.settings}
+                  conversations={store.conversations}
+                  onUpdateModelSettings={store.updateModelSettings}
+                  onUpdateSettings={store.updateSettings}
+                  onUpdateProvider={store.updateProvider}
+                  onAddProvider={store.addProvider}
+                  onAddIntegratedProvider={store.addIntegratedProvider}
+                  onDeleteProvider={store.deleteProvider}
+                  onUpsertApiFormat={store.upsertApiFormat}
+                  onDeleteApiFormat={store.deleteApiFormat}
+                  onImportData={handleImportData}
+                  onClose={() => setPanel('chat')}
+                />
+              )}
+
+              {panel === 'share' && (
+                <SharePanel
+                  conversation={store.activeConversation}
+                  onShare={handleShare}
+                  onUnshare={handleUnshare}
+                  onClose={() => setPanel('chat')}
+                />
               )}
             </div>
           </div>

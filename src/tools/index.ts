@@ -9,7 +9,6 @@ import hotelSearchTools from './hotelSearch';
 import webRequest from './webRequest';
 import devEnvTools from './devEnv';
 import qanda from './qanda';
-import { buildFsTools } from './buildFs';
 import { memoryTools } from './memories';
 import chart from './chart';
 import presentation from './presentation';
@@ -33,7 +32,7 @@ const tools: Tool[] = [
   ...devEnvTools,
 ];
 
-export function getAllTools(includeImageGen = false, buildMode = false): Tool[] {
+export function getAllTools(includeImageGen = false): Tool[] {
   const settingsData = localStorage.getItem('lumina_settings');
   let disabledTools: string[] = [];
   let memoriesEnabled = false;
@@ -46,9 +45,7 @@ export function getAllTools(includeImageGen = false, buildMode = false): Tool[] 
     } catch {}
   }
 
-  // Get dynamic extension tools
   const extensionTools = extensionToolRegistry.getDynamicTools();
-  
   let filteredTools = [...tools, ...extensionTools].filter(t => !disabledTools.includes(t.definition.function.name));
 
   if (!memoriesEnabled) {
@@ -59,14 +56,10 @@ export function getAllTools(includeImageGen = false, buildMode = false): Tool[] 
     filteredTools.push(generateImage);
   }
 
-  if (buildMode) {
-    filteredTools.push(...buildFsTools);
-  }
-
   return filteredTools;
 }
 
-export function getToolByName(name: string, buildMode = false): Tool | undefined {
+export function getToolByName(name: string): Tool | undefined {
   const settingsData = localStorage.getItem('lumina_settings');
   let disabledTools: string[] = [];
 
@@ -80,7 +73,7 @@ export function getToolByName(name: string, buildMode = false): Tool | undefined
   if (disabledTools.includes(name)) return undefined;
 
   const extensionTools = extensionToolRegistry.getDynamicTools();
-  const allTools = [...tools, ...extensionTools, generateImage, ...(buildMode ? buildFsTools : []), ...memoryTools];
+  const allTools = [...tools, ...extensionTools, generateImage, ...memoryTools];
 
   const found = allTools.find(t => t.definition.function.name === name);
   if (!found) return undefined;
@@ -93,12 +86,12 @@ export function getToolByName(name: string, buildMode = false): Tool | undefined
   };
 }
 
-export function getToolDefinitions(includeImageGen = false, buildMode = false) {
-  return getAllTools(includeImageGen, buildMode).map(t => t.definition);
+export function getToolDefinitions(includeImageGen = false) {
+  return getAllTools(includeImageGen).map(t => t.definition);
 }
 
-export function getToolDefinitionsForResponsesApi(includeImageGen = false, buildMode = false) {
-  const toolList = getAllTools(includeImageGen, buildMode).map(t => ({
+export function getToolDefinitionsForResponsesApi(includeImageGen = false) {
+  const toolList = getAllTools(includeImageGen).map(t => ({
     type: 'function',
     name: t.definition.function.name,
     description: t.definition.function.description,

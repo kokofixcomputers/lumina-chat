@@ -5,20 +5,41 @@
   "windows": [
     "main"
   ],
+  "remote": {
+    "urls": [
+      "https://**",
+      "http://**"
+    ]
+  },
   "permissions": [
     "core:default",
     "fs:allow-write-text-file",
     "opener:default",
     "dialog:default",
+    "dialog:allow-open",
     "fs:allow-write-file",
+    "fs:allow-read-file",
+    "fs:allow-read-text-file",
+    "fs:allow-read-dir",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-remove",
+    "fs:allow-rename",
+    "shell:allow-execute",
+    "shell:allow-spawn",
+    "shell:allow-open",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "/**" }, { "path": "*" }]
+    },
     "http:default",
-    "http:allow-fetch",
     {
       "identifier": "http:allow-fetch",
       "allow": [
         { "url": "https://**" },
         { "url": "https://enter.pollinations.ai/**" },
-	      { "url": "http://localhost:1234/**" }
+        { "url": "http://localhost:1234/**" },
+        { "url": "http://*:*" }
       ]
     }
   ]

@@ -8,7 +8,6 @@ import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { universalFetch, universalStreamingFetch, processSSEStream } from '../../utils/tauriFetch';
 import { isTauri } from '../../utils/tauri';
 import { resolveFormat, applyVars, getByPath } from '../../components/ProvidersPanel';
-import { writeToVfs } from '../../tools/buildFs';
 import { generateUniqueTimestamp } from '../../utils/timestamp';
 
 interface SendMessageOptions {
@@ -121,7 +120,6 @@ export function useSendMessage({
 
     // ── resolve format ─────────────────────────────────────────────────────────
     const activeApiFormat = resolveFormat(settings.apiFormats || [], provider.apiFormatId);
-    const buildMode = !!conv.buildMode;
     const isAnthropicFormat = activeApiFormat?.id === 'anthropic';
 
     // Download a file from Anthropic Files API and return as data URL
@@ -307,7 +305,7 @@ export function useSendMessage({
     // ── build request bodies ───────────────────────────────────────────────────
     const systemMessage = apiMessages.find(m => m.role === 'system');
     const nonSystemMessages = apiMessages.filter(m => m.role !== 'system');
-    const rawTools = getToolDefinitions(settings.allowImageGeneration, buildMode);
+    const rawTools = getToolDefinitions(settings.allowImageGeneration);
     const anthropicTools = rawTools.map((t: any) => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters }));
 
     const requestBody = {
@@ -317,7 +315,7 @@ export function useSendMessage({
       frequency_penalty: settings.modelSettings.frequencyPenalty,
       presence_penalty: settings.modelSettings.presencePenalty,
       stream: settings.modelSettings.stream,
-      tools: getToolDefinitions(settings.allowImageGeneration, buildMode),
+      tools: getToolDefinitions(settings.allowImageGeneration),
     };
 
     const useResponsesApi = settings.modelSettings.useResponsesApi;
@@ -329,7 +327,7 @@ export function useSendMessage({
       top_p: settings.modelSettings.topP,
       frequency_penalty: settings.modelSettings.frequencyPenalty,
       presence_penalty: settings.modelSettings.presencePenalty,
-      tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration, buildMode),
+      tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
       tool_choice: 'auto',
       ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}),
     } : null;
@@ -443,11 +441,10 @@ export function useSendMessage({
     };
 
     // Read stream from AsyncIterable (for Tauri)
-    const readChatStreamFromAsyncIterable = async (stream: AsyncIterable<Uint8Array>): Promise<{ content: string; toolCalls: any[]; codeExecFileIds: string[] }> => {
+    const readChatStreamFromAsyncIterable = async (stream: AsyncIterable<Uint8Array>): Promise<{ content: string; toolCalls: any[] }> => {
       let assistantContent = '';
       const toolCallsMap = new Map<number | string, any>();
       const toolCalls: any[] = [];
-      const codeExecFileIds: string[] = [];
       
       for await (const data of processSSEStream(stream)) {
         const dataStr = typeof data === 'string' ? data : String(data);
@@ -475,16 +472,15 @@ export function useSendMessage({
         toolCalls.push(call);
       }
       
-      return { content: assistantContent, toolCalls, codeExecFileIds };
+      return { content: assistantContent, toolCalls };
     };
 
     // ── stream reader ──────────────────────────────────────────────────────────
-    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[]; codeExecFileIds: string[] }> => {
+    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[] }> => {
       const decoder = new TextDecoder();
       let buffer = '';
       let assistantContent = '';
       const toolCallsMap = new Map<number | string, any>();
-      const codeExecFileIds: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -497,27 +493,12 @@ export function useSendMessage({
           if (!line.startsWith('data:')) continue;
           const raw = decodeHtml(line.slice(line.indexOf('data:') + 6).trim());
           if (isSentinel(raw)) continue;
-          try {
-            const parsed = JSON.parse(raw);
-            if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'bash_code_execution_tool_result') {
-              // Actual structure: content_block.content.content[].file_id
-              const resultObj = parsed.content_block?.content;
-              const items: any[] = Array.isArray(resultObj)
-                ? resultObj
-                : Array.isArray(resultObj?.content)
-                  ? resultObj.content
-                  : [];
-              for (const item of items) {
-                if (item.file_id) codeExecFileIds.push(item.file_id);
-              }
-            }
-          } catch { /* ignore */ }
           const { delta, finishReason: chunkFinishReason } = parseSseChunk(raw, toolCallsMap);
           if (delta) { assistantContent += delta; updateStreaming(assistantContent); tokenCount++; }
           if (chunkFinishReason) { finishReason = chunkFinishReason; }
         }
       }
-      return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()), codeExecFileIds };
+      return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()) };
     };
 
     // ── responses API stream reader ────────────────────────────────────────────
@@ -574,7 +555,7 @@ export function useSendMessage({
       const isAnthropic = activeApiFormat?.id === 'anthropic';
 
       for (const toolCall of toolCalls) {
-        const tool = getToolByName(toolCall.function.name, buildMode);
+        const tool = getToolByName(toolCall.function.name);
         const loadingMsgId = uuidv4();
         addMessage(convId, { id: loadingMsgId, role: 'tool', content: '', timestamp: generateUniqueTimestamp(), tool_call_id: toolCall.id, tool_name: toolCall.function.name, tool_status: 'loading' });
 
@@ -862,7 +843,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         input: [...previousMessages.filter((m: any) => m.type !== 'reasoning'), ...toolMessages],
         store: false, stream: settings.modelSettings.stream,
         top_p: settings.modelSettings.topP, frequency_penalty: settings.modelSettings.frequencyPenalty, presence_penalty: settings.modelSettings.presencePenalty,
-        tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration, buildMode), tool_choice: 'auto',
+        tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration), tool_choice: 'auto',
         ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}),
       } : isAnthropic2 ? (() => {
         const followUpMessages = [...previousMessages, ...toolMessages];
@@ -871,7 +852,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         const vars: Record<string, unknown> = { messages: nonSys, system: sysMsg?.content ?? '', model: model?.id ?? '', apiKey: provider.apiKey, stream: settings.modelSettings.stream, temperature: settings.modelSettings.temperature, maxTokens: settings.modelSettings.maxTokens, topP: settings.modelSettings.topP, tools: anthropicTools, ...(activeApiFormat.customVars || {}) };
         const tmpl = settings.modelSettings.stream ? (activeApiFormat.streamingRequestBodyTemplate || activeApiFormat.requestBodyTemplate) : activeApiFormat.requestBodyTemplate;
         return tmpl ? JSON.parse(applyVars(tmpl, vars)) : { ...requestBody, messages: followUpMessages };
-      })() : { ...requestBody, messages: [...previousMessages, ...toolMessages], stream: settings.modelSettings.stream, tools: getToolDefinitions(settings.allowImageGeneration, buildMode) };
+      })() : { ...requestBody, messages: [...previousMessages, ...toolMessages], stream: settings.modelSettings.stream, tools: getToolDefinitions(settings.allowImageGeneration) };
 
       try {
         const followUpResponse = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(followUpBody) });
@@ -915,23 +896,6 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         const result = await readChatStream(reader as ReadableStreamDefaultReader<Uint8Array>);
         assistantContent = result.content;
         toolCalls = result.toolCalls;
-        // Download any files generated by code execution
-        if (isAnthropicFormat && buildMode && result.codeExecFileIds.length > 0) {
-          for (const fileId of result.codeExecFileIds) {
-            const downloaded = await downloadAnthropicFile(fileId);
-            if (downloaded) {
-              const isImage = downloaded.dataUrl.startsWith('data:image/');
-              // Save into VFS so it shows in the Files tab
-              writeToVfs(convId, downloaded.filename, downloaded.dataUrl);
-              addMessage(convId, {
-                id: uuidv4(), role: 'tool', content: downloaded.filename,
-                timestamp: generateUniqueTimestamp(), tool_name: 'code_execution', tool_status: 'success',
-                images: isImage ? [downloaded.dataUrl] : undefined,
-                artifacts: !isImage ? [{ url: downloaded.dataUrl, direct_download: downloaded.dataUrl, original_path: downloaded.filename, file_hash: fileId, message: 'Generated by code execution' }] : undefined,
-              });
-            }
-          }
-        }
       } else {
         const data = await response.json();
         assistantContent = activeApiFormat.responseTextPath ? getByPath(data, activeApiFormat.responseTextPath) : (data.choices?.[0]?.message?.content || '');
@@ -940,45 +904,6 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
 
         // Handle Anthropic code execution results
-        if (isAnthropicFormat && buildMode && Array.isArray(data.content)) {
-          for (const block of data.content) {
-            if (block.type === 'bash_code_execution_tool_result' || block.type === 'tool_result') {
-              const resultContent = Array.isArray(block.content) ? block.content : [];
-              for (const item of resultContent) {
-                // Collect file IDs from code execution output
-                if (item.type === 'file' && item.file_id) {
-                  const downloaded = await downloadAnthropicFile(item.file_id);
-                  if (downloaded) {
-                    const execMsgId = uuidv4();
-                    const isImage = downloaded.dataUrl.startsWith('data:image/');
-                    // Save into VFS so it shows in the Files tab
-                    writeToVfs(convId, downloaded.filename, downloaded.dataUrl);
-                    addMessage(convId, {
-                      id: execMsgId,
-                      role: 'tool',
-                      content: downloaded.filename,
-                      timestamp: generateUniqueTimestamp(),
-                      tool_name: 'code_execution',
-                      tool_status: 'success',
-                      images: isImage ? [downloaded.dataUrl] : undefined,
-                      artifacts: !isImage ? [{
-                        url: downloaded.dataUrl,
-                        direct_download: downloaded.dataUrl,
-                        original_path: downloaded.filename,
-                        file_hash: item.file_hash,
-                        message: `Generated by code execution`,
-                      }] : undefined,
-                    });
-                  }
-                }
-                // Capture stdout/stderr as assistant content if no text yet
-                if (item.type === 'text' && item.text && !assistantContent) {
-                  assistantContent = item.text;
-                }
-              }
-            }
-          }
-        }
       }
 
       const endTime = Date.now();
@@ -1060,7 +985,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
             const contMsgs = useResponsesApi
               ? [...responsesApiMessages, { type: 'output_text', text: assistantContent }, { type: 'message', role: 'user', content: wrapResponsesApiContent(JSON.stringify({ status: 'tool_call_message_given' })) }]
               : [...apiMessages, { role: 'assistant', content: assistantContent }, { role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }];
-            const contBody = useResponsesApi ? { model: model?.id || 'gpt-4o', input: contMsgs, store: false, stream: settings.modelSettings.stream, top_p: settings.modelSettings.topP, frequency_penalty: settings.modelSettings.frequencyPenalty, presence_penalty: settings.modelSettings.presencePenalty, tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration, buildMode), tool_choice: 'auto', ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}) } : { ...requestBody, messages: contMsgs, stream: settings.modelSettings.stream };
+            const contBody = useResponsesApi ? { model: model?.id || 'gpt-4o', input: contMsgs, store: false, stream: settings.modelSettings.stream, top_p: settings.modelSettings.topP, frequency_penalty: settings.modelSettings.frequencyPenalty, presence_penalty: settings.modelSettings.presencePenalty, tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration), tool_choice: 'auto', ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}) } : { ...requestBody, messages: contMsgs, stream: settings.modelSettings.stream };
             const contRes = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(contBody) });
             if (contRes.ok) await handleResponse(contRes, chatUrl, headers, contMsgs, useResponsesApi);
           } catch (e) { console.error('Continuation failed:', e); }
@@ -1084,33 +1009,14 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       if ((settings as any).serpApiKey) headers['x-serpapi-key'] = (settings as any).serpApiKey;
 
       const isAnthropic = activeApiFormat?.id === 'anthropic';
-      const useCodeExecution = isAnthropic && buildMode;
 
       // Add Anthropic dangerous direct browser access header for CORS
       if (isAnthropic) {
         headers['anthropic-dangerous-direct-browser-access'] = 'true';
       }
 
-      // Inject Anthropic code execution beta header + tool when in build mode
-      if (useCodeExecution) {
-        headers['anthropic-beta'] = 'files-api-2025-04-14';
-      }
-
       const isStreaming = settings.modelSettings.stream;
       let customBodyStr = !useResponsesApi ? buildCustomBody(isStreaming) : null;
-
-      // Inject code_execution tool into Anthropic body
-      if (useCodeExecution && customBodyStr) {
-        try {
-          const parsed = JSON.parse(customBodyStr);
-          const existingTools: any[] = parsed.tools || [];
-          const hasCodeExec = existingTools.some((t: any) => t.type?.startsWith('code_execution'));
-          if (!hasCodeExec) {
-            parsed.tools = [...existingTools, { type: 'code_execution_20260120', name: 'code_execution' }];
-          }
-          customBodyStr = JSON.stringify(parsed);
-        } catch { /* ignore */ }
-      }
 
       const bodyToSend = useResponsesApi ? responsesApiBody : customBodyStr !== null ? JSON.parse(customBodyStr) : requestBody;
 

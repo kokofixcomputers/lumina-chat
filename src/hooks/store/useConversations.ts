@@ -178,9 +178,6 @@ export function useConversations(defaultProviderModelId: string) {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, attachments } : c));
   }, []);
 
-  const setBuildMode = useCallback((convId: string, buildMode: boolean) => {
-    setConversations(prev => prev.map(c => c.id === convId ? { ...c, buildMode } : c));
-  }, []);
 
   const setConversationDevEnvSession = useCallback((convId: string, sessionId: string) => {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, devEnvSession: sessionId } : c));
@@ -206,7 +203,6 @@ export function useConversations(defaultProviderModelId: string) {
     updateMessageVersions,
     setConversationMode,
     setConversationAttachments,
-    setBuildMode,
     setConversationDevEnvSession,
   };
 }

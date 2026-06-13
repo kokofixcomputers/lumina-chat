@@ -22,6 +22,13 @@ export interface Message {
   tool_call_id?: string;
   tool_name?: string;
   tool_status?: 'loading' | 'success' | 'error';
+  toolDiff?: {
+    type: 'write' | 'edit' | 'delete' | 'output';
+    path?: string;
+    before?: string;
+    after?: string;
+    output?: string;
+  };
   followUps?: string[];
   tokens?: number;
   tokensPerSecond?: number;
@@ -44,7 +51,6 @@ export interface Conversation {
   attachments?: string[];
   devEnvSession?: string;
   hotelSearchKey?: string;
-  buildMode?: boolean;
   pendingChartMarkdown?: string;
   pendingPresentationMarkdown?: string;
   shareInfo?: {

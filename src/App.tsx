@@ -1444,13 +1444,26 @@ export default function App() {
 
             <div className="flex-1 flex min-w-0 overflow-hidden">
               {appMode === 'code' ? (
-                <CodeMode
-                  session={codeSessions.find(s => s.id === activeCodeSessionId) ?? null}
-                  onUpdate={handleCodeSessionUpdate}
-                  onNewSession={handleNewCodeSession}
-                  onOpenProviders={openProviders}
-                  onTogglePanel={togglePanel}
-                />
+                isTauri() ? (
+                  <CodeMode
+                    session={codeSessions.find(s => s.id === activeCodeSessionId) ?? null}
+                    onUpdate={handleCodeSessionUpdate}
+                    onNewSession={handleNewCodeSession}
+                    onOpenProviders={openProviders}
+                    onTogglePanel={togglePanel}
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="max-w-xl text-center bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-8">
+                      <h2 className="text-xl font-semibold text-[rgb(var(--text))] mb-2">Code sessions are desktop-only</h2>
+                      <p className="text-sm text-[rgb(var(--muted))] mb-4">This feature is only available in the Lumina desktop app. Download the desktop app to start code sessions that can read, edit files, and run commands.</p>
+                      <div className="flex gap-2 justify-center">
+                        <button onClick={() => navigate('/download')} className="btn-primary">Download</button>
+                        <button onClick={() => setAppMode('chat')} className="btn-secondary">Back to Chat</button>
+                      </div>
+                    </div>
+                  </div>
+                )
               ) : appMode === 'image' ? (
                 <ImageMode
                   settings={store.settings}

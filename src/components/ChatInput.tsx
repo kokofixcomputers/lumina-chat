@@ -328,8 +328,9 @@ export default function ChatInput({
       )
     : allModels;
 
+  // Group by providerId (not providerName) so two providers with the same name stay separate
   const grouped = filteredModels.reduce<Record<string, Model[]>>((acc, m) => {
-    const key = m.providerName;
+    const key = m.providerId;
     if (!acc[key]) acc[key] = [];
     acc[key].push(m);
     return acc;
@@ -1170,22 +1171,23 @@ export default function ChatInput({
           {Object.keys(grouped).length === 0 ? (
             <p className="text-[12px] text-[rgb(var(--muted))] text-center py-4">No models found</p>
           ) : (
-            Object.entries(grouped).map(([providerName, models]) => {
+            Object.entries(grouped).map(([providerId, models]) => {
               const firstModel = models[0];
-              const isCollapsed = collapsedProviders.has(providerName);
+              const providerName = firstModel.providerName;
+              const isCollapsed = collapsedProviders.has(providerId);
               return (
-                <div key={providerName} className="mb-1">
+                <div key={providerId} className="mb-1">
                   {/* Provider header */}
                   <button
                     onClick={() => {
                       const newSet = new Set(collapsedProviders);
-                      if (isCollapsed) newSet.delete(providerName);
-                      else newSet.add(providerName);
+                      if (isCollapsed) newSet.delete(providerId);
+                      else newSet.add(providerId);
                       setCollapsedProviders(newSet);
                     }}
                     className="flex items-center gap-2 px-3 py-1.5 mt-1 w-full hover:bg-black/[0.03] dark:hover:bg-white/[0.03] rounded-lg transition-colors"
                   >
-                    <ProviderDot providerId={firstModel.providerId} providerName={providerName} />
+                    <ProviderDot providerId={providerId} providerName={providerName} />
                     <span className="text-[11px] font-semibold text-[rgb(var(--muted))] uppercase tracking-wider flex-1 text-left">{providerName}</span>
                     <ChevronDown size={12} className={`text-[rgb(var(--muted))] transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
                   </button>

@@ -247,10 +247,12 @@ IMPORTANT — file editing rules:
 
       let continueLoop = true;
       while (continueLoop && !controller.signal.aborted) {
+        const modelId = model?.id || 'claude-opus-4-8';
+        const isOSeries = !isAnthropic && /^(o\d|gpt-5)/.test(modelId);
         const body: Record<string, unknown> = {
-          model: model?.id || 'claude-opus-4-8',
-          max_tokens: 8096,
+          model: modelId,
           messages: buildApiMessages(currentSession.messages, isAnthropic),
+          [isAnthropic || !isOSeries ? 'max_tokens' : 'max_completion_tokens']: 8096,
         };
         if (isAnthropic) {
           body.system = systemPrompt;

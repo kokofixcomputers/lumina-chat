@@ -4,6 +4,7 @@ import { Routes, Route, useParams, useNavigate, useLocation } from 'react-router
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import CodeMode from './components/CodeMode';
+import CoworkMode from './components/CoworkMode';
 import ImageMode from './components/ImageMode';
 import SplitViewChat from './components/SplitViewChat';
 import SettingsPanel from './components/SettingsPanel';
@@ -29,6 +30,8 @@ import './utils/syncIndexedDB'; // Load IndexedDB sync utilities
 import type { Panel, Message } from './types';
 import type { CodeSession } from './utils/codeSessionDB';
 import { codeSessionDB } from './utils/codeSessionDB';
+import type { CoworkSession } from './utils/coworkSessionDB';
+import { coworkSessionDB } from './utils/coworkSessionDB';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
@@ -49,7 +52,9 @@ export default function App() {
   const [splitViewEnabled, setSplitViewEnabled] = useState(false);
   const [secondConvId, setSecondConvId] = useState<string | null>(null);
   const [dividerPosition, setDividerPosition] = useState(50);
-  const [appMode, setAppMode] = useState<'chat' | 'code' | 'image'>('chat');
+  const [appMode, setAppMode] = useState<'chat' | 'code' | 'image' | 'cowork'>('chat');
+  const [coworkSessions, setCoworkSessions] = useState<CoworkSession[]>([]);
+  const [activeCoworkSessionId, setActiveCoworkSessionId] = useState<string | null>(null);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [codeSessions, setCodeSessions] = useState<CodeSession[]>([]);
   const [activeCodeSessionId, setActiveCodeSessionId] = useState<string | null>(null);
@@ -182,6 +187,7 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     codeSessionDB.getAll().then(setCodeSessions).catch(console.error);
+    coworkSessionDB.getAll().then(setCoworkSessions).catch(console.error);
   }, []);
 
   const handleCodeSessionUpdate = async (session: CodeSession) => {
@@ -213,6 +219,44 @@ export default function App() {
     await codeSessionDB.delete(id);
     setCodeSessions(prev => prev.filter(s => s.id !== id));
     if (activeCodeSessionId === id) setActiveCodeSessionId(null);
+  };
+
+  const handleCoworkSessionUpdate = async (session: CoworkSession) => {
+    await coworkSessionDB.save(session);
+    setCoworkSessions(prev => {
+      const idx = prev.findIndex(s => s.id === session.id);
+      if (idx === -1) return [session, ...prev];
+      const next = [...prev];
+      next[idx] = session;
+      return next.sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+  };
+
+  const handleNewCoworkSession = () => {
+    const session: CoworkSession = {
+      id: crypto.randomUUID(),
+      title: 'Cowork Session',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    coworkSessionDB.save(session).catch(console.error);
+    setCoworkSessions(prev => [session, ...prev]);
+    setActiveCoworkSessionId(session.id);
+  };
+
+  const handleDeleteCoworkSession = async (id: string) => {
+    await coworkSessionDB.delete(id);
+    setCoworkSessions(prev => prev.filter(s => s.id !== id));
+    if (activeCoworkSessionId === id) setActiveCoworkSessionId(null);
+  };
+
+  const handleRenameCoworkSession = async (id: string, title: string) => {
+    const session = coworkSessions.find(s => s.id === id);
+    if (!session) return;
+    const updated = { ...session, title, updatedAt: Date.now() };
+    await coworkSessionDB.save(updated);
+    setCoworkSessions(prev => prev.map(s => s.id === id ? updated : s));
   };
 
   const handleRenameCodeSession = async (id: string, title: string) => {
@@ -359,10 +403,9 @@ export default function App() {
     store.sendMessage(continuePrompt, [], store.activeConvId);
   };
 
-  const handleModeChange = (mode: 'chat' | 'image' | 'code') => {
-    if (mode === 'code') {
-      // Switch to app-level code mode
-      setAppMode('code');
+  const handleModeChange = (mode: 'chat' | 'image' | 'code' | 'cowork') => {
+    if (mode === 'code' || mode === 'cowork') {
+      setAppMode(mode);
       return;
     }
     if (store.activeConvId) {
@@ -1430,16 +1473,22 @@ export default function App() {
               syncStatus={syncStatus}
               appMode={appMode}
               onModeChange={setAppMode}
+              isDesktop={isTauri()}
               codeSessions={codeSessions}
               activeCodeSessionId={activeCodeSessionId}
               onSelectCodeSession={setActiveCodeSessionId}
               onNewCodeSession={() => {
-                // Trigger the workspace picker inside CodeMode by setting a sentinel
                 setActiveCodeSessionId(null);
               }}
               onDeleteCodeSession={handleDeleteCodeSession}
               onRenameCodeSession={handleRenameCodeSession}
               onSelectImage={(id) => { setSelectedImageId(id); setAppMode('image'); }}
+              coworkSessions={coworkSessions}
+              activeCoworkSessionId={activeCoworkSessionId}
+              onSelectCoworkSession={setActiveCoworkSessionId}
+              onNewCoworkSession={handleNewCoworkSession}
+              onDeleteCoworkSession={handleDeleteCoworkSession}
+              onRenameCoworkSession={handleRenameCoworkSession}
             />
 
             <div className="flex-1 flex min-w-0 overflow-hidden">
@@ -1457,6 +1506,27 @@ export default function App() {
                     <div className="max-w-xl text-center bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-8">
                       <h2 className="text-xl font-semibold text-[rgb(var(--text))] mb-2">Code sessions are desktop-only</h2>
                       <p className="text-sm text-[rgb(var(--muted))] mb-4">This feature is only available in the Lumina desktop app. Download the desktop app to start code sessions that can read, edit files, and run commands.</p>
+                      <div className="flex gap-2 justify-center">
+                        <button onClick={() => navigate('/download')} className="btn-primary">Download</button>
+                        <button onClick={() => setAppMode('chat')} className="btn-secondary">Back to Chat</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : appMode === 'cowork' ? (
+                isTauri() ? (
+                  <CoworkMode
+                    session={coworkSessions.find(s => s.id === activeCoworkSessionId) ?? null}
+                    onUpdate={handleCoworkSessionUpdate}
+                    onNewSession={handleNewCoworkSession}
+                    onOpenProviders={openProviders}
+                    onTogglePanel={togglePanel}
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="max-w-xl text-center bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-8">
+                      <h2 className="text-xl font-semibold text-[rgb(var(--text))] mb-2">Co-work is desktop-only</h2>
+                      <p className="text-sm text-[rgb(var(--muted))] mb-4">Screen capture and computer control are only available in the Lumina desktop app.</p>
                       <div className="flex gap-2 justify-center">
                         <button onClick={() => navigate('/download')} className="btn-primary">Download</button>
                         <button onClick={() => setAppMode('chat')} className="btn-secondary">Back to Chat</button>

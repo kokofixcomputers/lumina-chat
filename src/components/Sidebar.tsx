@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
   Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download,
-  Code2, MessageCircle, FolderOpen, Plus, Image
+  Code2, MessageCircle, FolderOpen, Plus, Image, Monitor
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
 import type { CodeSession } from '../utils/codeSessionDB';
@@ -27,8 +27,9 @@ interface SidebarProps {
   onClose: () => void;
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disabled';
   // App mode
-  appMode?: 'chat' | 'code' | 'image';
-  onModeChange?: (mode: 'chat' | 'code' | 'image') => void;
+  appMode?: 'chat' | 'code' | 'image' | 'cowork';
+  onModeChange?: (mode: 'chat' | 'code' | 'image' | 'cowork') => void;
+  isDesktop?: boolean;
   codeSessions?: CodeSession[];
   activeCodeSessionId?: string | null;
   onSelectCodeSession?: (id: string) => void;
@@ -36,6 +37,12 @@ interface SidebarProps {
   onDeleteCodeSession?: (id: string) => void;
   onRenameCodeSession?: (id: string, title: string) => void;
   onSelectImage?: (id: string) => void;
+  coworkSessions?: import('../utils/coworkSessionDB').CoworkSession[];
+  activeCoworkSessionId?: string | null;
+  onSelectCoworkSession?: (id: string) => void;
+  onNewCoworkSession?: () => void;
+  onDeleteCoworkSession?: (id: string) => void;
+  onRenameCoworkSession?: (id: string, title: string) => void;
 }
 
 export default function Sidebar({
@@ -55,8 +62,9 @@ export default function Sidebar({
   isOpen,
   onClose,
   syncStatus = 'disabled',
-  appMode = 'chat' as 'chat' | 'code' | 'image',
+  appMode = 'chat' as 'chat' | 'code' | 'image' | 'cowork',
   onModeChange,
+  isDesktop = false,
   codeSessions = [],
   activeCodeSessionId,
   onSelectCodeSession,
@@ -64,6 +72,12 @@ export default function Sidebar({
   onDeleteCodeSession,
   onRenameCodeSession,
   onSelectImage,
+  coworkSessions = [],
+  activeCoworkSessionId,
+  onSelectCoworkSession,
+  onNewCoworkSession,
+  onDeleteCoworkSession,
+  onRenameCoworkSession,
 }: SidebarProps) {
   const [hoverDel, setHoverDel] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -301,24 +315,28 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Chat / Code / Image mode toggle */}
+      {/* Mode toggle — 2×2 grid with Chat always visible; Code/Image/Cowork desktop-only */}
       {onModeChange && (
         <div className="px-3 pt-2 pb-1">
-          <div className="flex rounded-xl bg-black/[0.05] dark:bg-white/[0.06] p-0.5">
-            {(['chat', 'code', 'image'] as const).map(mode => (
+          <div className="grid grid-cols-2 gap-0.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.06] p-0.5">
+            {([
+              { id: 'chat', label: 'Chat', icon: <MessageCircle size={11} />, desktopOnly: false },
+              { id: 'code', label: 'Code', icon: <Code2 size={11} />, desktopOnly: true },
+              { id: 'image', label: 'Image', icon: <Image size={11} />, desktopOnly: false },
+              { id: 'cowork', label: 'Cowork', icon: <Monitor size={11} />, desktopOnly: true },
+            ] as const).map(({ id, label, icon, desktopOnly }) => (
               <button
-                key={mode}
-                className={`flex-1 flex items-center justify-center gap-1 rounded-[10px] py-1.5 text-[11px] font-medium transition-all ${
-                  appMode === mode
+                key={id}
+                className={`flex items-center justify-center gap-1 rounded-[10px] py-1.5 text-[11px] font-medium transition-all ${
+                  appMode === id
                     ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm'
                     : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
-                }`}
-                onClick={() => onModeChange(mode)}
+                } ${desktopOnly && !isDesktop ? 'opacity-40' : ''}`}
+                onClick={() => onModeChange(id)}
+                title={desktopOnly && !isDesktop ? `${label} is desktop-only` : undefined}
               >
-                {mode === 'chat' && <MessageCircle size={11} />}
-                {mode === 'code' && <Code2 size={11} />}
-                {mode === 'image' && <Image size={11} />}
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                {icon}
+                {label}
               </button>
             ))}
           </div>
@@ -370,6 +388,15 @@ export default function Sidebar({
       {appMode === 'code' && (
         <div className="px-1 space-y-0.5">
           <button className="sidebar-item w-full" onClick={() => { onNewCodeSession?.(); onClose(); }}>
+            <Plus size={15} />
+            <span>New Session</span>
+          </button>
+        </div>
+      )}
+
+      {appMode === 'cowork' && (
+        <div className="px-1 space-y-0.5">
+          <button className="sidebar-item w-full" onClick={() => { onNewCoworkSession?.(); onClose(); }}>
             <Plus size={15} />
             <span>New Session</span>
           </button>
@@ -430,6 +457,29 @@ export default function Sidebar({
                     onSelect={() => { onSelectCodeSession?.(s.id); onClose(); }}
                     onDelete={() => onDeleteCodeSession?.(s.id)}
                     onRename={(title) => onRenameCodeSession?.(s.id, title)}
+                  />
+                );
+              })
+            )}
+          </>
+        )}
+
+        {appMode === 'cowork' && (
+          <>
+            {coworkSessions.length === 0 ? (
+              <p className="text-[12px] text-[rgb(var(--muted))] text-center py-6 px-4">No sessions yet.<br/>Click New Session to start.</p>
+            ) : (
+              coworkSessions.map(s => {
+                const isActive = s.id === activeCoworkSessionId;
+                return (
+                  <CodeSessionItem
+                    key={s.id}
+                    session={{ ...s, workspace: '' } as any}
+                    isActive={isActive}
+                    workspaceName="Cowork"
+                    onSelect={() => { onSelectCoworkSession?.(s.id); onClose(); }}
+                    onDelete={() => onDeleteCoworkSession?.(s.id)}
+                    onRename={(title) => onRenameCoworkSession?.(s.id, title)}
                   />
                 );
               })

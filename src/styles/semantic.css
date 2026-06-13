@@ -11,7 +11,7 @@
   --success: 34 197 94;
   --warning: 234 179 8;
   --danger: 239 68 68;
-  --sidebar-w: 220px;
+  --sidebar-w: 260px;
 }
 
 .dark {
@@ -46,7 +46,7 @@
   /* ── Sidebar ── */
   .sidebar {
     @apply flex flex-col bg-[rgb(var(--panel))] border-r border-[rgb(var(--border))]
-          min-w-[200px] max-w-[290px] w-[290px] shrink h-full select-none;
+          min-w-[220px] max-w-[320px] w-[320px] shrink h-full select-none;
     /*   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ NOW it can shrink from 260px down to 180px */
   }
 

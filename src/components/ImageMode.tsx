@@ -43,10 +43,17 @@ function simplify(w: number, h: number): AR {
   return { w: Math.round(w) / g, h: Math.round(h) / g };
 }
 
-function ratioToSize(w: number, h: number): string {
-  // Normalize longest side to 1024, round to multiple of 8
-  const scale = 1024 / Math.max(w, h);
+const SIZE_SNAPS = [256, 512, 768, 1024, 1536, 2048];
+
+function ratioToSize(w: number, h: number, base = 1024): string {
+  const scale = base / Math.max(w, h);
   return `${Math.round(w * scale / 8) * 8}x${Math.round(h * scale / 8) * 8}`;
+}
+
+function snapSize(raw: number): number {
+  return SIZE_SNAPS.reduce((prev, cur) =>
+    Math.abs(cur - raw) < Math.abs(prev - raw) ? cur : prev
+  );
 }
 
 function snapToPreset(w: number, h: number): AR {
@@ -65,7 +72,10 @@ function snapToPreset(w: number, h: number): AR {
 const DRAG_SIZE = 120; // px container
 const DRAG_MIN  = 28;  // px minimum box side
 
-function AspectRatioPicker({ value, onChange }: { value: AR; onChange: (r: AR) => void }) {
+function AspectRatioPicker({ value, onChange, baseSize, onBaseSizeChange }: {
+  value: AR; onChange: (r: AR) => void;
+  baseSize: number; onBaseSizeChange: (s: number) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
@@ -129,36 +139,61 @@ function AspectRatioPicker({ value, onChange }: { value: AR; onChange: (r: AR) =
           </div>
         </div>
         <span className="text-[11px] font-mono text-[rgb(var(--muted))]">{value.w}:{value.h}</span>
-        <span className="text-[10px] text-[rgb(var(--muted))]/60 font-mono">{ratioToSize(value.w, value.h)}</span>
+        <span className="text-[10px] text-[rgb(var(--muted))]/60 font-mono">{ratioToSize(value.w, value.h, baseSize)}</span>
       </div>
 
-      {/* Preset grid */}
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        {PRESETS.map(p => {
-          const selected = isPreset(p);
-          // Visual box: scale so longest side = 32px
-          const pr = p.w / p.h;
-          const vw = pr >= 1 ? 32 : Math.round(32 * pr);
-          const vh = pr <= 1 ? 32 : Math.round(32 / pr);
-          return (
-            <button
-              key={p.label}
-              onClick={() => onChange(p)}
-              className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg transition-all ${
-                selected
-                  ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
-                  : 'bg-black/[0.04] dark:bg-white/[0.05] hover:bg-black/[0.08] dark:hover:bg-white/[0.09] text-[rgb(var(--muted))]'
-              }`}
-              title={p.label}
-            >
-              <div
-                style={{ width: vw, height: vh }}
-                className={`rounded-sm border ${selected ? 'border-[rgb(var(--accent-contrast))]/60 bg-[rgb(var(--accent-contrast))]/20' : 'border-[rgb(var(--muted))]/40'}`}
-              />
-              <span className="text-[10px] font-medium leading-none">{p.label}</span>
-            </button>
-          );
-        })}
+      {/* Preset grid + size slider */}
+      <div className="flex flex-col gap-3 flex-1">
+        <div className="flex flex-wrap gap-1.5">
+          {PRESETS.map(p => {
+            const selected = isPreset(p);
+            const pr = p.w / p.h;
+            const vw = pr >= 1 ? 32 : Math.round(32 * pr);
+            const vh = pr <= 1 ? 32 : Math.round(32 / pr);
+            return (
+              <button
+                key={p.label}
+                onClick={() => onChange(p)}
+                className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg transition-all ${
+                  selected
+                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                    : 'bg-black/[0.04] dark:bg-white/[0.05] hover:bg-black/[0.08] dark:hover:bg-white/[0.09] text-[rgb(var(--muted))]'
+                }`}
+                title={p.label}
+              >
+                <div
+                  style={{ width: vw, height: vh }}
+                  className={`rounded-sm border ${selected ? 'border-[rgb(var(--accent-contrast))]/60 bg-[rgb(var(--accent-contrast))]/20' : 'border-[rgb(var(--muted))]/40'}`}
+                />
+                <span className="text-[10px] font-medium leading-none">{p.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Size slider */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-[rgb(var(--muted))]">Size</span>
+            <span className="text-[11px] font-mono text-[rgb(var(--text))]">{ratioToSize(value.w, value.h, baseSize)}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={SIZE_SNAPS.length - 1}
+            step={1}
+            value={SIZE_SNAPS.indexOf(baseSize) === -1 ? SIZE_SNAPS.indexOf(snapSize(baseSize)) : SIZE_SNAPS.indexOf(baseSize)}
+            onChange={e => onBaseSizeChange(SIZE_SNAPS[Number(e.target.value)])}
+            className="w-full"
+          />
+          <div className="flex justify-between">
+            {SIZE_SNAPS.map(s => (
+              <span key={s} className={`text-[9px] font-mono ${baseSize === s ? 'text-[rgb(var(--text))]' : 'text-[rgb(var(--muted))]/50'}`}>
+                {s >= 1000 ? `${s/1000}k` : s}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -177,6 +212,7 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<GeneratedImage | null>(null);
   const [aspectRatio, setAspectRatio] = useState<AR>({ w: 1, h: 1 });
+  const [baseSize, setBaseSize] = useState(1024);
   const originalPromptRef = useRef<string | null>(null);
 
   // Image generation model — shown in ChatInput model picker
@@ -226,7 +262,7 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
     const res = await fetch(`${base}/images/generations`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${imageGenProvider.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: imageGenModelId, prompt, n: 1, size: ratioToSize(aspectRatio.w, aspectRatio.h) }),
+      body: JSON.stringify({ model: imageGenModelId, prompt, n: 1, size: ratioToSize(aspectRatio.w, aspectRatio.h, baseSize) }),
     });
     if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
     const data = await res.json();
@@ -482,7 +518,7 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
           {/* Aspect ratio picker */}
           <div className="w-full mb-5">
             <p className="text-[11px] font-medium text-[rgb(var(--muted))] uppercase tracking-wider mb-3 px-1">Aspect ratio</p>
-            <AspectRatioPicker value={aspectRatio} onChange={setAspectRatio} />
+            <AspectRatioPicker value={aspectRatio} onChange={setAspectRatio} baseSize={baseSize} onBaseSizeChange={setBaseSize} />
           </div>
 
           {error && (

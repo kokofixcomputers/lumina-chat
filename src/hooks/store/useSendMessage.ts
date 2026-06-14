@@ -934,6 +934,8 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       }
 
       if (toolCalls.length > 0) {
+        clearStreaming();
+        setStreamingContent('');
         const isAnthropic = activeApiFormat?.id === 'anthropic';
         const assistantMsgContent: any[] = [];
         if (assistantContent) {
@@ -950,7 +952,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           });
         });
         const messagesToPass = useResponsesApi
-          ? [...responsesApiMessages, { type: 'output_text', text: assistantContent || '' }, ...toolCalls.map(tc => ({ type: 'function_call', id: tc.fc_id || tc.id, name: tc.function.name, arguments: tc.function.arguments, call_id: tc.id, status: 'completed' }))]
+          ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: assistantContent || '' }] }, ...toolCalls.map(tc => ({ type: 'function_call', id: tc.fc_id || tc.id, name: tc.function.name, arguments: tc.function.arguments, call_id: tc.id, status: 'completed' }))]
           : isAnthropic
             ? [...apiMessages, { role: 'assistant', content: toolCalls.map((tc: any) => ({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })() })) }]
             : [...apiMessages, { role: 'assistant', content: assistantContent || '', tool_calls: toolCalls }];
@@ -959,7 +961,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         setTimeout(async () => {
           try {
             const contMsgs = useResponsesApi
-              ? [...responsesApiMessages, { type: 'output_text', text: assistantContent }, { type: 'message', role: 'user', content: wrapResponsesApiContent(JSON.stringify({ status: 'tool_call_message_given' })) }]
+              ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: assistantContent }] }, { type: 'message', role: 'user', content: wrapResponsesApiContent(JSON.stringify({ status: 'tool_call_message_given' })) }]
               : [...apiMessages, { role: 'assistant', content: assistantContent }, { role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }];
             const contBody = useResponsesApi ? { model: model?.id || 'gpt-4o', input: contMsgs, store: false, stream: settings.modelSettings.stream, top_p: settings.modelSettings.topP, frequency_penalty: settings.modelSettings.frequencyPenalty, presence_penalty: settings.modelSettings.presencePenalty, tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration), tool_choice: 'auto', ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}) } : { ...requestBody, messages: contMsgs, stream: settings.modelSettings.stream };
             const contRes = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(contBody) });

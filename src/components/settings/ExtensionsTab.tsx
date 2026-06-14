@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit2, Download, Upload, Power, PowerOff, Code, AlertCircle, CheckCircle, XCircle, Store, ShieldCheck, ShieldAlert } from 'lucide-react';
+import Editor, { useMonaco } from '@monaco-editor/react';
 import { extensionStorage, StoredExtension, ExtensionType } from '../../extensions/extensionStorage';
 import { extensionLoader } from '../../extensions/extensionLoader';
 import { extensionManager } from '../../extensions/extensionSystem';
+import { extensionLogRegistry, LogEntry } from '../../extensions/extensionLogRegistry';
 import type { AppSettings } from '../../types';
 
 interface ExtensionsTabProps {
@@ -435,14 +437,10 @@ api.registerExtension({
             </div>
 
             <div className="mb-3">
-              <label className="form-label">Extension Code</label>
-              <textarea
-                value={editCode}
-                onChange={e => setEditCode(e.target.value)}
-                className="input text-sm font-mono min-h-[400px] w-full"
-                placeholder="// Write your extension code here..."
-                spellCheck={false}
-              />
+              <label className="form-label mb-1.5">Extension Code</label>
+              <div className="rounded-lg border border-[rgb(var(--border))] overflow-hidden" style={{ height: 420 }}>
+                <JsEditor value={editCode} onChange={setEditCode} settings={settings} />
+              </div>
             </div>
 
             <div className="flex gap-2">
@@ -531,8 +529,10 @@ api.registerExtension({
                         </div>
                       </details>
                     )}
+
+                    <ExtLogViewer extensionId={extension.id} />
                   </div>
-                  
+
                   <div className="flex gap-1 ml-3">
                     <button
                       onClick={() => handleToggleExtension(extension.id)}
@@ -592,5 +592,161 @@ api.registerExtension({
         </div>
       </section>
     </div>
+  );
+}
+
+// ── Extension log viewer ──────────────────────────────────────────────────
+
+function useExtensionLogs(extensionId: string): LogEntry[] {
+  const [logs, setLogs] = useState<LogEntry[]>(() => extensionLogRegistry.getLogs(extensionId));
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent).detail?.extensionId;
+      if (id === null || id === extensionId) setLogs([...extensionLogRegistry.getLogs(extensionId)]);
+    };
+    window.addEventListener('ext-log-update', handler);
+    return () => window.removeEventListener('ext-log-update', handler);
+  }, [extensionId]);
+  return logs;
+}
+
+function ExtLogViewer({ extensionId }: { extensionId: string }) {
+  const logs = useExtensionLogs(extensionId);
+  const errorCount = logs.filter(l => l.level === 'error').length;
+  const warnCount  = logs.filter(l => l.level === 'warn').length;
+
+  const levelStyle = (level: LogEntry['level']) => {
+    switch (level) {
+      case 'error': return 'text-red-400';
+      case 'warn':  return 'text-yellow-400';
+      case 'info':  return 'text-blue-400';
+      default:      return 'text-[rgb(var(--muted))]';
+    }
+  };
+  const fmt = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  return (
+    <details className="mt-2 group">
+      <summary className="flex items-center gap-2 text-xs text-[rgb(var(--muted))] cursor-pointer hover:text-[rgb(var(--text))] select-none list-none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 transition-transform group-open:rotate-90 shrink-0">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6" />
+        </svg>
+        <span>Console</span>
+        {errorCount > 0 && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-500/15 text-red-400 font-medium">
+            {errorCount} error{errorCount !== 1 ? 's' : ''}
+          </span>
+        )}
+        {warnCount > 0 && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] bg-yellow-500/15 text-yellow-400 font-medium">
+            {warnCount} warn{warnCount !== 1 ? 's' : ''}
+          </span>
+        )}
+        {logs.length === 0 && <span className="text-[10px]">no output</span>}
+        {logs.length > 0 && (
+          <button
+            onClick={e => { e.preventDefault(); extensionLogRegistry.clear(extensionId); }}
+            className="ml-auto text-[10px] hover:text-[rgb(var(--text))] transition-colors"
+          >
+            Clear
+          </button>
+        )}
+      </summary>
+
+      <div className="mt-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg))] overflow-hidden">
+        {logs.length === 0 ? (
+          <p className="px-3 py-2 text-[11px] text-[rgb(var(--muted))]">No output yet.</p>
+        ) : (
+          <div className="max-h-52 overflow-y-auto">
+            {logs.map(entry => (
+              <div key={entry.id} className={`flex gap-2 px-3 py-1 border-b border-[rgb(var(--border))] last:border-0 font-mono text-[11px] leading-relaxed ${entry.level === 'error' ? 'bg-red-500/5' : entry.level === 'warn' ? 'bg-yellow-500/5' : ''}`}>
+                <span className="text-[rgb(var(--muted))] shrink-0 select-none">{fmt(entry.timestamp)}</span>
+                <span className={`uppercase text-[9px] font-bold mt-0.5 shrink-0 w-8 ${levelStyle(entry.level)}`}>{entry.level}</span>
+                <span className={`break-all whitespace-pre-wrap ${levelStyle(entry.level)}`}>{entry.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+// ── Monaco theme helpers (mirrors AppearanceTab) ──────────────────────────
+function cssVarToHex(name: string): string {
+  const rgb = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
+  if (!rgb) return '#888888';
+  const [r, g, b] = rgb.split(/\s+/).map(Number);
+  return '#' + [r, g, b].map(n => (isNaN(n) ? 0 : n).toString(16).padStart(2, '0')).join('');
+}
+
+function buildLuminaMonacoTheme() {
+  const bg = cssVarToHex('bg'), panel = cssVarToHex('panel'), text = cssVarToHex('text');
+  const muted = cssVarToHex('muted'), border = cssVarToHex('border'), accent = cssVarToHex('accent');
+  const isDark = document.documentElement.classList.contains('dark');
+  return {
+    base: (isDark ? 'vs-dark' : 'vs') as 'vs-dark' | 'vs',
+    inherit: true as const,
+    rules: [
+      { token: 'comment',  foreground: muted.slice(1) },
+      { token: 'keyword',  foreground: accent.slice(1) },
+      { token: 'string',   foreground: text.slice(1) },
+      { token: 'number',   foreground: text.slice(1) },
+      { token: 'regexp',   foreground: accent.slice(1) },
+    ],
+    colors: {
+      'editor.background': bg,
+      'editor.foreground': text,
+      'editor.lineHighlightBackground': panel + '80',
+      'editor.selectionBackground': accent + '33',
+      'editor.inactiveSelectionBackground': accent + '1a',
+      'editorLineNumber.foreground': muted,
+      'editorLineNumber.activeForeground': text,
+      'editorGutter.background': panel,
+      'editorCursor.foreground': accent,
+      'editorIndentGuide.background1': border,
+      'editorWidget.background': panel,
+      'editorWidget.border': border,
+      'editorSuggestWidget.background': panel,
+      'editorSuggestWidget.border': border,
+      'editorSuggestWidget.selectedBackground': accent + '33',
+      'scrollbarSlider.background': muted + '44',
+      'scrollbarSlider.hoverBackground': muted + '66',
+      'focusBorder': accent + '88',
+    },
+  };
+}
+
+function JsEditor({ value, onChange, settings }: { value: string; onChange: (v: string) => void; settings: AppSettings }) {
+  const monaco = useMonaco();
+
+  useEffect(() => {
+    if (!monaco) return;
+    monaco.editor.defineTheme('lumina', buildLuminaMonacoTheme());
+    monaco.editor.setTheme('lumina');
+  }, [monaco, settings.theme]);
+
+  return (
+    <Editor
+      height="100%"
+      language="javascript"
+      value={value}
+      theme="lumina"
+      onChange={v => onChange(v ?? '')}
+      options={{
+        fontSize: 13,
+        fontFamily: "'SF Mono', 'Fira Code', 'Menlo', monospace",
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        wordWrap: 'off',
+        tabSize: 2,
+        lineNumbers: 'on',
+        renderLineHighlight: 'gutter',
+        overviewRulerLanes: 0,
+        hideCursorInOverviewRuler: true,
+        scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+        padding: { top: 12, bottom: 12 },
+      }}
+    />
   );
 }

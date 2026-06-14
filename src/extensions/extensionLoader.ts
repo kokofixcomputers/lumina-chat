@@ -3,6 +3,7 @@ import { extensionStorage, StoredExtension } from './extensionStorage';
 import { extensionToolRegistry } from './extensionToolRegistry';
 import { extensionUIRegistry } from './extensionUIRegistry';
 import { extensionPatchRegistry } from './extensionPatchRegistry';
+import { extensionLogRegistry } from './extensionLogRegistry';
 
 class ExtensionLoader {
   private loadedExtensions: Map<string, any> = new Map();
@@ -70,6 +71,7 @@ class ExtensionLoader {
       return true;
     } catch (error) {
       console.error(`Failed to load extension '${storedExtension.id}':`, error);
+      extensionLogRegistry.append(storedExtension.id, 'error', error instanceof Error ? error : String(error));
       return false;
     }
   }
@@ -149,22 +151,13 @@ class ExtensionLoader {
   }
 
   private createSafeConsole(extensionId: string): any {
+    const reg = extensionLogRegistry;
     return {
-      log: (...args: any[]) => {
-        console.log(`[Extension:${extensionId}]`, ...args);
-      },
-      warn: (...args: any[]) => {
-        console.warn(`[Extension:${extensionId}]`, ...args);
-      },
-      error: (...args: any[]) => {
-        console.error(`[Extension:${extensionId}]`, ...args);
-      },
-      info: (...args: any[]) => {
-        console.info(`[Extension:${extensionId}]`, ...args);
-      },
-      debug: (...args: any[]) => {
-        console.debug(`[Extension:${extensionId}]`, ...args);
-      }
+      log:   (...args: any[]) => { console.log(`[Extension:${extensionId}]`, ...args);   reg.append(extensionId, 'log',  ...args); },
+      info:  (...args: any[]) => { console.info(`[Extension:${extensionId}]`, ...args);  reg.append(extensionId, 'info', ...args); },
+      warn:  (...args: any[]) => { console.warn(`[Extension:${extensionId}]`, ...args);  reg.append(extensionId, 'warn', ...args); },
+      error: (...args: any[]) => { console.error(`[Extension:${extensionId}]`, ...args); reg.append(extensionId, 'error', ...args); },
+      debug: (...args: any[]) => { console.debug(`[Extension:${extensionId}]`, ...args); reg.append(extensionId, 'log',  ...args); },
     };
   }
 

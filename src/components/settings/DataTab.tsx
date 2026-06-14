@@ -48,7 +48,10 @@ export default function DataTab({ settings, conversations, onImportData }: DataT
     };
 
     const jsonStr = JSON.stringify(data);
-    const base64 = btoa(jsonStr);
+
+    // Convert to UTF-8 bytes, then encode to base64
+    const utf8Bytes = new TextEncoder().encode(jsonStr);
+    const base64 = btoa(String.fromCharCode(...utf8Bytes));
     const deepLink = `lumina://import?data=${encodeURIComponent(base64)}`;
 
     console.log('Opening deep link:', deepLink.substring(0, 100) + '...');

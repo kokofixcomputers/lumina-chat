@@ -19,7 +19,13 @@ export async function registerDeepLinkHandler(): Promise<void> {
           const match = url.match(/[?&]data=([^&]*)/);
           if (match && match[1]) {
             const base64Data = decodeURIComponent(match[1]);
-            const jsonStr = atob(base64Data);
+            // Decode base64 to UTF-8 bytes, then to string
+            const binaryString = atob(base64Data);
+            const utf8Bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              utf8Bytes[i] = binaryString.charCodeAt(i);
+            }
+            const jsonStr = new TextDecoder().decode(utf8Bytes);
             const data = JSON.parse(jsonStr);
 
             // Fire a custom event with the import data

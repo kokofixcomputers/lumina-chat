@@ -13,6 +13,7 @@
   },
   "permissions": [
     "core:default",
+    "deep-link:default",
     "fs:allow-write-text-file",
     "opener:default",
     "dialog:default",

@@ -559,6 +559,10 @@ export function useSendMessage({
         const tool = getToolByName(toolCall.function.name);
         const loadingMsgId = uuidv4();
         addMessage(convId, { id: loadingMsgId, role: 'tool', content: '', timestamp: generateUniqueTimestamp(), tool_call_id: toolCall.id, tool_name: toolCall.function.name, tool_status: 'loading' });
+        // Yield to the browser so React can paint the loading state before the tool runs.
+        // React 18 batches state updates across async turns, so without this the loading
+        // render is swallowed together with the completion update.
+        await new Promise(resolve => setTimeout(resolve, 0));
 
         if (!tool) {
           const err = `Tool "${toolCall.function.name}" not found`;

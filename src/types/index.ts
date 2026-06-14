@@ -173,6 +173,7 @@ export interface AppSettings {
   };
   disabledTools?: string[];
   apiFormats?: ProviderApiFormat[];
+  browserTabsEnabled?: boolean;
   memoriesEnabled?: boolean;
   memories?: string[]; // each entry is a plain-text memory fact
   integrations?: {

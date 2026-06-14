@@ -10,6 +10,7 @@ import SplitViewChat from './components/SplitViewChat';
 import SettingsPanel from './components/SettingsPanel';
 import OnboardingScreen from './components/OnboardingScreen';
 import SharePanel from './components/SharePanel';
+import TabBar from './components/TabBar';
 import ViewChatModal from './components/ViewChatModal';
 import DesktopAppToast from './components/DesktopAppToast';
 import WelcomeBackModal from './components/WelcomeBackModal';
@@ -49,6 +50,7 @@ export default function App() {
   const [fineTuningView, setFineTuningView] = useState<'list' | { id: string }>('list');
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
   const [latestRelease, setLatestRelease] = useState<any>(null);
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [splitViewEnabled, setSplitViewEnabled] = useState(false);
   const [secondConvId, setSecondConvId] = useState<string | null>(null);
   const [dividerPosition, setDividerPosition] = useState(50);
@@ -278,6 +280,30 @@ export default function App() {
   };
 
   const openSharePanel = () => setPanel('share');
+
+  const handleSelectConv = (convId: string) => {
+    if (store.settings.browserTabsEnabled) {
+      setOpenTabIds(prev => prev.includes(convId) ? prev : [...prev, convId]);
+    }
+    navigate(`/${convId}`);
+    handleExitFineTuning();
+  };
+
+  const handleCloseTab = (convId: string) => {
+    setOpenTabIds(prev => {
+      const next = prev.filter(id => id !== convId);
+      if (convId === store.activeConvId) {
+        const idx = prev.indexOf(convId);
+        const nextActive = next[idx] ?? next[idx - 1] ?? null;
+        if (nextActive) {
+          navigate(`/${nextActive}`);
+        } else {
+          navigate('/');
+        }
+      }
+      return next;
+    });
+  };
 
   const handleSend = (content: string, images: string[]) => {
     let convId = store.activeConvId;
@@ -1453,10 +1479,7 @@ export default function App() {
               activeConvId={store.activeConvId}
               currentPanel={panel}
               settings={store.settings}
-              onSelectConv={(convId) => {
-                navigate(`/${convId}`);
-                handleExitFineTuning();
-              }}
+              onSelectConv={handleSelectConv}
               onGoHome={() => {
                 navigate('/');
                 handleExitFineTuning();
@@ -1491,7 +1514,27 @@ export default function App() {
               onRenameCoworkSession={handleRenameCoworkSession}
             />
 
-            <div className="flex-1 flex min-w-0 overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              {store.settings.browserTabsEnabled && (
+                <TabBar
+                  tabs={openTabIds.map(id => store.conversations.find(c => c.id === id)).filter(Boolean) as any[]}
+                  activeId={store.activeConvId}
+                  onSelect={(id) => navigate(`/${id}`)}
+                  onClose={handleCloseTab}
+                  onSplitLeft={(id) => {
+                    if (store.activeConvId && id !== store.activeConvId) {
+                      navigate(`/${id}`);
+                      handleEnableSplitView(store.activeConvId);
+                    }
+                  }}
+                  onSplitRight={(id) => {
+                    if (store.activeConvId && id !== store.activeConvId) {
+                      handleEnableSplitView(id);
+                    }
+                  }}
+                />
+              )}
+              <div className="flex-1 flex min-w-0 overflow-hidden relative">
               {appMode === 'code' ? (
                 isTauri() ? (
                   <CodeMode
@@ -1656,9 +1699,11 @@ export default function App() {
               )}
 
             </div>
+            </div>
           </div>
         } />
       </Routes>
+
 
     {/* Share modal */}
     {panel === 'share' && (

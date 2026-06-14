@@ -51,6 +51,18 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Display</h3>
         <div className="form-group">
           <div className="flex items-center justify-between">
+            <label className="form-label mb-0">Browser Tabs</label>
+            <button
+              onClick={() => onUpdateSettings({ browserTabsEnabled: !settings.browserTabsEnabled })}
+              className={`toggle ${settings.browserTabsEnabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+            >
+              <span className={`toggle-thumb ${settings.browserTabsEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          <p className="form-help">Open conversations as tabs at the top of the chat area</p>
+        </div>
+        <div className="form-group">
+          <div className="flex items-center justify-between">
             <label className="form-label mb-0">Prettify model names</label>
             <button
               onClick={() => onUpdateSettings({ prettifyModelNames: !settings.prettifyModelNames })}

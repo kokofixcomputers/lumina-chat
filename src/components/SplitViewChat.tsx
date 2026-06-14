@@ -139,7 +139,7 @@ export default function SplitViewChat({
         {/* Left panel */}
         <div
           style={{ width: `${dividerPosition}%` }}
-          className="min-w-0 border-r border-[rgb(var(--border))]"
+          className="min-w-0 h-full flex flex-col overflow-hidden border-r border-[rgb(var(--border))]"
         >
           <ChatArea
             conversation={leftConversation}
@@ -190,7 +190,7 @@ export default function SplitViewChat({
         {/* Right panel */}
         <div
           style={{ width: `${100 - dividerPosition}%` }}
-          className="min-w-0"
+          className="min-w-0 h-full flex flex-col overflow-hidden"
         >
           <ChatArea
             conversation={rightConversation}

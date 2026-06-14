@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faApple, faMicrosoft, faUbuntu } from '@fortawesome/free-brands-svg-icons';
-import { ChevronLeft, Download, Check, Loader2, Info } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-
-type Step = 'os' | 'arch' | 'versions';
+import { ChevronLeft, Download, Check, Loader2, Info, AlertTriangle } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 
 type HypeLoadingState = Record<string, boolean>;
 
@@ -36,14 +34,35 @@ interface Release {
 
 export default function VersionsPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>('os');
-  const [selectedOS, setSelectedOS] = useState<string | null>(null);
-  const [selectedArch, setSelectedArch] = useState<string | null>(null);
+  const { platform, arch } = useParams<{ platform?: string; arch?: string }>();
+
+  // Derive the current step and selections from the URL so a page refresh
+  // (e.g. on /versions/macos/arm64) stays on the same screen.
+  const selectedOS = platform && OS_OPTIONS.some(os => os.id === platform) ? platform : null;
+  const selectedArch = arch && ARCH_OPTIONS.some(a => a.id === arch) ? arch : null;
+  const step: 'os' | 'arch' | 'versions' = selectedOS && selectedArch ? 'versions' : selectedOS ? 'arch' : 'os';
+
   const [releases, setReleases] = useState<Release[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showPrereleases, setShowPrereleases] = useState(false);
   const [hypedArches, setHypedArches] = useState<Set<string>>(new Set());
   const [hypeLoading, setHypeLoading] = useState<HypeLoadingState>({});
+  const [buildingVersions, setBuildingVersions] = useState<Set<string>>(new Set());
+  const [failedVersions, setFailedVersions] = useState<Set<string>>(new Set());
+
+  // Normalize version tags so "v1.1.1" and "1.1.1" compare equal.
+  const normalizeVersion = (v: string) => v.replace(/^v/i, '').trim();
+
+  // Compare two version tags numerically. Returns >0 if a is newer than b.
+  const compareVersions = (a: string, b: string) => {
+    const pa = normalizeVersion(a).split(/[.+-]/).map((n) => parseInt(n, 10) || 0);
+    const pb = normalizeVersion(b).split(/[.+-]/).map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const diff = (pa[i] || 0) - (pb[i] || 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  };
 
   // Fetch releases from GitHub API
   useEffect(() => {
@@ -85,6 +104,42 @@ export default function VersionsPage() {
     };
 
     fetchReleases();
+  }, []);
+
+  // Fetch in-progress release workflow runs so we can show a "building" spinner
+  // for versions that don't have assets yet but are currently being built.
+  useEffect(() => {
+    const fetchBuildingVersions = async () => {
+      try {
+        const response = await fetch('https://api.github.com/repos/kokofixcomputers/lumina-chat/actions/workflows/265491015/runs?per_page=30');
+        const data = await response.json();
+
+        // Runs come back newest-first, so the first run we see for a given
+        // version is its latest attempt (a rerun supersedes an older failure).
+        const seen = new Set<string>();
+        const building = new Set<string>();
+        const failed = new Set<string>();
+        for (const run of data.workflow_runs || []) {
+          const version = run.head_branch || run.display_title;
+          if (!version) continue;
+          const key = normalizeVersion(version);
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          if (run.status === 'in_progress' || run.status === 'queued') {
+            building.add(key);
+          } else if (run.status === 'completed' && run.conclusion === 'failure') {
+            failed.add(key);
+          }
+        }
+        setBuildingVersions(building);
+        setFailedVersions(failed);
+      } catch (error) {
+        console.error('Failed to fetch workflow runs:', error);
+      }
+    };
+
+    fetchBuildingVersions();
   }, []);
 
   // Filter releases based on prerelease toggle
@@ -129,21 +184,18 @@ export default function VersionsPage() {
   };
 
   const handleOSSelect = (osId: string) => {
-    setSelectedOS(osId);
-    setStep('arch');
+    navigate(`/versions/${osId}`);
   };
 
   const handleArchSelect = (archId: string) => {
-    setSelectedArch(archId);
-    setStep('versions');
+    navigate(`/versions/${selectedOS}/${archId}`);
   };
 
   const handleBack = () => {
     if (step === 'arch') {
-      setStep('os');
-      setSelectedArch(null);
+      navigate('/versions');
     } else if (step === 'versions') {
-      setStep('arch');
+      navigate(`/versions/${selectedOS}`);
     }
   };
 
@@ -297,7 +349,14 @@ export default function VersionsPage() {
             ) : (
               filteredReleases.map((release) => {
                 const hasBuild = selectedOS && release.assets[selectedOS as keyof typeof release.assets];
-                const downloadUrl = release.assets.downloadUrl;
+                const isBuilding = !hasBuild && buildingVersions.has(normalizeVersion(release.version));
+                const isFailed = !hasBuild && !isBuilding && failedVersions.has(normalizeVersion(release.version));
+                // Is there a newer release that actually has a build for this OS?
+                const hasNewerBuild = isFailed && filteredReleases.some((r) =>
+                  selectedOS &&
+                  r.assets[selectedOS as keyof typeof r.assets] &&
+                  compareVersions(r.version, release.version) > 0
+                );
                 return (
                   <div
                     key={release.version}
@@ -321,8 +380,14 @@ export default function VersionsPage() {
                           Released: {release.date} • Size: {release.size}
                         </p>
                         {!hasBuild && (
-                          <p className="text-sm text-[rgb(var(--muted))] mt-2">
-                            This build is unavailable. This could be because we are still building it.
+                          <p className="text-sm mt-2 text-[rgb(var(--muted))]">
+                            {isBuilding
+                              ? 'This build is currently being built. Check back in a few minutes.'
+                              : isFailed
+                                ? hasNewerBuild
+                                  ? 'This build failed. Please download a newer version instead.'
+                                  : 'This build failed. Our team is working on it — please check back later.'
+                                : 'This build is unavailable.'}
                           </p>
                         )}
                       </div>
@@ -333,6 +398,22 @@ export default function VersionsPage() {
                         >
                           <Download size={18} />
                           Download
+                        </button>
+                      ) : isBuilding ? (
+                        <button
+                          disabled
+                          className="btn-secondary inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full cursor-default"
+                        >
+                          <Loader2 size={18} className="animate-spin" />
+                          Building
+                        </button>
+                      ) : isFailed ? (
+                        <button
+                          disabled
+                          className="btn-secondary inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full opacity-50 cursor-not-allowed"
+                        >
+                          <AlertTriangle size={18} />
+                          {hasNewerBuild ? 'Use newer version' : 'Build failed'}
                         </button>
                       ) : (
                         <button

@@ -1386,6 +1386,8 @@ export default function App() {
       <Routes>
         <Route path="/download" element={<DownloadPage />} />
         <Route path="/versions" element={<VersionsPage />} />
+        <Route path="/versions/:platform" element={<VersionsPage />} />
+        <Route path="/versions/:platform/:arch" element={<VersionsPage />} />
         <Route path="/install" element={<InstallationPage />} />
         <Route path="*" element={
           <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">

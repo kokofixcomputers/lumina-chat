@@ -1,4 +1,4 @@
-import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain, Share2, Puzzle } from 'lucide-react';
+import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain, Share2, Puzzle, Palette } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { ModelProvider } from '../../types';
 import { setSyncStatus } from '../../utils/syncStatus';
@@ -16,6 +16,7 @@ import WorkflowsTab from './WorkflowsTab';
 import IntegrationsTab from './IntegrationsTab';
 import MemoriesTab from './MemoriesTab';
 import AboutTab from './AboutTab';
+import AppearanceTab from './AppearanceTab';
 
 export default function SettingsPanel({
   settings,
@@ -74,6 +75,7 @@ export default function SettingsPanel({
 
   const headerTitle: Record<TabType, string> = {
     general: 'General Settings',
+    appearance: 'Appearance',
     providers: 'Model Providers',
     apiformats: 'API Formats',
     directmodels: 'Direct Models',
@@ -112,6 +114,7 @@ export default function SettingsPanel({
             </div>
             <div className="flex-1 p-2 overflow-y-auto">
               {navBtn('general', 'General', <SettingsIcon size={16} />)}
+              {navBtn('appearance', 'Appearance', <Palette size={16} />)}
               {navBtn('providers', 'Model Providers', <Database size={16} />)}
               {navBtn('apiformats', 'API Formats', <Settings2 size={16} />)}
               {navBtn('directmodels', 'Direct Models', <Zap size={16} />)}
@@ -154,6 +157,13 @@ export default function SettingsPanel({
               <GeneralTab
                 settings={settings}
                 onUpdateModelSettings={onUpdateModelSettings}
+                onUpdateSettings={onUpdateSettings}
+              />
+            )}
+
+            {activeTab === 'appearance' && (
+              <AppearanceTab
+                settings={settings}
                 onUpdateSettings={onUpdateSettings}
               />
             )}
@@ -230,6 +240,7 @@ export default function SettingsPanel({
             {activeTab === 'shares' && (
               <SharesTab
                 settings={settings}
+                conversations={conversations}
                 onUpdateSettings={onUpdateSettings}
               />
             )}

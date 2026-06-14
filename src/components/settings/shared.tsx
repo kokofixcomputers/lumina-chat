@@ -299,9 +299,9 @@ export function IntegratedProviderCard({
       >
         <button
           onClick={e => { e.stopPropagation(); onUpdate({ enabled: !existingProvider.enabled }); }}
-          className={`toggle w-10 h-5 shrink-0 ${existingProvider.enabled ? 'bg-green-500' : 'bg-black/15 dark:bg-white/15'}`}
+          className={`toggle shrink-0 ${existingProvider.enabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
         >
-          <span className={`toggle-thumb w-3 h-3 ${existingProvider.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+          <span className={`toggle-thumb ${existingProvider.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">{template.name}</p>
@@ -505,9 +505,9 @@ export function ProviderCard({
       >
         <button
           onClick={e => { e.stopPropagation(); onUpdate({ enabled: !provider.enabled }); }}
-          className={`toggle w-10 h-5 shrink-0 ${provider.enabled ? 'bg-green-500' : 'bg-black/15 dark:bg-white/15'}`}
+          className={`toggle shrink-0 ${provider.enabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
         >
-          <span className={`toggle-thumb w-3 h-3 ${provider.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+          <span className={`toggle-thumb ${provider.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">{provider.name}</p>

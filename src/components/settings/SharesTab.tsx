@@ -1,102 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Trash2, ExternalLink, Copy, Check, Calendar, Shield, AlertCircle } from 'lucide-react';
-import type { Conversation } from '../../types';
-import type { AppSettings } from '../../types';
+import type { Conversation, AppSettings } from '../../types';
 
 interface SharesTabProps {
   settings: AppSettings;
+  conversations: Conversation[];
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
 }
 
-interface ShareInfo {
-  conversation: Conversation;
-  shareInfo: {
-    code: string;
-    expiresAt: string;
-    createdAt: string;
-  };
-}
-
-export default function SharesTab({ settings, onUpdateSettings }: SharesTabProps) {
-  const [shares, setShares] = useState<ShareInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function SharesTab({ conversations }: SharesTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadShares();
-  }, []);
-
-  const loadShares = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Get conversations from localStorage
-      const conversationsData = localStorage.getItem('lumina_conversations');
-      if (!conversationsData) {
-        setShares([]);
-        return;
-      }
-
-      const conversations = JSON.parse(conversationsData);
-      
-      // Filter conversations that have share info
-      const sharedConversations = conversations.filter((conv: Conversation) => conv.shareInfo);
-      
-      setShares(sharedConversations.map((conv: Conversation) => ({
-        conversation: conv,
-        shareInfo: conv.shareInfo!
-      })));
-    } catch (err) {
-      setError('Failed to load shared conversations');
-      console.error('Error loading shares:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const shares = conversations.filter(c => c.shareInfo);
 
   const handleDeleteShare = async (code: string, conversationId: string) => {
     setDeleting(code);
-    
+    setError(null);
     try {
       const response = await fetch(`https://my-ai-chat.kokofixcomputers.workers.dev/share?code=${code}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
-      
       const result = await response.json();
-      
       if (result.success) {
-        // Update conversation to remove share info
-        const conversationsData = localStorage.getItem('lumina_conversations');
-        if (conversationsData) {
-          const conversations = JSON.parse(conversationsData);
-          const updatedConversations = conversations.map((conv: Conversation) => {
-            if (conv.id === conversationId) {
-              const { shareInfo, ...convWithoutShare } = conv;
-              return convWithoutShare;
-            }
-            return conv;
+        // Patch localStorage and fire an event so the store picks it up
+        const raw = localStorage.getItem('lumina_conversations');
+        if (raw) {
+          const convs: Conversation[] = JSON.parse(raw);
+          const updated = convs.map(c => {
+            if (c.id !== conversationId) return c;
+            const { shareInfo: _, ...rest } = c as any;
+            return rest;
           });
-          
-          localStorage.setItem('lumina_conversations', JSON.stringify(updatedConversations));
-          
-          // Update the app store if it has a setConversations method
-          const event = new CustomEvent('conversationsUpdated', { 
-            detail: updatedConversations 
-          });
-          window.dispatchEvent(event);
+          localStorage.setItem('lumina_conversations', JSON.stringify(updated));
+          window.dispatchEvent(new CustomEvent('conversationsUpdated', { detail: updated }));
         }
-        
-        // Reload shares
-        await loadShares();
       } else {
         throw new Error(result.error || 'Failed to delete share');
       }
     } catch (err) {
-      setError('Failed to delete share');
-      console.error('Error deleting share:', err);
+      setError('Failed to delete share. Please try again.');
+      console.error(err);
     } finally {
       setDeleting(null);
     }
@@ -144,27 +89,14 @@ export default function SharesTab({ settings, onUpdateSettings }: SharesTabProps
     };
   };
 
-  if (loading) {
-    return (
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-4xl">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[rgb(var(--accent))] mx-auto mb-4"></div>
-            <p className="text-[rgb(var(--muted))]">Loading shared conversations...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-4xl">
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Shared Conversations</h3>
-        
+
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
-            <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+          <div className="border border-[rgb(var(--danger)/0.4)] bg-[rgb(var(--danger)/0.08)] rounded-xl p-4 mb-4">
+            <div className="flex items-center gap-2 text-[rgb(var(--danger))]">
               <AlertCircle size={16} />
               <span className="text-sm">{error}</span>
             </div>
@@ -181,16 +113,15 @@ export default function SharesTab({ settings, onUpdateSettings }: SharesTabProps
           </div>
         ) : (
           <div className="space-y-4">
-            {shares.map(({ conversation, shareInfo }) => {
+            {shares.map(conversation => {
+              const shareInfo = conversation.shareInfo!;
               const { isExpired, timeLeft } = getExpirationStatus(shareInfo.expiresAt);
-              
+
               return (
                 <div
                   key={conversation.id}
-                  className={`bg-[rgb(var(--panel))] border rounded-lg p-4 ${
-                    isExpired 
-                      ? 'border-gray-200 dark:border-gray-700 opacity-60' 
-                      : 'border-[rgb(var(--border))]'
+                  className={`bg-[rgb(var(--panel))] border rounded-xl p-4 ${
+                    isExpired ? 'border-[rgb(var(--border))] opacity-60' : 'border-[rgb(var(--border))]'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -213,7 +144,7 @@ export default function SharesTab({ settings, onUpdateSettings }: SharesTabProps
                     <button
                       onClick={() => handleDeleteShare(shareInfo.code, conversation.id)}
                       disabled={deleting === shareInfo.code}
-                      className="btn-icon text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                      className="btn-icon hover:text-[rgb(var(--danger))] disabled:opacity-50"
                       title="Delete share"
                     >
                       {deleting === shareInfo.code ? (
@@ -264,8 +195,8 @@ export default function SharesTab({ settings, onUpdateSettings }: SharesTabProps
                   </div>
 
                   {isExpired && (
-                    <div className="mt-3 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
-                      <p className="text-xs text-red-600 dark:text-red-400">
+                    <div className="mt-3 p-2 bg-[rgb(var(--danger)/0.08)] border border-[rgb(var(--danger)/0.3)] rounded-lg">
+                      <p className="text-xs text-[rgb(var(--danger))]">
                         This share has expired. Delete it to clean up your shares.
                       </p>
                     </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Download, ExternalLink, Eye } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { buildSyntaxStyle } from '../utils/syntaxTheme';
 
 interface PreviewData {
   code: string;
@@ -230,8 +230,8 @@ export default function PreviewSidebar() {
             ) : (
               <SyntaxHighlighter 
                 language={previewData.language || 'text'} 
-                style={isDark ? oneDark : oneLight} 
-                customStyle={{ margin: 0, background: 'transparent' }} 
+                style={buildSyntaxStyle()}
+                customStyle={{ margin: 0, background: 'transparent' }}
                 showLineNumbers={false}
               >
                 {previewData.code}

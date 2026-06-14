@@ -5,7 +5,7 @@ import {
   Eye, Loader2, CheckCircle, XCircle, ChevronRight, Download, X, ChevronLeft, Quote
 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { buildSyntaxStyle } from '../utils/syntaxTheme';
 import { getModelInfo } from '../utils/models';
 import type { Message } from '../types';
 import { writeFile } from '@tauri-apps/plugin-fs';
@@ -152,7 +152,7 @@ function DiffLines({ lines, path, isDark }: { lines: DiffLine[]; path?: string; 
   return (
     <SyntaxHighlighter
       language={lang}
-      style={isDark ? oneDark : oneLight}
+      style={buildSyntaxStyle()}
       renderer={renderer}
       PreTag="div"
       CodeTag="div"
@@ -550,7 +550,7 @@ function renderContent(content: string) {
                 </div>
               </div>
               <div className="code-block-body overflow-x-auto">
-                <SyntaxHighlighter language="json" style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
+                <SyntaxHighlighter language="json" style={buildSyntaxStyle()} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
                   {code}
                 </SyntaxHighlighter>
               </div>
@@ -596,7 +596,7 @@ function renderContent(content: string) {
                 </div>
               </div>
               <div className="code-block-body overflow-x-auto">
-                <SyntaxHighlighter language="json" style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
+                <SyntaxHighlighter language="json" style={buildSyntaxStyle()} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
                   {code}
                 </SyntaxHighlighter>
               </div>
@@ -614,7 +614,7 @@ function renderContent(content: string) {
               </div>
             </div>
             <div className="code-block-body overflow-x-auto">
-              <SyntaxHighlighter language={lang || 'text'} style={isDark ? oneDark : oneLight} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
+              <SyntaxHighlighter language={lang || 'text'} style={buildSyntaxStyle()} customStyle={{ margin: 0, background: 'transparent' }} showLineNumbers={false}>
                 {code}
               </SyntaxHighlighter>
             </div>

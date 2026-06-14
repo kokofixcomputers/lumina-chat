@@ -47,27 +47,8 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-2xl">
-      {/* Appearance */}
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Appearance</h3>
-        <div className="form-group">
-          <label className="form-label">Theme</label>
-          <div className="flex gap-2">
-            {(['light', 'dark', 'system'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => onUpdateSettings({ theme: t })}
-                className={`flex-1 rounded-xl px-3.5 py-2 text-xs capitalize font-medium transition-all ${
-                  settings.theme === t
-                    ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] shadow-[0_2px_8px_rgba(0,0,0,0.12)]'
-                    : 'border border-[rgb(var(--border))] text-[rgb(var(--text))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Display</h3>
         <div className="form-group">
           <div className="flex items-center justify-between">
             <label className="form-label mb-0">Prettify model names</label>
@@ -80,7 +61,6 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
           </div>
           <p className="form-help">Show formatted model names instead of IDs</p>
         </div>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">QoL Features</h3>
         <div className="form-group">
           <div className="flex items-center justify-between">
             <label className="form-label mb-0">Generate Title</label>

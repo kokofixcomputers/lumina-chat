@@ -599,7 +599,7 @@ export default function App() {
         // Store share info in conversation metadata
         const updatedConversations = store.conversations.map(conv => 
           conv.id === conversation.id 
-            ? { ...conv, shareInfo: { code: result.code, expiresAt: result.expiresAt } }
+            ? { ...conv, shareInfo: { code: result.code, expiresAt: result.expiresAt, createdAt: new Date().toISOString() } }
             : conv
         );
         store.setConversations(updatedConversations);
@@ -1655,19 +1655,31 @@ export default function App() {
                 />
               )}
 
-              {panel === 'share' && (
-                <SharePanel
-                  conversation={store.activeConversation}
-                  onShare={handleShare}
-                  onUnshare={handleUnshare}
-                  onClose={() => setPanel('chat')}
-                />
-              )}
             </div>
           </div>
         } />
       </Routes>
-    
+
+    {/* Share modal */}
+    {panel === 'share' && (
+      <>
+        <div
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 animate-fade-in"
+          onClick={() => setPanel('chat')}
+        />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in pointer-events-none">
+          <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-scale-in pointer-events-auto">
+            <SharePanel
+              conversation={store.activeConversation}
+              onShare={handleShare}
+              onUnshare={handleUnshare}
+              onClose={() => setPanel('chat')}
+            />
+          </div>
+        </div>
+      </>
+    )}
+
     {/* Modals */}
     {showViewChatModal && (
       <ViewChatModal

@@ -3,6 +3,7 @@ import type { IntegratedProviderTemplate } from '../../data/integratedProviders'
 
 export type TabType =
   | 'general'
+  | 'appearance'
   | 'providers'
   | 'apiformats'
   | 'directmodels'

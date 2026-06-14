@@ -129,8 +129,17 @@ export interface Workflow {
   prompt: string;
 }
 
+export interface CssThemeFile {
+  id: string;
+  name: string;
+  content: string;
+  enabled: boolean;
+  presetId?: string; // set when this file was originally a preset; cleared on first edit
+}
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
+  cssThemeFiles?: CssThemeFile[];
   providers: ModelProvider[];
   defaultModelId: string;
   defaultProviderModelId: string; // "providerId/modelId"

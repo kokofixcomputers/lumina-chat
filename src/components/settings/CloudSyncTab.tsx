@@ -153,33 +153,33 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
     <>
       <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-2xl">
         {!cloudSyncEnabled ? (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
-            <p className="text-sm text-red-800 dark:text-red-200">
+          <div className="border border-[rgb(var(--danger)/0.4)] bg-[rgb(var(--danger)/0.08)] rounded-xl p-4">
+            <p className="text-sm text-[rgb(var(--danger))]">
               <strong>Cloud Sync Unavailable:</strong> The database connection is currently unavailable. This feature has been disabled.
             </p>
           </div>
         ) : (
           <>
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
-              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+            <div className="border border-[rgb(var(--warning)/0.4)] bg-[rgb(var(--warning)/0.08)] rounded-xl p-4">
+              <p className="text-sm text-[rgb(var(--text))]">
                 <strong>Warning:</strong> This feature is subject to change that may cause breaking changes and may result in your data being lost.
               </p>
             </div>
 
             {/* Connection Status */}
-            <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
+            <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {isConnected ? <Wifi size={16} className="text-green-600" /> : <WifiOff size={16} className="text-red-600" />}
-                  <span className="text-sm font-medium">
+                  {isConnected
+                    ? <Wifi size={16} className="text-[rgb(var(--success))]" />
+                    : <WifiOff size={16} className="text-[rgb(var(--danger))]" />}
+                  <span className="text-sm font-medium text-[rgb(var(--text))]">
                     {isConnected ? 'Connected' : 'Disconnected'}
                   </span>
-                  {userId && <span className="text-xs text-gray-500">(ID: {userId.slice(0, 8)}...)</span>}
+                  {userId && <span className="text-xs text-[rgb(var(--muted))]">(ID: {userId.slice(0, 8)}...)</span>}
                 </div>
                 {isNewUser && (
-                  <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 px-2 py-1 rounded">
-                    New Account
-                  </span>
+                  <span className="badge-secondary text-xs">New Account</span>
                 )}
               </div>
             </div>
@@ -290,11 +290,12 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
               </div>
 
               {syncMessage && (
-                <div className={`mt-4 p-3 rounded-xl text-sm ${
-                  syncStatus === 'success' ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200' :
-                  syncStatus === 'error' ? 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200' :
-                  syncStatus === 'connecting' || syncStatus === 'syncing' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200' :
-                  'bg-gray-50 dark:bg-gray-900/20 text-gray-800 dark:text-gray-200'
+                <div className={`mt-4 p-3 rounded-xl text-sm border ${
+                  syncStatus === 'success'
+                    ? 'bg-[rgb(var(--success)/0.1)] border-[rgb(var(--success)/0.3)] text-[rgb(var(--success))]'
+                    : syncStatus === 'error'
+                    ? 'bg-[rgb(var(--danger)/0.08)] border-[rgb(var(--danger)/0.3)] text-[rgb(var(--danger))]'
+                    : 'bg-[rgb(var(--panel))] border-[rgb(var(--border))] text-[rgb(var(--muted))]'
                 }`}>
                   {syncMessage}
                 </div>

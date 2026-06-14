@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Share2, Link, Eye, EyeOff, Trash2, Upload, Copy, Check, ExternalLink } from 'lucide-react';
+import { X, Share2, Link, Eye, EyeOff, Trash2, Upload, Copy, Check, ExternalLink } from 'lucide-react';
 import type { Conversation } from '../types';
 import { openDeepLink } from '../utils/deepLink';
 
@@ -125,14 +125,12 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
 
   if (!conversation) {
     return (
-      <div className="flex-1 flex flex-col bg-[rgb(var(--bg))]">
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-[rgb(var(--border))]">
-          <button onClick={onClose} className="btn-icon">
-            <ArrowLeft size={18} />
-          </button>
-          <h2 className="text-lg font-semibold">Share Conversation</h2>
+      <div className="flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[rgb(var(--border))]">
+          <h2 className="font-semibold">Share Conversation</h2>
+          <button onClick={onClose} className="btn-icon"><X size={18} /></button>
         </div>
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex items-center justify-center py-16">
           <p className="text-[rgb(var(--muted))]">No conversation selected</p>
         </div>
       </div>
@@ -140,16 +138,14 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[rgb(var(--bg))]">
+    <div className="flex flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-[rgb(var(--border))]">
-        <button onClick={onClose} className="btn-icon">
-          <ArrowLeft size={18} />
-        </button>
-        <h2 className="text-lg font-semibold">Share Conversation</h2>
+      <div className="flex items-center justify-between px-5 py-4 border-b border-[rgb(var(--border))]">
+        <h2 className="font-semibold">Share Conversation</h2>
+        <button onClick={onClose} className="btn-icon"><X size={18} /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="overflow-y-auto" style={{ maxHeight: 'calc(85vh - 65px)' }}>
         <div className="p-6 space-y-6">
           {/* Conversation Info */}
           <div className="bg-[rgb(var(--panel))] rounded-xl p-4 border border-[rgb(var(--border))]">

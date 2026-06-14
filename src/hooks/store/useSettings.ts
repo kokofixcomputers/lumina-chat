@@ -18,13 +18,26 @@ export function useSettings() {
     saveToStorage('lumina_settings', settings);
   }, [settings]);
 
-  // Apply theme
+  // Apply theme class
   useEffect(() => {
     const root = document.documentElement;
     if (settings.theme === 'dark') root.classList.add('dark');
     else if (settings.theme === 'light') root.classList.remove('dark');
     else root.classList.toggle('dark', window.matchMedia('(prefers-color-scheme: dark)').matches);
   }, [settings.theme]);
+
+  // Inject CSS theme files — active files are injected in reverse array order so
+  // the first item in the list ends up last in the DOM and wins the cascade.
+  useEffect(() => {
+    document.querySelectorAll('style[data-lumina-css-theme]').forEach(el => el.remove());
+    const active = (settings.cssThemeFiles ?? []).filter(f => f.enabled);
+    [...active].reverse().forEach(file => {
+      const style = document.createElement('style');
+      style.setAttribute('data-lumina-css-theme', file.id);
+      style.textContent = file.content;
+      document.head.appendChild(style);
+    });
+  }, [settings.cssThemeFiles]);
 
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...patch }));

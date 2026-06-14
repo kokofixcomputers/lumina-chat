@@ -15,6 +15,8 @@ export default function DataTab({ settings, conversations, onImportData }: DataT
   const [selectedSource, setSelectedSource] = useState<ImportSourceId>('lumina');
 
   const exportToDesktop = () => {
+    console.log('Export to desktop clicked');
+
     // Get extensions from localStorage
     const extensions = {};
     try {
@@ -49,8 +51,21 @@ export default function DataTab({ settings, conversations, onImportData }: DataT
     const base64 = btoa(jsonStr);
     const deepLink = `lumina://import?data=${encodeURIComponent(base64)}`;
 
-    // Open the deep link
-    window.location.href = deepLink;
+    console.log('Opening deep link:', deepLink.substring(0, 100) + '...');
+
+    // Open the deep link using a temporary link element
+    const link = document.createElement('a');
+    link.href = deepLink;
+    console.log('Link href set to:', link.href.substring(0, 100) + '...');
+
+    document.body.appendChild(link);
+    console.log('Link appended to body');
+
+    link.click();
+    console.log('Link clicked');
+
+    document.body.removeChild(link);
+    console.log('Link removed from body');
   };
 
   const exportData = () => {

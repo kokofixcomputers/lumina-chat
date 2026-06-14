@@ -90,6 +90,21 @@ export function useSettings() {
     const slashIdx = providerModelId.indexOf('/');
     const providerId = slashIdx !== -1 ? providerModelId.slice(0, slashIdx) : providerModelId;
     const modelId = slashIdx !== -1 ? providerModelId.slice(slashIdx + 1) : '';
+
+    // First: try exact provider+model match, but only if that provider is enabled
+    const exactProvider = settings.providers.find(p => p.id === providerId && p.enabled);
+    const exactModel = exactProvider?.models.find(m => m.id === modelId);
+    if (exactProvider && exactModel) return { provider: exactProvider, model: exactModel };
+
+    // Fallback: any enabled provider that has this model ID
+    // (handles disabled-provider references and old format IDs without a provider prefix)
+    for (const p of settings.providers) {
+      if (!p.enabled) continue;
+      const m = p.models.find(mod => mod.id === modelId);
+      if (m) return { provider: p, model: m };
+    }
+
+    // Last resort: return the original match even if disabled (so callers can show an error)
     const provider = settings.providers.find(p => p.id === providerId);
     const model = provider?.models.find(m => m.id === modelId);
     return { provider, model };

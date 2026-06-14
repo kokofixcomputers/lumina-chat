@@ -11,7 +11,6 @@ const OS_OPTIONS = [
 ];
 
 const ARCH_OPTIONS = [
-  { id: 'universal', name: 'Universal' },
   { id: 'arm64', name: 'ARM64' },
   { id: 'x64', name: 'Intel (x64)' },
 ];
@@ -102,7 +101,7 @@ export default function HypePage() {
                   </div>
                 </div>
 
-                <div className="grid sm:grid-cols-3 gap-3">
+                <div className="grid sm:grid-cols-2 gap-3">
                   {ARCH_OPTIONS.map((arch) => {
                     const count = getCount(os.id, arch.id);
                     return (

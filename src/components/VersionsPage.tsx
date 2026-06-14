@@ -13,7 +13,6 @@ const OS_OPTIONS = [
 ];
 
 const ARCH_OPTIONS = [
-  { id: 'universal', name: 'Universal', description: 'Works on all architectures' },
   { id: 'arm64', name: 'ARM64', description: '64-bit ARM architecture' },
   { id: 'x64', name: 'Intel (x64)', description: 'Intel and AMD processors' },
 ];

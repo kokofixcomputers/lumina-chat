@@ -87,24 +87,12 @@ export async function universalStreamingFetch(url: string, options: RequestInit 
       const response = await fetchFn(url, options);
       
       // Debug: Log Tauri response details
-      console.log('Tauri HTTP Plugin Response:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-        ok: response.ok,
-        bodyType: typeof response.body,
-        bodyExists: !!response.body,
-        bodyContent: response.body
-      });
       
       // Try to log the actual body content for debugging
       if (response.body) {
-        console.log('Tauri response body type:', typeof response.body);
-        console.log('Tauri response body:', response.body);
         
         // If it's a string, log first 200 chars
         if (typeof response.body === 'string') {
-          console.log('Body preview (first 200 chars):', response.body.substring(0, 200));
         }
       }
       

@@ -241,22 +241,15 @@ function DownloadBtn({ filename, dataUrl }: { filename: string; dataUrl: string 
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      console.log('🎯 DOWNLOAD: Raw dataUrl length:', dataUrl.length);
-      console.log('🎯 DOWNLOAD: Full dataUrl:', dataUrl);
-      console.log('🎯 DOWNLOAD: DataUrl starts with:', dataUrl.substring(0, 50));
-      console.log('🎯 DOWNLOAD: DataUrl contains comma:', dataUrl.includes(','));
       
       // Extract base64 data
       const base64Data = dataUrl.split(',')[1];
-      console.log('🎯 DOWNLOAD: Base64 data length:', base64Data?.length || 0);
-      console.log('🎯 DOWNLOAD: Base64 data starts with:', base64Data?.substring(0, 20) || 'undefined');
       
       if (!base64Data) {
         throw new Error('No base64 data found in dataUrl');
       }
       
       const binaryData = atob(base64Data);
-      console.log('🎯 DOWNLOAD: Binary data length:', binaryData.length);
       
       const bytes = new Uint8Array(binaryData.length);
       for (let i = 0; i < binaryData.length; i++) {
@@ -277,35 +270,9 @@ function DownloadBtn({ filename, dataUrl }: { filename: string; dataUrl: string 
         });
         
         if (filePath) {
-          console.log('🎯 TAURI: Saving to path:', filePath);
-          console.log('🎯 TAURI: Bytes length:', bytes.length);
-          console.log('🎯 TAURI: First few bytes:', Array.from(bytes.slice(0, 10)));
           
-          // Try different approaches for Tauri file writing
-          try {
-            // Method 1: Direct bytes
-            await writeFile(filePath, bytes);
-            console.log('🎯 TAURI: Saved with direct bytes');
-          } catch (error1) {
-            console.log('🎯 TAURI: Direct bytes failed, trying base64 string');
-            try {
-              // Method 2: Base64 string
-              await writeFile(filePath, base64Data, { base64: true });
-              console.log('🎯 TAURI: Saved with base64 string');
-            } catch (error2) {
-              console.log('🎯 TAURI: Base64 string failed, trying binary string');
-              try {
-                // Method 3: Binary string
-                await writeFile(filePath, binaryData);
-                console.log('🎯 TAURI: Saved with binary string');
-              } catch (error3) {
-                console.error('🎯 TAURI: All methods failed:', { error1, error2, error3 });
-                throw error1;
-              }
-            }
-          }
+          await writeFile(filePath, bytes);
           
-          console.log('Presentation saved to:', filePath);
         }
       } else {
         // Use browser download for web
@@ -360,7 +327,6 @@ function PreviewBtn({ code, language }: { code: string; language?: string }) {
 
 function openLink(url: string, e: React.MouseEvent) {
   const tauri = (window as any).__TAURI_INTERNALS__;
-  console.log(tauri)
   if (!tauri) return; // not in Tauri — let browser handle target="_blank"
   e.preventDefault();
   import('@tauri-apps/plugin-opener').then(({ openUrl }) => {
@@ -807,7 +773,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
           </div>
           {hasImages && (
             <div className="flex flex-wrap gap-2 mt-2">
-              {message.images.map((img, idx) => (
+              {(message.images ?? []).map((img, idx) => (
                 <div key={idx} className="relative group">
                   <img src={img} alt="Generated" className="rounded-xl max-w-md max-h-96 object-cover border border-[rgb(var(--border))]" />
                   <button
@@ -862,7 +828,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
           )}
           {hasArtifacts && (
             <div className="flex flex-col gap-2 mt-2">
-              {message.artifacts.map((artifact, idx) => (
+              {(message.artifacts ?? []).map((artifact, idx) => (
                 <div key={idx} className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl p-3 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">

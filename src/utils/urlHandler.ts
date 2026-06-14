@@ -6,7 +6,6 @@ export function handleOAuthRedirect() {
     const apiKey = urlParams.get('api_key');
     
     if (apiKey) {
-      console.log('[OAUTH] Found API key in URL fragment:', apiKey);
       
       // Find which provider this API key belongs to
       const providers = ['pollinations', 'openai', 'anthropic']; // Add more as needed
@@ -17,7 +16,6 @@ export function handleOAuthRedirect() {
           try {
             const config = JSON.parse(stored);
             if (config.type === 'oauth' && config.credentials.apiKey === apiKey) {
-              console.log(`[OAUTH] Successfully authenticated ${providerId} via URL fragment`);
               
               // Clear the URL fragment
               window.history.replaceState(null, '');
@@ -30,7 +28,6 @@ export function handleOAuthRedirect() {
       }
       
       // If no matching provider found, save as new OAuth config for pollinations
-      console.log('[OAUTH] No matching provider found, creating new config for pollinations');
       const newConfig = {
         type: 'oauth' as const,
         autoAuth: 'pollinations' as const,
@@ -45,7 +42,6 @@ export function handleOAuthRedirect() {
       return;
     }
     
-    console.log('[OAUTH] No API key found in URL fragment');
   }
 }
 

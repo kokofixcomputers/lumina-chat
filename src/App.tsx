@@ -65,17 +65,12 @@ export default function App() {
   // Extract conversationId from pathname
   const conversationId = location.pathname !== '/' ? location.pathname.slice(1) : null;
 
-  console.log('[APP RENDER] conversationId:', conversationId, 'pathname:', location.pathname, 'store.activeConvId:', store.activeConvId);
 
   // Sync URL to store when URL changes
   useEffect(() => {
-    console.log('[SYNC] conversationId:', conversationId, 'store.activeConvId:', store.activeConvId);
     if (conversationId) {
-      console.log('[SYNC] Calling store.setActiveConvId with:', conversationId);
       store.setActiveConvId(conversationId);
-      console.log('[SYNC] After calling, store.activeConvId:', store.activeConvId);
     } else {
-      console.log('[SYNC] Clearing active conversation ID');
       store.setActiveConvId(null);
     }
   }, [conversationId]);
@@ -100,7 +95,6 @@ export default function App() {
     
     // Check if we're in a popup window (OAuth callback)
     if (window.opener) {
-      console.log('[APP] Detected popup window, initializing OAuth callback handler');
       import('./utils/oauthCallback').then(({ initOAuthCallback }) => {
         const cleanup = initOAuthCallback();
         
@@ -110,7 +104,6 @@ export default function App() {
       });
     } else {
       // Initialize OAuth URL handler for main app
-      console.log('[APP] Main app detected, initializing OAuth redirect handler');
       import('./utils/urlHandler').then(({ initOAuthRedirectHandler }) => {
         const cleanup = initOAuthRedirectHandler();
         
@@ -127,13 +120,10 @@ export default function App() {
     
     const checkForUpdates = async () => {
       const updated = isVersionUpdated();
-      console.log('[VERSION CHECK] Version updated:', updated);
       
       if (updated) {
-        console.log('[VERSION CHECK] Fetching latest release...');
         const release = await fetchLatestRelease();
         if (release) {
-          console.log('[VERSION CHECK] Latest release:', release.tag_name);
           setLatestRelease(release);
           setShowWelcomeBack(true);
         }
@@ -308,7 +298,7 @@ export default function App() {
   const handleSend = (content: string, images: string[]) => {
     let convId = store.activeConvId;
     if (!convId) {
-      convId = store.newConversation(homeMode, homeAttachments);
+      convId = store.newConversation(homeMode === 'code' ? 'chat' : homeMode, homeAttachments);
       store.setActiveConvId(convId);
       navigate(`/${convId}`);
     }
@@ -366,7 +356,6 @@ export default function App() {
     
     // Store version info globally to apply to new assistant message
     (window as any).pendingRetryVersionInfo = { convId, versions, currentVersionIndex: versions.length };
-    console.log('Stored pending retry version info:', (window as any).pendingRetryVersionInfo);
     
     // Send add_retry sync action so other clients get the retry versions
     const { getSyncManager } = await import('./utils/syncManager');
@@ -374,11 +363,9 @@ export default function App() {
     if (syncManager.isConnected()) {
       const newVersion = versions[versions.length - 1];
       syncManager.sendAddRetry(convId, assistantMsg.id, newVersion);
-      console.log('[SYNC] Sent add_retry for message:', assistantMsg.id);
       
       // Also send delete_message for the old assistant message so other clients remove it
       syncManager.sendDeleteMessage(convId, assistantMsg.id);
-      console.log('[SYNC] Sent delete_message for old assistant:', assistantMsg.id);
     }
     
     // Delete from user message onwards to remove assistant and avoid duplicates
@@ -407,7 +394,7 @@ export default function App() {
   const handleContinue = (msgId: string) => {
     if (!store.activeConvId || !store.activeConversation) return;
     
-    const message = store.activeConversation.messages.find(m => m.id === msgId);
+    const message = store.activeConversation?.messages.find(m => m.id === msgId);
     if (!message || message.role !== 'assistant') return;
     
     // Find the user message that prompted this assistant response
@@ -472,8 +459,6 @@ export default function App() {
     const activeConv = store.activeConversation;
     if (!activeConv || activeConv.messages.length === 0) return;
     
-    console.log('[FORK] Starting fork of conversation:', store.activeConvId);
-    console.log('[FORK] Original messages count:', activeConv.messages.length);
     
     // Create a new conversation
     const forkedConvId = store.newConversation(
@@ -481,12 +466,10 @@ export default function App() {
       activeConv.attachments || []
     );
     
-    console.log('[FORK] Created new conversation:', forkedConvId);
     
     // Copy all messages from the current conversation
     // We need to create new message objects to avoid ID conflicts
     const messageCopies = activeConv.messages.map((message, index) => {
-      console.log(`[FORK] Copying message ${index + 1}:`, message.id, message.role, message.content?.slice(0, 50));
       return {
         ...message,
         id: crypto.randomUUID(), // Generate new ID for each message
@@ -503,7 +486,6 @@ export default function App() {
       };
     }));
     
-    console.log('[FORK] Copied all messages to:', forkedConvId);
     
     // Copy conversation metadata
     if (activeConv.title) {
@@ -533,8 +515,6 @@ export default function App() {
     // Verify the fork worked
     setTimeout(() => {
       const forkedConv = store.conversations.find(c => c.id === forkedConvId);
-      console.log('[FORK] Verification - Forked conversation messages count:', forkedConv?.messages.length || 0);
-      console.log('[FORK] Verification - Forked conversation title:', forkedConv?.title);
     }, 100);
   };
 
@@ -542,16 +522,11 @@ export default function App() {
     if (!store.activeConvId) return;
     
     // Find the message and preserve its versions
-    const message = store.activeConversation.messages.find(m => m.id === msgId);
-    console.log('Version change - Message found:', message);
-    console.log('Version change - Message versions:', message?.versions);
-    console.log('Version change - Requested index:', versionIndex);
+    const message = store.activeConversation?.messages.find(m => m.id === msgId);
     
     if (message && message.versions) {
       store.updateMessageVersions(store.activeConvId, msgId, message.versions, versionIndex);
-      console.log('Version change - Updated with versions preserved');
     } else {
-      console.log('Version change - No message or versions found');
     }
   };
 
@@ -579,7 +554,6 @@ export default function App() {
         const { extensionStorage } = await import('./extensions/extensionStorage');
         // Import extensions to lumina_extensions localStorage
         localStorage.setItem('lumina_extensions', JSON.stringify(data.extensions));
-        console.log('[IMPORT] Extensions imported successfully:', Object.keys(data.extensions).length, 'extensions');
       } catch (error) {
         console.error('Failed to import extensions:', error);
       }
@@ -715,7 +689,6 @@ export default function App() {
           }
         },
         onAuthSuccess: (id, isNew) => {
-          console.log('Sync authenticated:', isNew ? 'New user' : 'Existing user');
           setSyncStatus('synced');
         },
         onAuthError: (error) => {
@@ -723,9 +696,6 @@ export default function App() {
           setSyncStatus('error');
         },
         onInitialState: async (data) => {
-          console.log('[SYNC] Received initial state:', data);
-          console.log('[SYNC] Current local conversations:', store.conversations.length);
-          console.log('[SYNC] Server conversations:', data.conversations?.length || 0);
           
           // Suppress storage monitor during initial sync for much longer period
           (window as any).__syncSuppressUntil = Date.now() + 5000;
@@ -738,12 +708,10 @@ export default function App() {
             const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
             const localConversations = await SyncIndexedDB.exportConversations();
             
-            console.log('[SYNC] Merging conversations - Local:', localConversations.length, 'Server:', data.conversations.length);
             
             // Merge server data with local data (local takes precedence for conflicts)
             const mergedConversations = syncUtils.mergeConversationsSafely(localConversations, data.conversations);
             
-            console.log('[SYNC] Merged conversations count:', mergedConversations.length);
             
             // Find conversations that exist locally but not on server (need to be synced up)
             const localOnlyConversations = localConversations.filter(local => 
@@ -751,7 +719,6 @@ export default function App() {
             );
             
             if (localOnlyConversations.length > 0) {
-              console.log('[SYNC] Found', localOnlyConversations.length, 'local-only conversations to sync up');
               
               // Sync up local-only conversations after a delay to ensure they're saved
               setTimeout(async () => {
@@ -760,7 +727,6 @@ export default function App() {
                   const syncManager = getSyncManager();
                   
                   if (syncManager.isConnected()) {
-                    console.log('[SYNC] Syncing up local-only conversations');
                     
                     for (const conv of localOnlyConversations) {
                       // Send create conversation action (without messages first)
@@ -790,7 +756,6 @@ export default function App() {
             if (remoteExtensions) {
               try {
                 localStorage.setItem('lumina_extensions', JSON.stringify(remoteExtensions));
-                console.log('[SYNC-INIT] Extensions loaded from remote:', Object.keys(remoteExtensions).length, 'extensions');
                 // Trigger extension reload
                 import('./extensions/extensionLoader').then(({ extensionLoader }) => {
                   extensionLoader.initializeExtensions().catch(error => {
@@ -806,13 +771,11 @@ export default function App() {
             if (remoteFineTuning) {
               try {
                 localStorage.setItem('fine-tuning-storage', JSON.stringify(remoteFineTuning));
-                console.log('[SYNC-INIT] Fine-tuning data loaded from remote');
                 
                 // Trigger fine-tuning store rehydration
                 import('./store/fineTuningStore').then(({ useFineTuningStore }) => {
                   const store = useFineTuningStore.getState();
                   store.rehydrate();
-                  console.log('[SYNC-INIT] Fine-tuning store rehydrated');
                 }).catch(error => {
                   console.error('Failed to trigger fine-tuning store rehydration:', error);
                 });
@@ -824,7 +787,6 @@ export default function App() {
           
           // Update IndexedDB snapshot after useEffect saves (needs longer delay for IndexedDB)
           setTimeout(async () => {
-            console.log('[SYNC] Updating snapshot after initial state');
             try {
               const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
               await SyncIndexedDB.updateSnapshot();
@@ -837,8 +799,6 @@ export default function App() {
         },
         onSyncAction: (action) => {
           // Handle incoming sync actions from remote
-          console.log('[CLIENT] Received sync action:', action.type, action.data);
-          console.log('[CLIENT] Current conversations:', store.conversations.map(c => ({ id: c.id, msgCount: c.messages.length })));
           
           // Mark this action as recently sent to prevent echoing it back
           const actionKey = `${action.type}:${JSON.stringify(action.data)}`;
@@ -853,10 +813,8 @@ export default function App() {
               store.setConversations((prev: any[]) => {
                 // Check if conversation already exists by UUID
                 if (prev.find(c => c.id === action.data.id)) {
-                  console.log('[CLIENT] Conversation already exists, ignoring:', action.data.id);
                   return prev;
                 }
-                console.log('[CLIENT] Adding new conversation:', action.data.id);
                 return [action.data, ...prev];
               });
               break;
@@ -865,17 +823,14 @@ export default function App() {
               store.setConversations((prev: any[]) => {
                 const conv = prev.find(c => c.id === action.data.conversationId);
                 if (!conv) {
-                  console.log('[CLIENT] Conversation not found for message:', action.data.conversationId);
                   return prev;
                 }
                 
                 // Check if message already exists by UUID
-                if (conv.messages.find(m => m.id === action.data.message.id)) {
-                  console.log('[CLIENT] Message already exists, ignoring:', action.data.message.id);
+                if (conv.messages.find((m: Message) => m.id === action.data.message.id)) {
                   return prev;
                 }
                 
-                console.log('[CLIENT] Adding new message:', action.data.message.id, 'to conversation:', action.data.conversationId);
                 const isFirstUserMessage = conv.messages.length === 0 && action.data.message.role === 'user';
                 const title = isFirstUserMessage 
                   ? action.data.message.content.slice(0, 50) + (action.data.message.content.length > 50 ? '...' : '')
@@ -936,7 +891,6 @@ export default function App() {
               if (remoteExtensions) {
                 try {
                   localStorage.setItem('lumina_extensions', JSON.stringify(remoteExtensions));
-                  console.log('[SYNC] Extensions updated from remote:', Object.keys(remoteExtensions).length, 'extensions');
                   // Trigger extension reload
                   import('./extensions/extensionLoader').then(({ extensionLoader }) => {
                     extensionLoader.initializeExtensions().catch(error => {
@@ -952,12 +906,10 @@ export default function App() {
               if (remoteFineTuning) {
                 try {
                   localStorage.setItem('fine-tuning-storage', JSON.stringify(remoteFineTuning));
-                  console.log('[SYNC] Fine-tuning updated from remote');
                   // Trigger fine-tuning store rehydration
                   import('./store/fineTuningStore').then(({ useFineTuningStore }) => {
                     const store = useFineTuningStore.getState();
                     store.rehydrate();
-                    console.log('[SYNC] Fine-tuning store rehydrated');
                   }).catch(error => {
                     console.error('Failed to reload fine-tuning after sync:', error);
                   });
@@ -977,7 +929,6 @@ export default function App() {
           
           // Update snapshot immediately and then again after useEffect
           const updateSnapshot = async () => {
-            console.log('[SYNC] Updating snapshot after remote action');
             try {
               const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
               await SyncIndexedDB.updateSnapshot();
@@ -1021,7 +972,6 @@ export default function App() {
 
     const initStorageMonitoring = async () => {
       if (!store.settings.cloudSync?.enabled) {
-        console.log('Cloud sync disabled, skipping storage monitoring');
         return;
       }
 
@@ -1030,7 +980,6 @@ export default function App() {
       
       // Check if already connected first (handles auto-sync toggle while connected)
       if (syncManager.isConnected()) {
-        console.log('Storage monitoring started - sync manager already connected');
         // Continue to monitoring setup
       } else {
         // Wait for connection with retry logic
@@ -1042,14 +991,11 @@ export default function App() {
           return new Promise<boolean>((resolve) => {
             const checkConnection = () => {
               if (syncManager.isConnected()) {
-                console.log('Storage monitoring started - sync manager is connected');
                 resolve(true);
               } else if (retryCount >= maxRetries) {
-                console.log('Sync manager failed to connect after', maxRetries, 'attempts');
                 resolve(false);
               } else {
                 retryCount++;
-                console.log('Waiting for sync manager connection... attempt', retryCount);
                 setTimeout(checkConnection, retryDelay);
               }
             };
@@ -1084,16 +1030,9 @@ export default function App() {
         const timestamp = recentlySentActions.get(key);
         
         if (actionType === 'update_settings') {
-          console.log('[SYNC-DEDUP] Settings action check - Key:', key);
-          console.log('[SYNC-DEDUP] Settings action check - Timestamp:', timestamp);
-          console.log('[SYNC-DEDUP] Settings action check - Time since:', timestamp ? Date.now() - timestamp : 'N/A');
-          console.log('[SYNC-DEDUP] Settings action check - Window:', ACTION_DEDUP_WINDOW);
-          console.log('[SYNC-DEDUP] Settings action check - In window:', timestamp && Date.now() - timestamp < ACTION_DEDUP_WINDOW);
         }
         
         if (timestamp && Date.now() - timestamp < ACTION_DEDUP_WINDOW) {
-          console.log('[SYNC] Ignoring duplicate action:', actionType, key);
-          console.log('[SYNC] Time since last sent:', Date.now() - timestamp, 'ms');
           return true;
         }
         
@@ -1102,7 +1041,6 @@ export default function App() {
         if (recentlyReceived) {
           const receivedTimestamp = recentlyReceived.get(key);
           if (receivedTimestamp && Date.now() - receivedTimestamp < ACTION_DEDUP_WINDOW) {
-            console.log('[SYNC] Ignoring recently received action (prevent echo):', actionType, key);
             return true;
           }
           
@@ -1134,19 +1072,14 @@ export default function App() {
             return;
           }
 
-          console.log('[SYNC-MONITOR] Processing IndexedDB changes');
-          console.log('[SYNC-MONITOR] old convs:', oldConversations.map(c => ({ id: c.id, msgs: c.messages?.length })));
-          console.log('[SYNC-MONITOR] new convs:', newConversations.map(c => ({ id: c.id, msgs: c.messages?.length })));
           
           // Find what changed
           const changes = SyncIndexedDB.findConversationsDiff(oldConversations, newConversations);
           
           // Send sync actions for local changes only
-          console.log('Processing sync changes:', changes.length, 'changes detected');
           changes.forEach(change => {
             if (change.type === 'added') {
               if (!isRecentlySent('create_conversation', { id: change.conversation.id })) {
-                console.log('Sending create conversation for:', change.conversation.id);
                 syncManager.sendCreateConversation(change.conversation);
               }
             } else if (change.type === 'modified') {
@@ -1168,10 +1101,8 @@ export default function App() {
                 const newMessages = (newConv.messages || []).filter((m: any) => !oldMessageIds.has(m.id));
                 
                 // Send sync actions for new messages
-                console.log('Sending', newMessages.length, 'new messages for conversation:', change.conversation.id);
                 newMessages.forEach((message: any) => {
                   if (!isRecentlySent('create_message', { conversationId: change.conversation.id, messageId: message.id })) {
-                    console.log('Sending create message:', message.id, 'for conversation:', change.conversation.id);
                     syncManager.sendCreateMessage(change.conversation.id, message);
                   }
                 });
@@ -1179,15 +1110,9 @@ export default function App() {
                 // Check for deleted messages
                 const deletedMessages = (oldConv.messages || []).filter((m: any) => !newMessageIds.has(m.id));
                 if (deletedMessages.length > 0) {
-                  console.log('DELETED MESSAGES DETECTED:', deletedMessages.length);
-                  console.log('  oldConv.messages:', (oldConv.messages || []).map((m: any) => m.id));
-                  console.log('  newConv.messages:', (newConv.messages || []).map((m: any) => m.id));
-                  console.log('  newMessageIds:', Array.from(newMessageIds));
-                  console.log('  deleted:', deletedMessages.map((m: any) => m.id));
                 }
                 deletedMessages.forEach((message: any) => {
                   if (!isRecentlySent('delete_message', { conversationId: change.conversation.id, messageId: message.id })) {
-                    console.log('Sending delete message:', message.id, 'for conversation:', change.conversation.id);
                     syncManager.sendDeleteMessage(change.conversation.id, message.id);
                   }
                 });
@@ -1201,7 +1126,6 @@ export default function App() {
                     const newFollowUps = (newMsg.followUps as string[]) || [];
                     if (JSON.stringify(oldFollowUps) !== JSON.stringify(newFollowUps)) {
                       if (!isRecentlySent('update_followup', { conversationId: change.conversation.id, messageId: newMsg.id, followUps: newFollowUps })) {
-                        console.log('Sending update_followup for message:', newMsg.id);
                         syncManager.sendUpdateFollowup(change.conversation.id, newMsg.id, newFollowUps);
                       }
                     }
@@ -1210,7 +1134,6 @@ export default function App() {
               }
             } else if (change.type === 'deleted') {
               if (!isRecentlySent('delete_conversation', { conversationId: change.conversation.id })) {
-                console.log('Sending delete conversation for:', change.conversation.id);
                 syncManager.sendDeleteConversation(change.conversation.id);
               }
             }
@@ -1228,11 +1151,6 @@ export default function App() {
         const currentFineTuning = localStorage.getItem('fine-tuning-storage');
         const lastSettings = (window as any).__syncLastSettings || localLastSettings;
         
-        console.log('[SYNC-MONITOR] Settings check - Current:', currentSettings ? 'exists' : 'null');
-        console.log('[SYNC-MONITOR] Extensions check - Current:', currentExtensions ? 'exists' : 'null');
-        console.log('[SYNC-MONITOR] Fine-tuning check - Current:', currentFineTuning ? 'exists' : 'null');
-        console.log('[SYNC-MONITOR] Settings check - Last:', lastSettings ? 'exists' : 'null');
-        console.log('[SYNC-MONITOR] Settings changed:', currentSettings !== lastSettings);
         
         // Combine settings and extensions for sync
         const settingsChanged = currentSettings !== lastSettings;
@@ -1246,12 +1164,6 @@ export default function App() {
             const newExtensions = currentExtensions ? JSON.parse(currentExtensions) : {};
             const newFineTuning = currentFineTuning ? JSON.parse(currentFineTuning) : undefined;
             
-            console.log('[SYNC-MONITOR] Full settings object:', newSettings);
-            console.log('[SYNC-MONITOR] Full extensions object:', newExtensions);
-            console.log('[SYNC-MONITOR] Shares:', newSettings.shares);
-            console.log('[SYNC-MONITOR] Extensions from settings:', newSettings.extensions);
-            console.log('[SYNC-MONITOR] Extensions from lumina_extensions:', newExtensions);
-            console.log('[SYNC-MONITOR] Integrations:', newSettings.integrations);
             
             // Combine settings, extensions, and fine-tuning
             const combinedData = {
@@ -1262,15 +1174,12 @@ export default function App() {
             
             // Exclude cloudSync credentials from sync
             const { cloudSync, ...syncSettings } = combinedData;
-            console.log('[SYNC-MONITOR] Settings to sync (excluding cloudSync):', syncSettings);
             
             // Create a simpler key for settings deduplication
             const settingsKey = JSON.stringify(syncSettings);
             if (!isRecentlySent('update_settings', settingsKey)) {
-              console.log('[SYNC] Sending settings update:', syncSettings);
               syncManager.sendUpdateSettings(syncSettings);
             } else {
-              console.log('[SYNC] Ignoring duplicate settings update');
             }
             // Update both local and shared variables
             localLastSettings = currentSettings;
@@ -1300,7 +1209,6 @@ export default function App() {
         const fineTuningChanged = currentFineTuning !== lastFineTuning;
         
         if (settingsChanged || extensionsChanged || fineTuningChanged) {
-          console.log('[SETTINGS-MONITOR] Settings/extensions/fine-tuning change detected - Settings:', settingsChanged, 'Extensions:', extensionsChanged, 'Fine-tuning:', fineTuningChanged);
           try {
             const newSettings = currentSettings ? JSON.parse(currentSettings) : {};
             const newExtensions = currentExtensions ? JSON.parse(currentExtensions) : {};
@@ -1313,21 +1221,14 @@ export default function App() {
               fineTuning: newFineTuning
             };
             
-            console.log('[SETTINGS-MONITOR] Parsed settings:', newSettings);
-            console.log('[SETTINGS-MONITOR] Parsed extensions:', newExtensions);
-            console.log('[SETTINGS-MONITOR] Parsed fine-tuning:', newFineTuning);
-            console.log('[SETTINGS-MONITOR] Combined data:', combinedData);
             
             // Exclude cloudSync credentials from sync
             const { cloudSync, ...syncSettings } = combinedData;
             const settingsKey = JSON.stringify(syncSettings);
-            console.log('[SETTINGS-MONITOR] Settings key for sync:', settingsKey);
             
             if (!isRecentlySent('update_settings', settingsKey)) {
-              console.log('[SETTINGS-MONITOR] Sending settings/extensions/fine-tuning update:', syncSettings);
               syncManager.sendUpdateSettings(syncSettings);
             } else {
-              console.log('[SETTINGS-MONITOR] Ignoring duplicate settings/extensions/fine-tuning update');
             }
             
             // Update tracking variables
@@ -1353,10 +1254,8 @@ export default function App() {
       // Listen for storage events for immediate updates
       const handleStorageChange = (e: StorageEvent) => {
         if (e.key === 'lumina_extensions') {
-          console.log('[STORAGE] Extensions changed, triggering immediate check');
           checkSettingsChanges();
         } else if (e.key === 'lumina_settings') {
-          console.log('[STORAGE] Settings changed, triggering immediate check');
           checkSettingsChanges();
         }
       };
@@ -1376,35 +1275,6 @@ export default function App() {
       cleanupFn?.();
     };
   }, [store.settings.cloudSync?.enabled, syncStatus]);
-
-  // Helper function to find differences in conversations
-  const findConversationsDiff = (oldConvs: any[], newConvs: any[]) => {
-    const changes = [];
-    
-    // Find added conversations
-    const oldIds = new Set(oldConvs.map(c => c.id));
-    const newIds = new Set(newConvs.map(c => c.id));
-    
-    newConvs.forEach(conv => {
-      if (!oldIds.has(conv.id)) {
-        changes.push({ type: 'added', conversation: conv });
-      }
-    });
-    
-    oldConvs.forEach(conv => {
-      if (!newIds.has(conv.id)) {
-        changes.push({ type: 'deleted', conversationId: conv.id });
-      } else {
-        // Check if modified
-        const newConv = newConvs.find(c => c.id === conv.id);
-        if (JSON.stringify(conv) !== JSON.stringify(newConv)) {
-          changes.push({ type: 'modified', conversation: newConv });
-        }
-      }
-    });
-    
-    return changes;
-  };
 
   return (
     <>

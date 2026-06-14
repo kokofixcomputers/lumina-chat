@@ -81,7 +81,6 @@ export class SyncManager {
       
       // If WebSocket is not open but we have credentials, trigger reconnect
       if (this.ws?.readyState !== WebSocket.OPEN && this.credentials && !this.isConnecting) {
-        console.log('[SYNC] Watchdog detected dead connection, triggering reconnect');
         this._handleReconnect();
       }
     }, 5000);
@@ -174,7 +173,6 @@ export class SyncManager {
           
         case 'erase_data_response':
           if (message.success) {
-            console.log('Cloud data erased successfully');
           } else {
             console.error('Failed to erase cloud data:', message.error);
           }
@@ -222,7 +220,6 @@ export class SyncManager {
 
   // Action methods
   sendCreateConversation(conversation: Omit<Conversation, 'messages'>) {
-    console.log('sendCreateConversation called with:', conversation.id);
     const action: CreateConversationAction = {
       type: 'create_conversation',
       timestamp: Date.now(),
@@ -327,13 +324,11 @@ export class SyncManager {
   }
 
   private _sendAction(action: SyncActionTypes) {
-    console.log('_sendAction called with:', action.type, 'WebSocket ready state:', this.ws?.readyState);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const message = JSON.stringify({
         type: 'sync_action',
         data: action
       });
-      console.log('Sending WebSocket message:', message);
       this.ws.send(message);
     } else {
       console.warn('Cannot send sync action: WebSocket not connected');

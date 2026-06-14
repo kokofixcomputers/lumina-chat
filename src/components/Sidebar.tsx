@@ -25,7 +25,7 @@ interface SidebarProps {
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
-  syncStatus?: 'synced' | 'syncing' | 'error' | 'disabled';
+  syncStatus?: 'synced' | 'syncing' | 'connecting' | 'error' | 'disabled' | 'success';
   // App mode
   appMode?: 'chat' | 'code' | 'image' | 'cowork';
   onModeChange?: (mode: 'chat' | 'code' | 'image' | 'cowork') => void;

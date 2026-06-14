@@ -45,12 +45,10 @@ export class StorageMigration {
     error?: string;
   }> {
     try {
-      console.log('[Migration] Starting migration from localStorage to IndexedDB...');
       
       // Check if migration is needed
       const status = await this.checkMigrationStatus();
       if (!status.needsMigration) {
-        console.log('[Migration] No migration needed');
         return { success: true, migratedCount: 0 };
       }
       
@@ -59,7 +57,6 @@ export class StorageMigration {
       
       // Verify migration
       const afterStatus = await this.checkMigrationStatus();
-      console.log('[Migration] Migration completed:', afterStatus);
       
       return { 
         success: true, 
@@ -98,7 +95,6 @@ export class StorageMigration {
   static async clearLocalStorage(): Promise<void> {
     try {
       localStorage.removeItem('lumina_conversations');
-      console.log('[Migration] Cleared localStorage conversations');
     } catch (error) {
       console.error('[Migration] Failed to clear localStorage:', error);
       throw error;
@@ -108,7 +104,6 @@ export class StorageMigration {
   static async clearIndexedDB(): Promise<void> {
     try {
       await indexedDBStorage.clearAllConversations();
-      console.log('[Migration] Cleared IndexedDB conversations');
     } catch (error) {
       console.error('[Migration] Failed to clear IndexedDB:', error);
       throw error;
@@ -171,10 +166,4 @@ export class StorageMigration {
       throw error;
     }
   }
-}
-
-// Expose migration utilities to window for debugging
-if (typeof window !== 'undefined') {
-  (window as any).storageMigration = StorageMigration;
-  console.log('[Migration] Storage migration utilities available at window.storageMigration');
 }

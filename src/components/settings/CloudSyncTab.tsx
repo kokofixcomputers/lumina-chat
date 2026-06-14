@@ -24,7 +24,7 @@ export default function CloudSyncTab({ settings, conversations, onUpdateSettings
   
   // Use centralized sync status
   const syncStatus = getSyncStatus();
-  const isConnected = syncStatus === 'synced';
+  const isConnected = ((['synced', 'syncing', 'error'] as SyncStatus[]).includes(syncStatus));
 
   useEffect(() => {
     // Get existing sync manager (initialized in App.tsx)

@@ -23,7 +23,6 @@ class IndexedDBStorage {
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('[IndexedDB] Database opened successfully');
         resolve();
       };
 
@@ -31,7 +30,6 @@ class IndexedDBStorage {
         const db = (event.target as IDBOpenDBRequest).result;
         
         if (!db.objectStoreNames.contains(STORE_NAME)) {
-          console.log('[IndexedDB] Creating conversations store');
           const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
           
           // Create indexes for efficient querying
@@ -73,7 +71,6 @@ class IndexedDBStorage {
           const conversations = request.result as Conversation[];
           // Sort by updatedAt descending (newest first)
           conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-          console.log(`[IndexedDB] Loaded ${conversations.length} conversations`);
           resolve(conversations);
         };
       });
@@ -120,7 +117,6 @@ class IndexedDBStorage {
         };
 
         request.onsuccess = () => {
-          console.log(`[IndexedDB] Saved conversation ${conversation.id}`);
           resolve();
         };
       });
@@ -151,7 +147,6 @@ class IndexedDBStorage {
           let hasError = false;
 
           if (conversations.length === 0) {
-            console.log('[IndexedDB] Saved 0 conversations');
             resolve();
             return;
           }
@@ -170,7 +165,6 @@ class IndexedDBStorage {
             request.onsuccess = () => {
               completed++;
               if (completed === conversations.length && !hasError) {
-                console.log(`[IndexedDB] Saved ${conversations.length} conversations`);
                 resolve();
               }
             };
@@ -197,7 +191,6 @@ class IndexedDBStorage {
         };
 
         request.onsuccess = () => {
-          console.log(`[IndexedDB] Deleted conversation ${id}`);
           resolve();
         };
       });
@@ -234,7 +227,6 @@ class IndexedDBStorage {
         };
 
         request.onsuccess = () => {
-          console.log('[IndexedDB] Cleared all conversations');
           resolve();
         };
       });
@@ -272,18 +264,15 @@ class IndexedDBStorage {
     try {
       const localStorageData = localStorage.getItem('lumina_conversations');
       if (!localStorageData) {
-        console.log('[IndexedDB] No localStorage data to migrate');
         return;
       }
 
       const conversations = JSON.parse(localStorageData) as Conversation[];
-      console.log(`[IndexedDB] Migrating ${conversations.length} conversations from localStorage`);
 
       await this.saveAllConversations(conversations);
       
       // Optionally clear localStorage after successful migration
       // localStorage.removeItem('lumina_conversations');
-      console.log('[IndexedDB] Migration completed successfully');
     } catch (error) {
       console.error('[IndexedDB] Migration failed:', error);
       throw error;

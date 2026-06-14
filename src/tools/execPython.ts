@@ -23,7 +23,6 @@ async function getPyodideInstance(): Promise<PyodideInterface> {
   isInitializing = true;
   initializationPromise = (async () => {
     try {
-      console.log('Initializing Pyodide...');
       const pyodide = await loadPyodide({
         indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.29.3/full/'
       });
@@ -93,7 +92,6 @@ print("Matplotlib configured successfully")
       `);
       
       pyodideInstance = pyodide;
-      console.log('Pyodide initialized successfully');
       return pyodide;
     } catch (error) {
       console.error('Failed to initialize Pyodide:', error);
@@ -161,7 +159,6 @@ sys.stderr = old_stderr
     let output = stdoutOutput || '';
     let plotImages: string[] = [];
     
-    console.log('Raw stdout:', output);
     
     // Extract plot images from output
     const plotRegex = /\[PLOT_BASE64:([^\]]+)\]/g;
@@ -170,10 +167,8 @@ sys.stderr = old_stderr
       plotImages.push(plotMatch[1]);
       // Remove the plot marker from the output
       output = output.replace(plotMatch[0], '');
-      console.log('Found plot image, length:', plotMatch[1].length);
     }
     
-    console.log('Plot images found:', plotImages.length);
     
     // Clean up output
     output = output.trim();

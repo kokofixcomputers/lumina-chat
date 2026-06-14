@@ -46,7 +46,7 @@ export function useAppStore() {
   const {
     fineTunings, selectedFineTuningId, selectFineTuning,
     createFineTuning, updateFineTuning, deleteFineTuning,
-    createKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry,
+    addKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry,
   } = fineTuningStore;
 
   // Create a wrapper for sendMessage that includes fine-tuning context
@@ -74,7 +74,7 @@ export function useAppStore() {
     generateImage, generateConversationTitle, generateFollowUps, transcribeAudio,
     // fine-tuning actions
     selectFineTuning, createFineTuning, updateFineTuning, deleteFineTuning,
-    createKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry,
+    addKnowledgeEntry, updateKnowledgeEntry, deleteKnowledgeEntry,
     // utils
     getProviderAndModel, resolveStorageQuota,
   };

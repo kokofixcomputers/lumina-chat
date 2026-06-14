@@ -267,10 +267,10 @@ export default function OnboardingScreen({
               </label>
               <input
                 type="password"
-                value={providerApiKeys[selectedProvider] || ''}
+                value={providerApiKeys[selectedProvider!] || ''}
                 onChange={(e) => setProviderApiKeys(prev => ({
                   ...prev,
-                  [selectedProvider]: e.target.value
+                  [selectedProvider!]: e.target.value
                 }))}
                 placeholder={`Enter your ${selectedIntegratedProvider.name} API key`}
                 className="w-full px-3 py-2 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] focus:outline-none focus:border-[rgb(var(--accent))]"
@@ -281,7 +281,7 @@ export default function OnboardingScreen({
             </div>
             
             <button
-              onClick={() => handleAddProviderWithKey(selectedProvider)}
+              onClick={() => handleAddProviderWithKey(selectedProvider!)}
               className="px-4 py-2 bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-lg font-medium hover:opacity-90 transition-opacity"
             >
               Add {selectedIntegratedProvider.name}
@@ -302,7 +302,7 @@ export default function OnboardingScreen({
             </p>
             
             <button
-              onClick={() => handleAddProviderWithKey(selectedProvider)}
+              onClick={() => handleAddProviderWithKey(selectedProvider!)}
               className="px-4 py-2 bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-lg font-medium hover:opacity-90 transition-opacity"
             >
               Add {selectedIntegratedProvider.name}

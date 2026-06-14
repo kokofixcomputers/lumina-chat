@@ -26,11 +26,9 @@ export default function RemotionPreview({
   useEffect(() => {
     const compileComponent = () => {
       try {
-        console.log('Starting compilation...');
         
         // Step 1: Remove imports (these are injected manually)
         let codeWithoutImports = code.replace(/^import\s+.*$/gm, '').trim();
-        console.log('After removing imports:', codeWithoutImports.substring(0, 100) + '...');
 
         // Step 2: Remove export statements
         codeWithoutImports = codeWithoutImports.replace(/^export\s+/gm, '');
@@ -56,11 +54,9 @@ export default function RemotionPreview({
           componentBody = extraCodeMatch[1].trim();
         }
         
-        console.log('Component body extracted:', componentBody.substring(0, 100) + '...');
 
         // Step 6: Wrap it back into a component
         const wrappedSource = `const DynamicComponent = () => {\n${componentBody}\n};`;
-        console.log('Wrapped source:', wrappedSource.substring(0, 100) + '...');
 
         // Step 7: Transpile with Babel
         const transpiled = Babel.transform(wrappedSource, {
@@ -72,7 +68,6 @@ export default function RemotionPreview({
           throw new Error('Babel transpilation failed - no code generated');
         }
         
-        console.log('Transpiled code:', transpiled.code.substring(0, 100) + '...');
 
         // Step 8: Use Function constructor to create the component with injected Remotion APIs
         const createComponent = new Function(
@@ -106,7 +101,6 @@ export default function RemotionPreview({
           Video,
           Audio
         );
-        console.log('Component created successfully:', typeof Component);
         setComponent(() => Component);
         setError(null);
       } catch (err) {

@@ -221,26 +221,19 @@ export function IntegratedProviderCard({
   };
 
   const handleOAuthAuth = async () => {
-    console.log('[OAUTH] OAuth button clicked for template:', template.id);
-    console.log('[OAUTH] autoAuth field:', template.autoAuth);
     
     if (!template.autoAuth) {
-      console.log('[OAUTH] No autoAuth field found');
       return;
     }
     
     const authHandler = getAuthHandler(template.autoAuth);
-    console.log('[OAUTH] Auth handler found:', !!authHandler);
     
     if (!authHandler) {
-      console.log('[OAUTH] No auth handler found for:', template.autoAuth);
       return;
     }
     
     try {
-      console.log('[OAUTH] Starting OAuth configuration...');
       const config = await authHandler.configure();
-      console.log('[OAUTH] OAuth config received:', config);
       
       if (config.type === 'oauth') {
         // OAuth successful - save config

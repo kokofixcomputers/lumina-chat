@@ -18,6 +18,7 @@ interface FineTuningState {
   updateKnowledgeEntry: (fineTuningId: string, entryId: string, data: Partial<KnowledgeEntryFormData>) => void;
   deleteKnowledgeEntry: (fineTuningId: string, entryId: string) => void;
   getKnowledgeEntry: (fineTuningId: string, entryId: string) => KnowledgeEntry | undefined;
+  rehydrate: () => void;
 }
 
 export const useFineTuningStore = create<FineTuningState>()(

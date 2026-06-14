@@ -275,7 +275,6 @@ class ExtensionConsole {
   log(message: string): void {
     const entry = { level: 'log' as const, message, timestamp: Date.now() };
     this.logs.push(entry);
-    console.log(`[Extension] ${message}`);
   }
 
   warn(message: string): void {

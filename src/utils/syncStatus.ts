@@ -1,4 +1,4 @@
-export type SyncStatus = 'synced' | 'syncing' | 'error' | 'disabled';
+export type SyncStatus = 'synced' | 'syncing' | 'connecting' | 'error' | 'disabled' | 'success';
 
 const SYNC_STATUS_KEY = 'lumina_sync_status';
 

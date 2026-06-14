@@ -37,11 +37,9 @@ export function useConversations(defaultProviderModelId: string) {
     conversationsRef.current = conversations;
     (async () => {
       const serialized = JSON.stringify(conversations);
-      console.log('[STORAGE] Saving to localStorage:', conversations.length, 'conversations');
       while (true) {
         try {
           localStorage.setItem('lumina_conversations', serialized);
-          console.log('[STORAGE] Saved successfully');
           return;
         } catch (err) {
           if (err instanceof Error && err.name === 'QuotaExceededError') {
@@ -118,9 +116,6 @@ export function useConversations(defaultProviderModelId: string) {
           // Clear the pending info after applying
           delete (window as any).pendingRetryVersionInfo;
           
-          console.log('Applied retry version info to new assistant message:', updatedMsg);
-          console.log('Updated message versions:', updatedMsg.versions);
-          console.log('Updated message currentVersionIndex:', updatedMsg.currentVersionIndex);
         }
       }
       

@@ -3,3 +3,5 @@ html-builder-cli
 dist
 .vercel
 .DS_Store
+.claude
+.vscode

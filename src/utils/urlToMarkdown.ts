@@ -29,11 +29,16 @@ export async function urlToMarkdown(url: string): Promise<string> {
     "aside",
     "nav",
     "footer",
-    ".ads",
-    ".ad",
-    ".footer-menu",
-    ".sidebar",
-  ]);
+  ] as Parameters<typeof turndown.remove>[0]);
+  // Also remove common ad/sidebar containers by class
+  turndown.addRule("removeClutter", {
+    filter: (node) =>
+      node.nodeType === 1 &&
+      [".ads", ".ad", ".footer-menu", ".sidebar"].some(
+        (cls) => (node as Element).matches?.(cls)
+      ),
+    replacement: () => "",
+  });
 
   // Improve link handling
   turndown.addRule("links", {

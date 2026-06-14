@@ -2,14 +2,12 @@
 export function handleOAuthCallback() {
   // Check if we're in a popup window (not the main app)
   if (window.opener) {
-    console.log('[OAUTH-CALLBACK] Detected popup window');
     
     // Check for API key in URL fragment
     const urlParams = new URLSearchParams(window.location.hash.substring(1));
     const apiKey = urlParams.get('api_key');
     
     if (apiKey) {
-      console.log('[OAUTH-CALLBACK] Found API key in URL fragment:', apiKey);
       
       // Send the API key back to parent window
       window.opener.postMessage({
@@ -23,7 +21,6 @@ export function handleOAuthCallback() {
         window.close();
       }, 100);
     } else {
-      console.log('[OAUTH-CALLBACK] No API key found in URL fragment');
       
       // Send error back to parent
       window.opener.postMessage({
@@ -36,7 +33,6 @@ export function handleOAuthCallback() {
       }, 100);
     }
   } else {
-    console.log('[OAUTH-CALLBACK] Not in popup window, ignoring');
   }
 }
 

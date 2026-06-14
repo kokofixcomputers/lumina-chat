@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
   Send, Paperclip, X, Loader2,
-  Smile, Image as Table, LayoutGrid,
+  Smile, LayoutGrid,
   Type, List, Eraser, MoreHorizontal, ChevronDown,
   Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
   Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, X as ImgOut, Video,

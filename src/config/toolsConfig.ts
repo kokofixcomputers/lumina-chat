@@ -142,10 +142,11 @@ export const toolsConfig: ToolConfig[] = [
 // Function to get extension tools dynamically
 export function getExtensionToolsConfig(): ToolConfig[] {
   try {
-    const { extensionToolRegistry } = import('../extensions/extensionToolRegistry');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { extensionToolRegistry } = require('../extensions/extensionToolRegistry');
     const extensionTools = extensionToolRegistry.getDynamicTools();
     
-    return extensionTools.map(tool => {
+    return extensionTools.map((tool: any) => {
       const toolName = tool.definition.function.name;
       const parts = toolName.split('_');
       const toolDisplayName = parts[parts.length - 1];

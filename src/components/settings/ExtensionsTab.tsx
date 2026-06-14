@@ -15,7 +15,13 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
   const [selectedExtension, setSelectedExtension] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editCode, setEditCode] = useState('');
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<{
+    id: string;
+    name?: string;
+    version?: string;
+    description?: string;
+    author?: string;
+  }>({
     id: ''
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -344,7 +350,7 @@ api.registerExtension({
                     
                     {extension.author && (
                       <p className="text-xs text-[rgb(var(--muted))]">
-                        by {extension.author} • Installed {new Date(extension.installedAt).toLocaleDateString()}
+                        by {extension.author} • Installed {new Date(extension.installedAt ?? 0).toLocaleDateString()}
                       </p>
                     )}
                     

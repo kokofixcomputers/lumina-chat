@@ -17,7 +17,7 @@ export interface IntegrationTool {
   description: string;
   requiresAuth: boolean;
   enabled: boolean;
-  handler?: (settings: AppSettings, ...args: any[]) => Promise<any>;
+  handler?: (...args: any[]) => Promise<any>;
 }
 
 // Integration registry for extensions

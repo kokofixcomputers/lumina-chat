@@ -53,9 +53,6 @@ export class SyncIndexedDB {
       const oldConversations = lastSnapshot ? JSON.parse(lastSnapshot) as Conversation[] : [];
       const newConversations = currentSnapshot ? JSON.parse(currentSnapshot) as Conversation[] : [];
 
-      console.log('[Sync-IndexedDB] Change detected!');
-      console.log('[Sync-IndexedDB] oldConversations length:', oldConversations.length);
-      console.log('[Sync-IndexedDB] newConversations length:', newConversations.length);
 
       return {
         hasChanges: true,
@@ -89,7 +86,6 @@ export class SyncIndexedDB {
         this.updateSnapshot();
       }, 100);
       
-      console.log('[Sync-IndexedDB] Applied remote changes:', conversations.length, 'conversations');
     } catch (error) {
       console.error('[Sync-IndexedDB] Failed to apply remote changes:', error);
     }
@@ -98,7 +94,6 @@ export class SyncIndexedDB {
   static async importConversations(conversations: Conversation[]): Promise<void> {
     try {
       await indexedDBStorage.saveAllConversations(conversations);
-      console.log('[Sync-IndexedDB] Imported conversations:', conversations.length);
     } catch (error) {
       console.error('[Sync-IndexedDB] Failed to import conversations:', error);
       throw error;
@@ -146,15 +141,8 @@ export class SyncIndexedDB {
   static async initializeSync(): Promise<void> {
     try {
       await this.updateSnapshot();
-      console.log('[Sync-IndexedDB] Sync initialized');
     } catch (error) {
       console.error('[Sync-IndexedDB] Failed to initialize sync:', error);
     }
   }
-}
-
-// Expose sync utilities to window for debugging
-if (typeof window !== 'undefined') {
-  (window as any).syncIndexedDB = SyncIndexedDB;
-  console.log('[Sync-IndexedDB] IndexedDB sync utilities available at window.syncIndexedDB');
 }

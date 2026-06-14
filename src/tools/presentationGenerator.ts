@@ -54,7 +54,7 @@ export interface SlideContent {
   headline?: string;
   subheadline?: string;
   visual?: {
-    kind: 'icon' | 'image' | 'gradient' | 'pattern';
+    kind: 'icon' | 'image' | 'gradient' | 'pattern' | 'hero-icon';
     icon?: string;
     image?: string;
     gradient?: string;
@@ -299,7 +299,7 @@ export class PresentationGenerator {
         color: this.theme.palette.text.replace('#', ''),
         fontFace: this.theme.fonts.body,
         wrapText: true
-      });
+      } as any);
     });
   }
 
@@ -341,12 +341,12 @@ export class PresentationGenerator {
         showLegend: false,
         showValue: true,
         chartColors: [this.theme.palette.accent.replace('#', '')],
-      });
+      } as any);
     }
 
     // Insight
-    if (slide.insight) {
-      slideObj.addText(slide.insight, {
+    if (slide.chart?.insight) {
+      slideObj.addText(slide.chart.insight, {
         x: 1,
         y: 6,
         w: 8,
@@ -396,7 +396,7 @@ export class PresentationGenerator {
           color: this.theme.palette.text.replace('#', ''),
           fontFace: this.theme.fonts.body,
           wrapText: true
-        });
+        } as any);
       });
     }
   }
@@ -420,7 +420,7 @@ export class PresentationGenerator {
         fontFace: this.theme.fonts.display,
         align: 'center',
         wrapText: true
-      });
+      } as any);
     }
 
     // Attribution
@@ -470,7 +470,7 @@ export class PresentationGenerator {
         color: this.theme.palette.text.replace('#', ''),
         fontFace: this.theme.fonts.body,
         wrapText: true
-      });
+      } as any);
     }
 
     // Right column
@@ -484,7 +484,7 @@ export class PresentationGenerator {
         color: this.theme.palette.text.replace('#', ''),
         fontFace: this.theme.fonts.body,
         wrapText: true
-      });
+      } as any);
     }
   }
 
@@ -500,7 +500,7 @@ export class PresentationGenerator {
       ],
       angle: 135
     };
-    slideObj.background = { fill: gradientFill };
+    slideObj.background = { fill: gradientFill } as any;
     
     // Add decorative shape in background
     slideObj.addShape('ellipse', {
@@ -508,7 +508,7 @@ export class PresentationGenerator {
       fill: { color: this.adjustColorBrightness(this.theme.palette.accent, 0.1) },
       line: { color: 'transparent' },
       transparency: 70
-    });
+    } as any);
     
     // Add oversized title
     slideObj.addText(this.safeText(slide.headline), {
@@ -553,7 +553,7 @@ export class PresentationGenerator {
     const slideObj = this.pptx.addSlide();
     
     // Dark, dramatic background
-    slideObj.background = { fill: { color: this.theme.palette.bgSecondary.replace('#', '') } };
+    slideObj.background = { color: this.theme.palette.bgSecondary.replace('#', '') } // @ts-ignore
     
     // Add oversized statement text
     slideObj.addText(this.safeText(slide.statement || slide.headline), {
@@ -589,7 +589,7 @@ export class PresentationGenerator {
     const slideObj = this.pptx.addSlide();
     
     // Clean background
-    slideObj.background = { fill: { color: this.theme.palette.surface.replace('#', '') } };
+    slideObj.background = { color: this.theme.palette.surface.replace('#', '') } // @ts-ignore
     
     // Left side - text content
     const leftText = slide.bullets?.join('\n\n') || slide.leftColumn || '';
@@ -613,7 +613,7 @@ export class PresentationGenerator {
         fill: { color: this.theme.palette.accent.replace('#', '') },
         line: { color: 'transparent' },
         transparency: 10
-      });
+      } as any);
       
       slideObj.addText(this.safeText(slide.rightColumn), {
         x: 6.5,
@@ -633,7 +633,7 @@ export class PresentationGenerator {
     const slideObj = this.pptx.addSlide();
     
     // Clean background
-    slideObj.background = { fill: { color: this.theme.palette.surface.replace('#', '') } };
+    slideObj.background = { color: this.theme.palette.surface.replace('#', '') } // @ts-ignore
     
     // Add headline
     slideObj.addText(this.safeText(slide.headline), {
@@ -667,7 +667,7 @@ export class PresentationGenerator {
           fill: { color: this.theme.palette.surfaceSecondary.replace('#', '') },
           line: { color: this.theme.palette.border.replace('#', ''), width: 1 },
           transparency: 50
-        });
+        } as any);
         
         // Add stat value
         slideObj.addText(this.safeText(stat.value), {
@@ -706,14 +706,14 @@ export class PresentationGenerator {
       fill: { color: this.theme.palette.accent.replace('#', '') },
       line: { color: 'transparent' },
       transparency: 80
-    });
+    } as any);
     
     slideObj.addShape('rect', {
       x: 5, y: 0, w: 5, h: 7.5,
       fill: { color: this.theme.palette.accent2.replace('#', '') },
       line: { color: 'transparent' },
       transparency: 80
-    });
+    } as any);
     
     // Opportunities side
     slideObj.addText('Opportunities', {
@@ -776,7 +776,7 @@ export class PresentationGenerator {
     const slideObj = this.pptx.addSlide();
     
     // Editorial background with subtle texture
-    slideObj.background = { fill: { color: this.theme.palette.bgSecondary.replace('#', '') } };
+    slideObj.background = { color: this.theme.palette.bgSecondary.replace('#', '') } // @ts-ignore
     
     // Add oversized quote mark
     slideObj.addText('"', {
@@ -790,7 +790,7 @@ export class PresentationGenerator {
       fontFace: this.theme.fonts.display,
       align: 'left',
       transparency: 30
-    });
+    } as any);
     
     // Add quote text
     const quoteText = slide.quote?.text || slide.bullets?.[0] || '';
@@ -827,7 +827,7 @@ export class PresentationGenerator {
     const slideObj = this.pptx.addSlide();
     
     // Clean background
-    slideObj.background = { fill: { color: this.theme.palette.surface.replace('#', '') } };
+    slideObj.background = { color: this.theme.palette.surface.replace('#', '') } // @ts-ignore
     
     // Add headline
     slideObj.addText(slide.headline || '', {
@@ -871,7 +871,7 @@ export class PresentationGenerator {
           fill: { color: (slide.chart.accent || this.theme.palette.accent).replace('#', '') },
           line: { color: 'transparent' },
           transparency: 20
-        });
+        } as any);
         
         slideObj.addText(slide.chart.insight, {
           x: 2,
@@ -945,22 +945,14 @@ export class PresentationGenerator {
     }
 
     // Generate the presentation
-    console.log('🎯 PRESENTATION GENERATOR: Generating ArrayBuffer using write() API');
     const result = await this.pptx.write({ outputType: 'arraybuffer' });
-    console.log('🎯 PRESENTATION GENERATOR: write result type:', result?.constructor?.name);
-    console.log('🎯 PRESENTATION GENERATOR: write result byteLength:', result?.byteLength);
-    console.log('🎯 PRESENTATION GENERATOR: write result:', result);
     
     return result as ArrayBuffer;
   }
 }
 
 export async function createPresentation(data: PresentationData): Promise<ArrayBuffer> {
-  console.log('🎯 PRESENTATION GENERATOR: Creating presentation for', data.deck?.title);
   const generator = new PresentationGenerator(data.deck.theme);
   const result = await generator.generatePresentation(data);
-  console.log('🎯 PRESENTATION GENERATOR: Generated result type:', result?.constructor?.name);
-  console.log('🎯 PRESENTATION GENERATOR: Generated result:', result);
-  console.log('🎯 PRESENTATION GENERATOR: Result byteLength:', result?.byteLength);
   return result;
 }

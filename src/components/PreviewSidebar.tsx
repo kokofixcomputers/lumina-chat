@@ -98,11 +98,11 @@ export default function PreviewSidebar() {
     }
     
     function fallbackDownload() {
-      const blob = new Blob([previewData.code], { type: 'text/plain' });
+      const blob = new Blob([previewData!.code], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `preview.${previewData.language || 'txt'}`;
+      a.download = `preview.${previewData!.language || 'txt'}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

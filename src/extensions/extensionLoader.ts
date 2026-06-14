@@ -1,23 +1,39 @@
-import { createChatExtensionAPI, Extension } from './extensionSystem';
+import { createChatExtensionAPI, createSandboxedExtensionAPI, Extension } from './extensionSystem';
 import { extensionStorage, StoredExtension } from './extensionStorage';
 import { extensionToolRegistry } from './extensionToolRegistry';
+import { extensionUIRegistry } from './extensionUIRegistry';
+import { extensionPatchRegistry } from './extensionPatchRegistry';
 
 class ExtensionLoader {
   private loadedExtensions: Map<string, any> = new Map();
 
   async loadExtension(storedExtension: StoredExtension): Promise<boolean> {
     try {
-      // Create a sandboxed environment for the extension
-      const sandbox = this.createSandbox();
-      
-      // Execute the extension code
-      const extensionFunction = new Function('api', 'console', storedExtension.code);
-      
-      // Create a safe console for the extension
+      // Prevent double-execution if already running
+      if (this.loadedExtensions.has(storedExtension.id)) {
+        await this.unloadExtension(storedExtension.id);
+      }
       const safeConsole = this.createSafeConsole(storedExtension.id);
-      
-      // Execute the extension
-      extensionFunction(createChatExtensionAPI(), safeConsole);
+      const isSandboxed = (storedExtension.type ?? 'sandboxed') === 'sandboxed';
+
+      if (isSandboxed) {
+        // Block dangerous globals by shadowing them as function parameters
+        const blockedGlobals = [
+          'document','window','fetch','XMLHttpRequest','WebSocket',
+          'localStorage','sessionStorage','indexedDB','crypto',
+          'navigator','location','history','eval','Function',
+          'Worker','Blob','URL','URLSearchParams','setTimeout','setInterval',
+          'clearTimeout','clearInterval','open','alert','confirm','prompt',
+        ];
+        const blockedArgs = blockedGlobals.map(() => 'undefined').join(',');
+        const wrappedCode = `(function(${blockedGlobals.join(',')}) {\n${storedExtension.code}\n})(${blockedArgs});`;
+        const extensionFunction = new Function('api', 'console', wrappedCode);
+        extensionFunction(createSandboxedExtensionAPI(storedExtension.id), safeConsole);
+      } else {
+        // Unsandboxed: full API + raw DOM access
+        const extensionFunction = new Function('api', 'console', storedExtension.code);
+        extensionFunction(createChatExtensionAPI(storedExtension.id), safeConsole);
+      }
       
       // Get the registered extension
       const api = createChatExtensionAPI();
@@ -60,9 +76,9 @@ class ExtensionLoader {
 
   async unloadExtension(id: string): Promise<boolean> {
     try {
-      // Unregister extension tools
       extensionToolRegistry.unregisterExtensionTools(id);
-      
+      extensionUIRegistry.removeAllByExtension(id);
+      extensionPatchRegistry.cleanup(id);
       this.loadedExtensions.delete(id);
       return true;
     } catch (error) {
@@ -180,10 +196,9 @@ class ExtensionLoader {
 
   // Initialize extension system respecting user preferences
   async initializeExtensions(): Promise<void> {
-    // Clear any existing tools
+    // Unload everything first so re-initialization doesn't double-execute extension code
+    await this.unloadAllExtensions();
     extensionToolRegistry.clear();
-    
-    // Load only enabled extensions
     await this.loadAllExtensions();
   }
 

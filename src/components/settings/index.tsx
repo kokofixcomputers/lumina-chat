@@ -31,8 +31,9 @@ export default function SettingsPanel({
   onDeleteApiFormat,
   onImportData,
   onClose,
+  initialTab,
 }: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('general');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'general');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
   const [fade, setFade] = useState(true);

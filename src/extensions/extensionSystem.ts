@@ -1,4 +1,7 @@
 import type { AppSettings } from '../types';
+import { extensionUIRegistry } from './extensionUIRegistry';
+import type { ToastType, AlertType, ButtonLocation } from './extensionUIRegistry';
+import { extensionPatchRegistry } from './extensionPatchRegistry';
 
 export interface ExtensionTool {
   name: string;
@@ -28,11 +31,117 @@ export interface ExtensionContext {
   warn: (message: string) => void;
 }
 
+export interface ExtensionUIAPI {
+  /** Show a themed alert dialog. Returns a promise that resolves when dismissed. */
+  alert: (message: string, opts?: { title?: string; type?: AlertType; confirmLabel?: string }) => Promise<void>;
+  /** Show a themed confirm dialog. Resolves true/false. */
+  confirm: (message: string, opts?: { title?: string; type?: AlertType; confirmLabel?: string; cancelLabel?: string }) => Promise<boolean>;
+  /** Show a themed prompt dialog. Resolves the entered string or null on cancel. */
+  prompt: (message: string, opts?: { title?: string; placeholder?: string; defaultValue?: string }) => Promise<string | null>;
+  /** Show a toast notification. */
+  toast: (message: string, opts?: { type?: ToastType; duration?: number }) => void;
+  /** Open a rich modal with HTML body content and custom buttons. Returns a close() function. */
+  openModal: (opts: {
+    title: string;
+    body: string;
+    width?: 'sm' | 'md' | 'lg';
+    buttons?: Array<{ label: string; primary?: boolean; danger?: boolean; onClick: () => void }>;
+    onClose?: () => void;
+  }) => () => void;
+  /** Add a button to the UI. Returns a remove() function. */
+  addButton: (opts: {
+    id?: string;
+    label: string;
+    icon?: string;
+    tooltip?: string;
+    location?: ButtonLocation;
+    onClick: () => void;
+  }) => () => void;
+  /** Add a section of items to the sidebar. Returns a remove() function. */
+  addSidebarSection: (opts: {
+    id?: string;
+    title?: string;
+    items: Array<{ id: string; label: string; icon?: string; onClick: () => void }>;
+  }) => () => void;
+}
+
+export interface ExtensionDOMAPI {
+  /** Add an event listener to any DOM element. Returns a remove() function and is cleaned up automatically when the extension unloads. */
+  on(target: EventTarget, type: string, handler: EventListenerOrEventListenerObject, options?: AddEventListenerOptions): () => void;
+  /** Shorthand: listen on `document`. */
+  onDocument(type: string, handler: EventListenerOrEventListenerObject, options?: AddEventListenerOptions): () => void;
+  /** Shorthand: listen on `window`. */
+  onWindow(type: string, handler: EventListenerOrEventListenerObject, options?: AddEventListenerOptions): () => void;
+  /** Inject a CSS string into the page as a <style> tag. Returns a remove() function. */
+  addStyle(css: string): () => void;
+  /** querySelector scoped to the live document. */
+  query(selector: string): Element | null;
+  /** querySelectorAll scoped to the live document. Returns a real array. */
+  queryAll(selector: string): Element[];
+  /** Watch for DOM mutations. Returns a disconnect() function. */
+  observe(target: Node, callback: MutationCallback, options: MutationObserverInit): () => void;
+  /** setInterval with automatic cleanup on extension unload. */
+  setInterval(fn: () => void, ms: number): () => void;
+  /** setTimeout with automatic cleanup on extension unload. */
+  setTimeout(fn: () => void, ms: number): () => void;
+  /** Register an arbitrary cleanup function to run when this extension is disabled/unloaded. */
+  onCleanup(fn: () => void): void;
+}
+
+export interface ExtensionAppAPI {
+  sidebar: {
+    /** Collapse the sidebar. */
+    collapse(): void;
+    /** Expand the sidebar. */
+    expand(): void;
+    /** Toggle the sidebar collapsed state. */
+    toggle(): void;
+    /** Returns true if the sidebar is currently collapsed. */
+    isCollapsed(): boolean;
+    /** Listen for sidebar collapse/expand. Returns an unlisten function. */
+    onChange(fn: (collapsed: boolean) => void): () => void;
+  };
+  /** Dispatch a custom Lumina app event. */
+  emit(event: string, detail?: unknown): void;
+  /** Listen to a custom Lumina app event. Returns an unlisten function. */
+  on(event: string, handler: (detail: unknown) => void): () => void;
+}
+
+export interface ExtensionSandboxAPI {
+  /** Returns true if this extension is running sandboxed (no DOM/app access). */
+  isSandboxed(): boolean;
+  /** Returns true if this extension is running unsandboxed (full DOM/app access). */
+  isUnsandboxed(): boolean;
+  /**
+   * Throws if the extension is NOT running unsandboxed.
+   * Call at the top of your extension to ensure it only runs with full DOM access.
+   */
+  requireUnsandboxed(message?: string): void;
+  /**
+   * Throws if the extension is NOT running sandboxed.
+   * Call at the top of your extension to enforce that it only runs in the restricted environment.
+   */
+  requireSandboxed(message?: string): void;
+}
+
 export interface ExtensionAPI {
   registerExtension: (extension: Extension) => void;
   unregisterExtension: (id: string) => void;
   getExtensions: () => Extension[];
   getExtension: (id: string) => Extension | null;
+  ui: ExtensionUIAPI;
+  dom: ExtensionDOMAPI;
+  app: ExtensionAppAPI;
+  sandbox: ExtensionSandboxAPI;
+}
+
+export interface SandboxedExtensionAPI {
+  registerExtension: (extension: Extension) => void;
+  unregisterExtension: (id: string) => void;
+  getExtensions: () => Extension[];
+  getExtension: (id: string) => Extension | null;
+  ui: ExtensionUIAPI;
+  sandbox: ExtensionSandboxAPI;
 }
 
 class ExtensionManager {
@@ -44,12 +153,78 @@ class ExtensionManager {
     this.console = new ExtensionConsole();
   }
 
-  createAPI(): ExtensionAPI {
+  createAPI(extensionId?: string, sandboxed = false): ExtensionAPI {
+    const eid = extensionId ?? 'unknown';
+    const pr = extensionPatchRegistry;
+
+    const sandbox: ExtensionSandboxAPI = {
+      isSandboxed: () => sandboxed,
+      isUnsandboxed: () => !sandboxed,
+      requireUnsandboxed: (message) => {
+        if (sandboxed) throw new Error(message ?? 'This extension requires unsandboxed mode. Change the extension type to Unsandboxed in Settings → Extensions.');
+      },
+      requireSandboxed: (message) => {
+        if (!sandboxed) throw new Error(message ?? 'This extension requires sandboxed mode. Change the extension type to Sandboxed in Settings → Extensions.');
+      },
+    };
+
+    const ui: ExtensionUIAPI = {
+      alert: (msg, opts) => extensionUIRegistry.alert(msg, opts),
+      confirm: (msg, opts) => extensionUIRegistry.confirm(msg, opts),
+      prompt: (msg, opts) => extensionUIRegistry.prompt(msg, opts),
+      toast: (msg, opts) => extensionUIRegistry.toast(msg, opts),
+      openModal: (opts) => extensionUIRegistry.openModal(opts),
+      addButton: (opts) => extensionUIRegistry.addButton({
+        ...opts,
+        extensionId: eid,
+        location: opts.location ?? 'chat-toolbar',
+      }),
+      addSidebarSection: (opts) => extensionUIRegistry.addSidebarSection({
+        ...opts,
+        extensionId: eid,
+      }),
+    };
+
+    const dom: ExtensionDOMAPI = {
+      on: (target, type, handler, options) => pr.on(eid, target, type, handler, options),
+      onDocument: (type, handler, options) => pr.on(eid, document, type, handler, options),
+      onWindow: (type, handler, options) => pr.on(eid, window, type, handler, options),
+      addStyle: (css) => pr.addStyle(eid, css),
+      query: (selector) => document.querySelector(selector),
+      queryAll: (selector) => Array.from(document.querySelectorAll(selector)),
+      observe: (target, callback, options) => pr.observe(eid, target, callback, options),
+      setInterval: (fn, ms) => pr.setInterval(eid, fn, ms),
+      setTimeout: (fn, ms) => pr.setTimeout(eid, fn, ms),
+      onCleanup: (fn) => pr.onCleanup(eid, fn),
+    };
+
+    const app: ExtensionAppAPI = {
+      sidebar: {
+        collapse: () => window.dispatchEvent(new CustomEvent('lumina:sidebar', { detail: { collapsed: true } })),
+        expand:   () => window.dispatchEvent(new CustomEvent('lumina:sidebar', { detail: { collapsed: false } })),
+        toggle:   () => window.dispatchEvent(new CustomEvent('lumina:sidebar', { detail: { toggle: true } })),
+        isCollapsed: () => localStorage.getItem('sidebar-collapsed') === 'true',
+        onChange: (fn) => {
+          const h = (e: Event) => {
+            const collapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+            fn(collapsed);
+          };
+          return pr.on(eid, window, 'lumina:sidebar:changed', h);
+        },
+      },
+      emit: (event, detail) => window.dispatchEvent(new CustomEvent(`lumina:ext:${event}`, { detail })),
+      on: (event, handler) => pr.on(eid, window, `lumina:ext:${event}`, (e) => handler((e as CustomEvent).detail)),
+    };
+
     return {
       registerExtension: (extension: Extension) => this.registerExtension(extension),
       unregisterExtension: (id: string) => this.unregisterExtension(id),
       getExtensions: () => this.getExtensions(),
-      getExtension: (id: string) => this.getExtension(id)
+      getExtension: (id: string) => this.getExtension(id),
+      ui,
+      dom,
+      app,
+      sandbox,
     };
   }
 
@@ -301,9 +476,22 @@ class ExtensionConsole {
 // Global extension manager instance
 const extensionManager = new ExtensionManager();
 
-// Create the API that extensions will use
-export function createChatExtensionAPI(): ExtensionAPI {
-  return extensionManager.createAPI();
+// Full API for unsandboxed extensions
+export function createChatExtensionAPI(extensionId?: string): ExtensionAPI {
+  return extensionManager.createAPI(extensionId, false);
+}
+
+// Restricted API for sandboxed extensions (no dom/app)
+export function createSandboxedExtensionAPI(extensionId?: string): SandboxedExtensionAPI {
+  const full = extensionManager.createAPI(extensionId, true);
+  return {
+    registerExtension: full.registerExtension,
+    unregisterExtension: full.unregisterExtension,
+    getExtensions: full.getExtensions,
+    getExtension: full.getExtension,
+    ui: full.ui,
+    sandbox: full.sandbox,
+  };
 }
 
 // Export manager for internal use

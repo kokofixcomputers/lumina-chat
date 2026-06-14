@@ -9,6 +9,8 @@ import ImageMode from './components/ImageMode';
 import SplitViewChat from './components/SplitViewChat';
 import SettingsPanel from './components/SettingsPanel';
 import OnboardingScreen from './components/OnboardingScreen';
+import TourOverlay, { isTourDone } from './components/TourOverlay';
+import ExtensionUI from './components/ExtensionUI';
 import SharePanel from './components/SharePanel';
 import TabBar from './components/TabBar';
 import ViewChatModal from './components/ViewChatModal';
@@ -19,11 +21,13 @@ import FineTuningDetail from './pages/FineTuningDetail';
 import DownloadPage from './components/DownloadPage';
 import VersionsPage from './components/VersionsPage';
 import HypePage from './components/HypePage';
+import MarketplacePage from './components/MarketplacePage';
 import InstallationPage from './components/InstallationPage';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { mergeConversations } from './utils/mergeConversations';
 import { extensionLoader } from './extensions/extensionLoader';
+import { shouldSkipExtensions } from './components/ErrorBoundary';
 import { handleDeepLinkOrShare, registerDeepLinkProtocol } from './utils/deepLink';
 import { registerDeepLinkHandler, checkForDeepLinkOnStartup } from './utils/tauriDeepLink';
 import { isVersionUpdated, setStoredVersion, getCurrentVersion, fetchLatestRelease } from './utils/versionCheck';
@@ -42,10 +46,12 @@ export default function App() {
   const location = useLocation();
   const store = useAppStore();
   const [panel, setPanel] = useState<Panel>('chat');
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [homeMode, setHomeMode] = useState<'chat' | 'image' | 'code'>('chat');
   const [homeAttachments, setHomeAttachments] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('notfirsttime'));
+  const [showTour, setShowTour] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => getSyncStatus());
   const [showViewChatModal, setShowViewChatModal] = useState(false);
   const [fineTuningView, setFineTuningView] = useState<'list' | { id: string }>('list');
@@ -80,6 +86,7 @@ export default function App() {
   const handleGetStarted = () => {
     localStorage.setItem('notfirsttime', 'true');
     setShowWelcome(false);
+    if (!isTourDone()) setShowTour(true);
   };
 
   // Initialize extensions and OAuth handlers on app startup
@@ -91,9 +98,13 @@ export default function App() {
       console.error('Failed to clean extension timestamps:', error);
     });
     
-    extensionLoader.initializeExtensions().catch(error => {
-      console.error('Failed to initialize extensions:', error);
-    });
+    if (shouldSkipExtensions()) {
+      console.warn('[Extensions] Skipped on this load (crash recovery).');
+    } else {
+      extensionLoader.initializeExtensions().catch(error => {
+        console.error('Failed to initialize extensions:', error);
+      });
+    }
     
     // Check if we're in a popup window (OAuth callback)
     if (window.opener) {
@@ -663,7 +674,7 @@ export default function App() {
     store.setConversations(updatedConversations);
   };
 
-  const openProviders = () => setPanel('settings');
+  const openProviders = () => { setSettingsInitialTab('providers'); setPanel('settings'); };
 
   const openFineTuning = () => {
     setFineTuningView('list');
@@ -1317,12 +1328,18 @@ export default function App() {
       )}
 
       {showWelcome && (
-        <OnboardingScreen 
+        <OnboardingScreen
           onGetStarted={handleGetStarted}
           onAddProvider={store.addProvider}
           onAddIntegratedProvider={store.addIntegratedProvider}
         />
       )}
+
+      {showTour && (
+        <TourOverlay onDone={() => setShowTour(false)} />
+      )}
+
+      <ExtensionUI />
 
       {importDataModal.visible && (
         <>
@@ -1391,6 +1408,7 @@ export default function App() {
         <Route path="/versions/:platform/:arch" element={<VersionsPage />} />
         <Route path="/install" element={<InstallationPage />} />
         <Route path="/hype" element={<HypePage />} />
+        <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="*" element={
           <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
             {/* Mobile menu button */}
@@ -1413,7 +1431,7 @@ export default function App() {
               }}
               onDeleteConv={store.deleteConversation}
               onUpdateTitle={store.updateConversationTitle}
-              onOpenSettings={() => setPanel(p => p === 'settings' ? 'chat' : 'settings')}
+              onOpenSettings={() => { setSettingsInitialTab(undefined); setPanel(p => p === 'settings' ? 'chat' : 'settings'); }}
               onOpenProviders={openProviders}
               onOpenViewChat={() => setShowViewChatModal(true)}
               onOpenFineTuning={openFineTuning}
@@ -1621,7 +1639,8 @@ export default function App() {
                   onUpsertApiFormat={store.upsertApiFormat}
                   onDeleteApiFormat={store.deleteApiFormat}
                   onImportData={handleImportData}
-                  onClose={() => setPanel('chat')}
+                  onClose={() => { setPanel('chat'); setSettingsInitialTab(undefined); }}
+                  initialTab={settingsInitialTab as any}
                 />
               )}
 

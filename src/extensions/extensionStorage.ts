@@ -1,8 +1,11 @@
 import { Extension } from './extensionSystem';
 
+export type ExtensionType = 'sandboxed' | 'unsandboxed';
+
 export interface StoredExtension extends Extension {
   code: string;
   enabled: boolean;
+  type?: ExtensionType;
   installedAt?: number;
   lastModified?: number;
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Download, Upload, Power, PowerOff, Code, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
-import { extensionStorage, StoredExtension } from '../../extensions/extensionStorage';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Edit2, Download, Upload, Power, PowerOff, Code, AlertCircle, CheckCircle, XCircle, Store, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { extensionStorage, StoredExtension, ExtensionType } from '../../extensions/extensionStorage';
 import { extensionLoader } from '../../extensions/extensionLoader';
 import { extensionManager } from '../../extensions/extensionSystem';
 import type { AppSettings } from '../../types';
@@ -11,6 +12,7 @@ interface ExtensionsTabProps {
 }
 
 export default function ExtensionsTab({ settings, onUpdateSettings }: ExtensionsTabProps) {
+  const navigate = useNavigate();
   const [extensions, setExtensions] = useState<Record<string, StoredExtension>>({});
   const [selectedExtension, setSelectedExtension] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -24,6 +26,7 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
   }>({
     id: ''
   });
+  const [editType, setEditType] = useState<ExtensionType>('sandboxed');
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -34,12 +37,8 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
     setExtensions(extensionStorage.getAllExtensions());
   };
 
-  const handleCreateExtension = () => {
-    setIsEditing(true);
-    setEditForm({
-      id: ''
-    });
-    setEditCode(`// Extension Template
+  const sandboxedTemplate = `// Sandboxed Extension Template
+// Tools + UI only. No DOM/window access.
 const api = createChatExtensionAPI();
 
 api.registerExtension({
@@ -60,13 +59,107 @@ api.registerExtension({
         required: ['input']
       },
       async call(args, ctx) {
-        // Your tool logic here
         ctx.log('Tool called with:', args);
         return { result: 'Hello from extension!' };
       }
     }
   ]
-});`);
+});
+
+// ── UI ────────────────────────────────────────────────────────────────────
+// api.ui.toast('Loaded!', { type: 'success' });
+// await api.ui.alert('Something happened', { title: 'Info', type: 'info' });
+// const ok = await api.ui.confirm('Are you sure?', { type: 'warning' });
+// const name = await api.ui.prompt('Enter your name:', { placeholder: 'Jane' });
+// const close = api.ui.openModal({ title: 'My Modal', body: '<p>Hello!</p>', buttons: [{ label: 'OK', primary: true, onClick: () => {} }] });
+// api.ui.addButton({ label: 'Click me', icon: '⚡', location: 'chat-toolbar', onClick: () => api.ui.toast('Hi!') });
+// api.ui.addSidebarSection({ title: 'My Extension', items: [{ id: 'a', label: 'Action', icon: '🔥', onClick: () => {} }] });
+`;
+
+  const unsandboxedTemplate = `// Unsandboxed Extension Template
+// Full access: DOM, window, document, api.dom, api.app, api.ui, tools.
+const api = createChatExtensionAPI();
+
+api.registerExtension({
+  id: 'your.extension.id',
+  name: 'Your Extension Name',
+  version: '1.0.0',
+  description: 'Describe what your extension does',
+  author: 'Your Name',
+  tools: []
+});
+
+// ── DOM: event listeners (auto-cleaned up on disable) ────────────────────
+// api.dom.onDocument('keydown', (e) => { if (e.key === 'F2') api.ui.toast('F2 pressed!'); });
+// api.dom.onWindow('resize', () => console.log('resized to', window.innerWidth));
+
+// ── DOM: inject CSS ───────────────────────────────────────────────────────
+// api.dom.addStyle(\`.chat-input-box { border-radius: 24px !important; }\`);
+
+// ── DOM: query / mutate elements ─────────────────────────────────────────
+// const el = api.dom.query('[data-tour="chat-input"]');
+// el?.remove();                        // delete an element
+// el?.setAttribute('style', '...');    // patch inline style
+// document.body.appendChild(...)       // raw DOM manipulation
+
+// ── DOM: inject a script tag ─────────────────────────────────────────────
+// const s = document.createElement('script');
+// s.textContent = 'window.myGlobal = 42;';
+// document.head.appendChild(s);
+// api.dom.onCleanup(() => s.remove());
+
+// ── DOM: MutationObserver ─────────────────────────────────────────────────
+// api.dom.observe(document.body, (mutations) => { console.log('DOM changed', mutations); }, { childList: true, subtree: true });
+
+// ── DOM: tracked timers ───────────────────────────────────────────────────
+// api.dom.setInterval(() => console.log('tick'), 5000);
+
+// ── App: sidebar control ─────────────────────────────────────────────────
+// api.app.sidebar.collapse();
+// api.app.sidebar.onChange((collapsed) => console.log('sidebar:', collapsed));
+
+// ── DOM: smooth auto-collapse sidebar with pin button ────────────────────
+// (function() {
+//   const EDGE_PX = 48; let pinned = false;
+//   api.dom.addStyle(\`
+//     [data-tour="sidebar"] { transition: width 240ms cubic-bezier(0.4,0,0.2,1), min-width 240ms cubic-bezier(0.4,0,0.2,1), opacity 180ms ease !important; overflow:hidden!important; min-width:0!important; }
+//     [data-tour="sidebar"].ext-sidebar-collapsed { width:0!important; opacity:0!important; pointer-events:none!important; }
+//     #ext-sidebar-pin { display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;border:none;background:transparent;cursor:pointer;color:rgb(var(--muted));transition:color 120ms,background 120ms;flex-shrink:0; }
+//     #ext-sidebar-pin:hover { background:rgb(var(--border)/0.6);color:rgb(var(--text)); }
+//     #ext-sidebar-pin.pinned { color:rgb(var(--accent)); }
+//   \`);
+//   const sidebar = api.dom.query('[data-tour="sidebar"]');
+//   const collapse = () => { if (!pinned) sidebar?.classList.add('ext-sidebar-collapsed'); };
+//   const expand   = () => sidebar?.classList.remove('ext-sidebar-collapsed');
+//   const isCollapsed = () => sidebar?.classList.contains('ext-sidebar-collapsed') ?? false;
+//   const header = sidebar?.querySelector('.border-b');
+//   if (header) {
+//     const pin = document.createElement('button');
+//     pin.id = 'ext-sidebar-pin'; pin.title = 'Pin sidebar open';
+//     pin.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>\`;
+//     pin.addEventListener('click', () => { pinned = !pinned; pin.classList.toggle('pinned', pinned); pin.title = pinned ? 'Unpin sidebar' : 'Pin sidebar open'; if (pinned) expand(); });
+//     const buttons = header.querySelectorAll('button');
+//     header.insertBefore(pin, buttons[buttons.length - 2] ?? null);
+//     api.dom.onCleanup(() => pin.remove());
+//   }
+//   collapse();
+//   api.dom.onDocument('mousemove', (e) => { if (e.clientX <= EDGE_PX && isCollapsed()) expand(); });
+//   if (sidebar) api.dom.on(sidebar, 'mouseleave', (e) => { if (e.clientX > EDGE_PX) collapse(); });
+//   api.dom.onCleanup(expand);
+// })();
+
+// ── App: cross-extension events ───────────────────────────────────────────
+// api.app.emit('myevent', { foo: 'bar' });
+// api.app.on('myevent', (detail) => console.log(detail));
+`;
+
+  const handleCreateExtension = () => {
+    setIsEditing(true);
+    setEditType('sandboxed');
+    setEditForm({
+      id: ''
+    });
+    setEditCode(sandboxedTemplate);
   };
 
   const handleSaveExtension = async () => {
@@ -81,13 +174,14 @@ api.registerExtension({
       
       const extension: StoredExtension = {
         id: editForm.id,
-        name: '', // Will be populated by extension loader
-        version: '', // Will be populated by extension loader
-        description: '', // Will be populated by extension loader
-        author: '', // Will be populated by extension loader
+        name: '',
+        version: '',
+        description: '',
+        author: '',
         code: editCode,
         enabled: true,
-        tools: [] // Will be populated when the extension registers itself
+        type: editType,
+        tools: []
       };
 
       extensionStorage.saveExtension(extension);
@@ -241,6 +335,13 @@ api.registerExtension({
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">Extensions</h3>
           <div className="flex gap-2">
             <button
+              onClick={() => navigate('/marketplace')}
+              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
+            >
+              <Store size={12} />
+              Marketplace
+            </button>
+            <button
               onClick={handleImportExtensions}
               className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
             >
@@ -269,7 +370,56 @@ api.registerExtension({
             <h4 className="text-sm font-medium mb-3">
               {editForm.id ? 'Edit Extension' : 'Create Extension'}
             </h4>
-            
+
+            {/* Type selector */}
+            <div className="mb-4">
+              <label className="form-label mb-2">Extension Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditType('sandboxed');
+                    if (!editForm.id) setEditCode(sandboxedTemplate);
+                  }}
+                  className={`flex items-start gap-2 p-3 rounded-lg border text-left transition-colors ${
+                    editType === 'sandboxed'
+                      ? 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10'
+                      : 'border-[rgb(var(--border))] hover:border-[rgb(var(--accent))]/50'
+                  }`}
+                >
+                  <ShieldCheck size={16} className="text-green-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold">Sandboxed</p>
+                    <p className="text-[10px] text-[rgb(var(--muted))] mt-0.5">Tools + UI only. No DOM or window access.</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditType('unsandboxed');
+                    if (!editForm.id) setEditCode(unsandboxedTemplate);
+                  }}
+                  className={`flex items-start gap-2 p-3 rounded-lg border text-left transition-colors ${
+                    editType === 'unsandboxed'
+                      ? 'border-orange-400 bg-orange-500/10'
+                      : 'border-[rgb(var(--border))] hover:border-orange-400/50'
+                  }`}
+                >
+                  <ShieldAlert size={16} className="text-orange-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold">Unsandboxed</p>
+                    <p className="text-[10px] text-[rgb(var(--muted))] mt-0.5">Full DOM access, script injection, api.dom, api.app.</p>
+                  </div>
+                </button>
+              </div>
+              {editType === 'unsandboxed' && (
+                <p className="text-[10px] text-orange-400 mt-2 flex items-center gap-1">
+                  <ShieldAlert size={11} />
+                  Unsandboxed extensions have full access to the page. Only install code you trust.
+                </p>
+              )}
+            </div>
+
             <div className="mb-3">
               <label className="form-label">Extension ID (for reference)</label>
               <input
@@ -280,10 +430,10 @@ api.registerExtension({
                 className="input text-sm"
               />
               <p className="text-xs text-[rgb(var(--muted))] mt-1">
-                Note: Extension metadata (name, version, description, author) will be automatically extracted from the code
+                Metadata (name, version, description, author) is extracted from the code automatically
               </p>
             </div>
-            
+
             <div className="mb-3">
               <label className="form-label">Extension Code</label>
               <textarea
@@ -294,7 +444,7 @@ api.registerExtension({
                 spellCheck={false}
               />
             </div>
-            
+
             <div className="flex gap-2">
               <button
                 onClick={handleSaveExtension}
@@ -307,6 +457,7 @@ api.registerExtension({
                   setIsEditing(false);
                   setSelectedExtension(null);
                   setEditCode('');
+                  setEditType('sandboxed');
                   setEditForm({ id: '' });
                 }}
                 className="btn-secondary text-sm py-2 px-4"
@@ -331,12 +482,23 @@ api.registerExtension({
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <h4 className="text-sm font-medium">{extension.name}</h4>
                       <span className="text-xs text-[rgb(var(--muted))]">v{extension.version}</span>
                       <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                         {extension.tools.length} tools
                       </span>
+                      {(extension.type ?? 'sandboxed') === 'unsandboxed' ? (
+                        <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+                          <ShieldAlert size={9} />
+                          Unsandboxed
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                          <ShieldCheck size={9} />
+                          Sandboxed
+                        </span>
+                      )}
                       {getStatusIcon(status)}
                     </div>
                     
@@ -383,6 +545,7 @@ api.registerExtension({
                       onClick={() => {
                         setSelectedExtension(extension.id);
                         setIsEditing(true);
+                        setEditType(extension.type ?? 'sandboxed');
                         setEditForm({
                           id: extension.id,
                           name: extension.name,

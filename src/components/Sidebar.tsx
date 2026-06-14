@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
   Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download,
@@ -8,6 +8,7 @@ import type { Conversation, AppSettings } from '../types';
 import type { CodeSession } from '../utils/codeSessionDB';
 import { imageDB, type GeneratedImage } from '../utils/imageDB';
 import { tauriUtils } from '../utils/tauri';
+import { extensionUIRegistry } from '../extensions/extensionUIRegistry';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -82,14 +83,41 @@ export default function Sidebar({
   const [hoverDel, setHoverDel] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [, extTick] = useState(0);
+  useEffect(() => {
+    const h = () => extTick(n => n + 1);
+    window.addEventListener('ext-ui-update', h);
+    return () => window.removeEventListener('ext-ui-update', h);
+  }, []);
+  const extSidebarSections = extensionUIRegistry.getSidebarSections();
+  const extSidebarButtons = extensionUIRegistry.getButtons('sidebar');
 
-  const toggleCollapse = () => {
-    setCollapsed(prev => {
-      const next = !prev;
-      localStorage.setItem('sidebar-collapsed', String(next));
-      return next;
-    });
-  };
+  const setAndPersistCollapsed = useCallback((next: boolean) => {
+    setCollapsed(next);
+    localStorage.setItem('sidebar-collapsed', String(next));
+    window.dispatchEvent(new CustomEvent('lumina:sidebar:changed', { detail: { collapsed: next } }));
+  }, []);
+
+  const toggleCollapse = () => setAndPersistCollapsed(!collapsed);
+
+  // Extensions can control the sidebar via lumina:sidebar events
+  useEffect(() => {
+    const h = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { collapsed?: boolean; toggle?: boolean };
+      if (detail.toggle) {
+        setCollapsed(prev => {
+          const next = !prev;
+          localStorage.setItem('sidebar-collapsed', String(next));
+          window.dispatchEvent(new CustomEvent('lumina:sidebar:changed', { detail: { collapsed: next } }));
+          return next;
+        });
+      } else if (typeof detail.collapsed === 'boolean') {
+        setAndPersistCollapsed(detail.collapsed);
+      }
+    };
+    window.addEventListener('lumina:sidebar', h);
+    return () => window.removeEventListener('lumina:sidebar', h);
+  }, [setAndPersistCollapsed]);
   const [searchQ, setSearchQ] = useState('');
   const [todayOpen, setTodayOpen] = useState(true);
   const [olderOpen, setOlderOpen] = useState(true);
@@ -312,7 +340,7 @@ export default function Sidebar({
         </button>
       )}
 
-      <aside className={`sidebar fixed inset-y-0 left-0 md:relative z-50 transition-transform duration-300 md:translate-x-0 ${
+      <aside data-tour="sidebar" className={`sidebar fixed inset-y-0 left-0 md:relative z-50 transition-transform duration-300 md:translate-x-0 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       } ${collapsed ? 'collapsed' : ''}`}>
       {/* User header */}
@@ -393,7 +421,7 @@ export default function Sidebar({
       {/* Nav */}
       {appMode === 'chat' && (
         <div className="px-1 space-y-0.5">
-          <button className="sidebar-item w-full" onClick={() => { onGoHome(); onClose(); }}>
+          <button className="sidebar-item w-full" data-tour="new-chat" onClick={() => { onGoHome(); onClose(); }}>
             <Home size={15} />
             <span>New Chat</span>
           </button>
@@ -561,11 +589,29 @@ export default function Sidebar({
             </span>
           </button>
         )}
-        <button className="sidebar-item w-full" onClick={onOpenProviders}>
+        {/* Extension sidebar sections */}
+        {extSidebarSections.map(sec => (
+          <div key={sec.id} className="px-1 space-y-0.5 border-t border-[rgb(var(--border))] pt-1 mt-1">
+            {sec.title && <p className="text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--muted))] px-3 py-1">{sec.title}</p>}
+            {sec.items.map(item => (
+              <button key={item.id} className="sidebar-item w-full" onClick={item.onClick}>
+                {item.icon && <span style={{ fontSize: 15 }}>{item.icon}</span>}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+        {extSidebarButtons.map(btn => (
+          <button key={btn.id} className="sidebar-item w-full" title={btn.tooltip} onClick={btn.onClick}>
+            {btn.icon && <span style={{ fontSize: 15 }}>{btn.icon}</span>}
+            <span>{btn.label}</span>
+          </button>
+        ))}
+        <button className="sidebar-item w-full" onClick={onOpenProviders} data-tour="providers-btn">
           <Database size={15} />
           <span>Providers</span>
         </button>
-        <button className="sidebar-item w-full" onClick={onOpenSettings}>
+        <button className="sidebar-item w-full" onClick={onOpenSettings} data-tour="settings-btn">
           <Settings size={15} />
           <span>Settings</span>
         </button>

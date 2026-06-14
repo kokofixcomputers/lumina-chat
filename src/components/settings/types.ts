@@ -30,4 +30,5 @@ export interface SettingsPanelProps {
   onDeleteApiFormat: (id: string) => void;
   onImportData: (data: any) => void;
   onClose: () => void;
+  initialTab?: TabType;
 }

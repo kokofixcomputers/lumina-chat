@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
 import {
   Send, Paperclip, X, Loader2,
   Smile, LayoutGrid,
@@ -17,6 +17,7 @@ import {
 import type { Message } from '../types';
 import { useFineTuningStore } from '../store/fineTuningStore';
 import { FineTuning } from '../types/fineTuning';
+import { extensionUIRegistry } from '../extensions/extensionUIRegistry';
 
 interface Model {
   fullId: string;
@@ -196,6 +197,15 @@ export default function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
+
+  // Extension toolbar buttons
+  const [, extTick] = useState(0);
+  useEffect(() => {
+    const h = () => extTick(n => n + 1);
+    window.addEventListener('ext-ui-update', h);
+    return () => window.removeEventListener('ext-ui-update', h);
+  }, []);
+  const extToolbarButtons = extensionUIRegistry.getButtons('chat-toolbar');
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
@@ -893,7 +903,7 @@ export default function ChatInput({
       <input ref={fileRef} type="file" accept="image/*,text/*,.txt,.md,.json,.csv,.log" multiple className="hidden" onChange={handleFileChange} />
 
       {/* Main input box */}
-      <div className="chat-input-box overflow-hidden">
+      <div className="chat-input-box overflow-hidden" data-tour="chat-input">
         <div className="relative">
           {renderTextWithHighlight()}
           <textarea
@@ -974,6 +984,17 @@ export default function ChatInput({
               <Mic size={15} />
             </button>
           </>}
+
+          {extToolbarButtons.map(btn => (
+            <button
+              key={btn.id}
+              title={btn.tooltip ?? btn.label}
+              onClick={btn.onClick}
+              className="toolbar-btn"
+            >
+              {btn.icon ? <span style={{ fontSize: 15 }}>{btn.icon}</span> : <span className="text-xs font-medium">{btn.label}</span>}
+            </button>
+          ))}
 
           <button
             onClick={isGenerating ? onStopGeneration : () => void handleSend()}

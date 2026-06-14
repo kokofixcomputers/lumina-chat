@@ -1,780 +1,927 @@
-# Chat Extension System Documentation
+# Lumina Chat Extension Documentation
 
-Welcome to the Chat Extension System! This documentation will guide you through creating custom tools and integrations that extend the functionality of the chat application.
+Extensions let you add custom AI tools, UI elements, DOM behaviour patches, and cross-extension events to Lumina Chat. They are written in plain JavaScript and run inside the app with full access to the DOM via tracked, cleanable APIs.
 
-## Overview
+---
 
-Extensions allow you to add custom tools and integrations to the chat application using JavaScript. Each extension can provide multiple tools that the AI assistant can use to perform specific tasks, and can also register external service integrations.
+## Table of Contents
 
-## Security Features
+1. [Getting Started](#1-getting-started)
+2. [Extension Structure](#2-extension-structure)
+3. [Tools](#3-tools)
+   - [Defining a Tool](#31-defining-a-tool)
+   - [Input Schema](#32-input-schema)
+   - [Tool Context](#33-tool-context)
+4. [UI API (`api.ui`)](#4-ui-api-apiui)
+   - [Toast Notifications](#41-toast-notifications)
+   - [Alert Dialog](#42-alert-dialog)
+   - [Confirm Dialog](#43-confirm-dialog)
+   - [Prompt Dialog](#44-prompt-dialog)
+   - [Rich Modal](#45-rich-modal)
+   - [Toolbar Buttons](#46-toolbar-buttons)
+   - [Sidebar Sections & Buttons](#47-sidebar-sections--buttons)
+5. [DOM API (`api.dom`)](#5-dom-api-apidom)
+   - [Event Listeners](#51-event-listeners)
+   - [Style Injection](#52-style-injection)
+   - [Querying Elements](#53-querying-elements)
+   - [MutationObserver](#54-mutationobserver)
+   - [Tracked Timers](#55-tracked-timers)
+   - [Manual Cleanup Registration](#56-manual-cleanup-registration)
+6. [App API (`api.app`)](#6-app-api-apiapp)
+   - [Sidebar Control](#61-sidebar-control)
+   - [Cross-Extension Events](#62-cross-extension-events)
+7. [Cleanup & Lifecycle](#7-cleanup--lifecycle)
+8. [Sandbox & Limitations](#8-sandbox--limitations)
+9. [Marketplace](#9-marketplace)
+10. [Full Examples](#10-full-examples)
 
-The extension system is designed with security in mind:
+---
 
-- **Sandboxed Environment**: Extensions run in a restricted sandbox with limited access to browser APIs
-- **Input Validation**: All tool inputs are validated against schemas before execution
-- **Timeout Protection**: Tools have a 30-second execution timeout to prevent hanging
-- **No Dangerous APIs**: Access to dangerous APIs like `eval`, `fetch`, `localStorage`, etc. is blocked
-- **Error Isolation**: Extension errors won't crash the main application
+## 1. Getting Started
 
-## Extension API
+Open **Settings → Extensions → New Extension**. The editor opens with a template. Every extension must call `api.registerExtension(...)` to identify itself.
 
-### Basic Structure
-
-```javascript
+```js
 const api = createChatExtensionAPI();
 
 api.registerExtension({
-  id: 'your.extension.id',
-  name: 'Your Extension Name',
+  id: 'hello.world',
+  name: 'Hello World',
   version: '1.0.0',
-  description: 'Description of your extension',
+  description: 'My first extension',
   author: 'Your Name',
-  tools: [
-    // Tools go here
-  ]
+  tools: [],
+});
+
+api.ui.toast('Hello World loaded!', { type: 'success' });
+```
+
+Save the extension and it activates immediately. Reload the page to confirm it persists.
+
+---
+
+## 2. Extension Structure
+
+```js
+api.registerExtension({
+  // Required
+  id:          'author.extension-name',   // unique dot-separated ID
+  name:        'Display Name',            // shown in the extensions list
+  version:     '1.0.0',                   // semver string
+  tools:       [],                        // array of tool objects (can be empty)
+
+  // Optional
+  description: 'What this extension does',
+  author:      'Your Name',
+  permissions: [],                        // reserved, currently unused
 });
 ```
 
-### Extension Properties
+### ID format
 
-- `id`: Unique identifier for your extension (required)
-- `name`: Display name for your extension (required)
-- `version`: Version string (required)
-- `description`: Brief description of what your extension does (optional)
-- `author`: Your name or organization (optional)
-- `tools`: Array of tool definitions (required)
+Extension IDs must match `/^[a-zA-Z0-9._-]+$/`. Use reverse-domain style to avoid collisions: `yourname.toolname`.
 
-### Tool Structure
+---
 
-```javascript
+## 3. Tools
+
+Tools are functions that the AI can call during a conversation (like web search, calculations, or API lookups). Each tool appears in the AI's tool list automatically when the extension is enabled.
+
+### 3.1 Defining a Tool
+
+```js
 {
-  name: 'tool_name',
-  description: 'What this tool does',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      parameter1: { type: 'string', description: 'Parameter description' },
-      parameter2: { type: 'number', description: 'Another parameter' }
-    },
-    required: ['parameter1']
-  },
+  name: 'get_weather',
+  description: 'Get the current weather for a city. Use this when the user asks about weather.',
+  inputSchema: { ... },
   async call(args, ctx) {
-    // Tool implementation
-    return { result: 'Tool output' };
+    // do work
+    return { temperature: 22, condition: 'Sunny' };
   }
 }
 ```
 
-### Tool Properties
+The `name` is prefixed with the extension ID when registered so it never conflicts with built-in tools. The `description` is what the AI reads to decide when to call the tool — write it clearly.
 
-- `name`: Unique tool name within the extension (required)
-- `description`: Description of what the tool does (required)
-- `inputSchema`: JSON schema for input validation (required)
-- `call`: Async function that executes the tool (required)
+### 3.2 Input Schema
 
-### Input Schema
+`inputSchema` follows a subset of JSON Schema:
 
-The `inputSchema` follows JSON Schema format:
-
-```javascript
+```js
 inputSchema: {
   type: 'object',
   properties: {
-    text: { type: 'string', description: 'Text to process' },
-    count: { type: 'number', description: 'Number of items' },
-    enabled: { type: 'boolean', description: 'Whether to enable' },
-    option: { 
-      type: 'string', 
-      enum: ['option1', 'option2'], 
-      description: 'Select an option' 
-    }
+    city: {
+      type: 'string',         // 'string' | 'number' | 'boolean'
+      description: 'The city name, e.g. "London"',
+      enum: ['London', 'Paris', 'Tokyo'],  // optional: restrict to these values
+    },
+    units: {
+      type: 'string',
+      description: 'Temperature units',
+      enum: ['celsius', 'fahrenheit'],
+    },
   },
-  required: ['text', 'count']
+  required: ['city'],         // list of required property names
 }
 ```
 
-Supported types: `string`, `number`, `boolean`
+The runtime validates required fields and basic types before calling your tool. If validation fails, the tool throws an error before `call()` runs.
 
-### Tool Context
+### 3.3 Tool Context
 
-The `call` function receives two parameters:
+The second argument to `call()` is a context object:
 
-1. `args`: Object containing the validated input parameters
-2. `ctx`: Context object with utility functions
-
-#### Context Methods
-
-```javascript
+```js
 async call(args, ctx) {
-  // Log messages (appears in browser console)
-  ctx.log('Processing request...');
-  
-  // Log warnings
-  ctx.warn('Something might be wrong');
-  
-  // Log errors
-  ctx.error('An error occurred');
-  
-  // Access app settings (read-only)
-  const settings = ctx.settings;
-  
-  // Your tool logic here
-  return { result: 'Success!' };
+  ctx.log('Starting...');      // prints to browser console as [Extension:id]
+  ctx.warn('Watch out');
+  ctx.error('Something broke');
+
+  ctx.settings;                // read-only AppSettings object (theme, providers, etc.)
+
+  return { result: 'done' };   // return any JSON-serialisable value
 }
 ```
 
-## Examples
+Tools have a **30-second timeout**. If they don't resolve within that time the runtime rejects the call.
 
-### Example 1: Math Tools Extension
+---
 
-```javascript
-const api = createChatExtensionAPI();
+## 4. UI API
 
-api.registerExtension({
-  id: 'demo.math',
-  name: 'Math Tools',
-  version: '1.0.0',
-  description: 'Basic mathematical operations',
-  author: 'Demo Author',
-  tools: [
+All UI methods are on `api.ui`. They use the app's CSS variables so they automatically match the active theme (light, dark, custom).
+
+### 4.1 Toast Notifications
+
+Non-blocking notification that disappears automatically.
+
+```js
+api.ui.toast(message, options?)
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `type` | `'info' \| 'success' \| 'warning' \| 'error'` | `'info'` | Color of the toast |
+| `duration` | `number` (ms) | `3500` | How long before auto-dismiss. `0` = sticky until manually closed |
+
+```js
+api.ui.toast('Saved!', { type: 'success' });
+api.ui.toast('Rate limit hit', { type: 'warning', duration: 6000 });
+api.ui.toast('Sticky message', { type: 'error', duration: 0 });
+```
+
+Toasts appear in the bottom-right corner. Multiple toasts stack vertically. Each has an × button.
+
+---
+
+### 4.2 Alert Dialog
+
+Modal dialog with a single dismiss button. Returns a `Promise<void>` that resolves when the user clicks OK or the backdrop.
+
+```js
+await api.ui.alert(message, options?)
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `title` | `string` | — | Bold heading above the message |
+| `type` | `'info' \| 'success' \| 'warning' \| 'error'` | `'info'` | Icon and accent colour |
+| `confirmLabel` | `string` | `'OK'` | Button label |
+
+```js
+await api.ui.alert('File saved successfully.', { title: 'Done', type: 'success' });
+
+// Execution continues here after the user clicks OK
+doNextThing();
+```
+
+---
+
+### 4.3 Confirm Dialog
+
+Modal dialog with Confirm and Cancel buttons. Returns `Promise<boolean>`.
+
+```js
+const confirmed = await api.ui.confirm(message, options?)
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `title` | `string` | — | Bold heading |
+| `type` | `'info' \| 'success' \| 'warning' \| 'error'` | `'info'` | Icon |
+| `confirmLabel` | `string` | `'Confirm'` | Primary button label |
+| `cancelLabel` | `string` | `'Cancel'` | Secondary button label |
+
+```js
+const ok = await api.ui.confirm('Delete this item?', {
+  title: 'Confirm Delete',
+  type: 'warning',
+  confirmLabel: 'Delete',
+  cancelLabel: 'Keep',
+});
+
+if (ok) {
+  // user clicked Delete
+}
+```
+
+Clicking the backdrop counts as Cancel (`false`).
+
+---
+
+### 4.4 Prompt Dialog
+
+Modal dialog with a text input. Returns `Promise<string | null>`. Returns `null` if the user cancels or closes the backdrop.
+
+```js
+const value = await api.ui.prompt(message, options?)
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `title` | `string` | — | Bold heading |
+| `placeholder` | `string` | — | Input placeholder text |
+| `defaultValue` | `string` | `''` | Pre-filled input value |
+
+```js
+const name = await api.ui.prompt('What should I call you?', {
+  title: 'Name',
+  placeholder: 'Jane Doe',
+  defaultValue: 'Anonymous',
+});
+
+if (name !== null) {
+  api.ui.toast(`Hello, ${name}!`, { type: 'success' });
+}
+```
+
+Press **Enter** to confirm, **Escape** to cancel.
+
+---
+
+### 4.5 Rich Modal
+
+Fully customisable modal with an HTML body and custom footer buttons. Returns a `close()` function.
+
+```js
+const close = api.ui.openModal(options)
+```
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `title` | `string` | ✓ | Modal header text |
+| `body` | `string` | ✓ | HTML string rendered in the modal body. Scripts and event attributes are stripped automatically. |
+| `width` | `'sm' \| 'md' \| 'lg'` | — | `'md'` (default) |
+| `buttons` | `Button[]` | — | Footer buttons (see below) |
+| `onClose` | `() => void` | — | Called when the modal is dismissed |
+
+**Button shape:**
+
+```js
+{ label: string, primary?: boolean, danger?: boolean, onClick: () => void }
+```
+
+Each button's `onClick` is called and the modal closes automatically after.
+
+```js
+const close = api.ui.openModal({
+  title: 'Settings',
+  width: 'lg',
+  body: `
+    <h2>Welcome</h2>
+    <p>This modal supports <strong>HTML</strong> content.</p>
+    <ul>
+      <li>Lists</li>
+      <li>Tables</li>
+      <li>Headings</li>
+    </ul>
+  `,
+  buttons: [
     {
-      name: 'calculate',
-      description: 'Evaluate a mathematical expression safely',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          expression: { 
-            type: 'string', 
-            description: 'Mathematical expression to evaluate (e.g., "2 + 3 * 4")' 
-          }
-        },
-        required: ['expression']
-      },
-      async call(args, ctx) {
-        // Simple math evaluator (safe, no eval)
-        const expression = args.expression.replace(/[^0-9+\-*/().\s]/g, '');
-        
-        if (!expression) {
-          throw new Error('Invalid expression');
-        }
-        
-        try {
-          // Use Function constructor for safe math evaluation
-          const result = new Function('return ' + expression)();
-          
-          ctx.log(`Evaluated: ${expression} = ${result}`);
-          
-          return {
-            expression: args.expression,
-            result: result,
-            type: typeof result
-          };
-        } catch (error) {
-          throw new Error('Failed to evaluate expression');
-        }
-      }
+      label: 'Delete',
+      danger: true,
+      onClick: () => api.ui.toast('Deleted!', { type: 'error' }),
     },
     {
-      name: 'random_number',
-      description: 'Generate a random number in a range',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          min: { type: 'number', description: 'Minimum value (default: 0)' },
-          max: { type: 'number', description: 'Maximum value (default: 100)' }
-        },
-        required: []
-      },
-      async call(args, ctx) {
-        const min = args.min || 0;
-        const max = args.max || 100;
-        
-        if (min >= max) {
-          throw new Error('Minimum must be less than maximum');
-        }
-        
-        const result = Math.floor(Math.random() * (max - min + 1)) + min;
-        
-        ctx.log(`Generated random number: ${result} (range: ${min}-${max})`);
-        
-        return {
-          result: result,
-          range: { min, max }
-        };
-      }
-    }
-  ]
-});
-```
-
-### Example 2: Text Processing Extension
-
-```javascript
-const api = createChatExtensionAPI();
-
-api.registerExtension({
-  id: 'demo.text',
-  name: 'Text Processing Tools',
-  version: '1.0.0',
-  description: 'Tools for text manipulation and analysis',
-  author: 'Demo Author',
-  tools: [
-    {
-      name: 'word_count',
-      description: 'Count words, characters, and sentences in text',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          text: { type: 'string', description: 'Text to analyze' },
-          include_spaces: { 
-            type: 'boolean', 
-            description: 'Include spaces in character count' 
-          }
-        },
-        required: ['text']
-      },
-      async call(args, ctx) {
-        const text = args.text;
-        const includeSpaces = args.include_spaces !== false;
-        
-        const words = text.trim().split(/\s+/).filter(word => word.length > 0);
-        const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-        const characters = includeSpaces ? text.length : text.replace(/\s/g, '').length;
-        const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0);
-        
-        ctx.log(`Analyzed text: ${words.length} words, ${sentences.length} sentences`);
-        
-        return {
-          words: words.length,
-          characters: characters,
-          sentences: sentences.length,
-          paragraphs: paragraphs.length,
-          average_words_per_sentence: Math.round((words.length / sentences.length) * 100) / 100
-        };
-      }
+      label: 'Save',
+      primary: true,
+      onClick: () => api.ui.toast('Saved!', { type: 'success' }),
     },
     {
-      name: 'text_transform',
-      description: 'Transform text case and format',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          text: { type: 'string', description: 'Text to transform' },
-          operation: { 
-            type: 'string', 
-            enum: ['uppercase', 'lowercase', 'title', 'reverse', 'camel'],
-            description: 'Transformation operation' 
-          }
-        },
-        required: ['text', 'operation']
-      },
-      async call(args, ctx) {
-        const { text, operation } = args;
-        let result;
-        
-        switch (operation) {
-          case 'uppercase':
-            result = text.toUpperCase();
-            break;
-          case 'lowercase':
-            result = text.toLowerCase();
-            break;
-          case 'title':
-            result = text.replace(/\w\S*/g, (txt) => 
-              txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
-            );
-            break;
-          case 'reverse':
-            result = text.split('').reverse().join('');
-            break;
-          case 'camel':
-            result = text.replace(/(?:^\w|[A-Z]|\b\w)/g, (word, index) => 
-              index === 0 ? word.toLowerCase() : word.toUpperCase()
-            ).replace(/\s+/g, '');
-            break;
-          default:
-            throw new Error('Unknown operation');
-        }
-        
-        ctx.log(`Transformed text using ${operation}`);
-        
-        return {
-          original: text,
-          transformed: result,
-          operation: operation
-        };
-      }
-    }
-  ]
-});
-```
-
-### Example 3: Data Conversion Extension
-
-```javascript
-const api = createChatExtensionAPI();
-
-api.registerExtension({
-  id: 'demo.convert',
-  name: 'Data Conversion Tools',
-  version: '1.0.0',
-  description: 'Convert between different data formats',
-  author: 'Demo Author',
-  tools: [
-    {
-      name: 'json_to_csv',
-      description: 'Convert JSON array to CSV format',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          json_data: { 
-            type: 'string', 
-            description: 'JSON array as string (e.g., \'[{"name":"John","age":30}]\')' 
-          },
-          delimiter: { 
-            type: 'string', 
-            description: 'CSV delimiter (default: comma)',
-            enum: [',', ';', '\\t', '|']
-          }
-        },
-        required: ['json_data']
-      },
-      async call(args, ctx) {
-        try {
-          const data = JSON.parse(args.json_data);
-          
-          if (!Array.isArray(data) || data.length === 0) {
-            throw new Error('JSON data must be a non-empty array');
-          }
-          
-          const delimiter = args.delimiter || ',';
-          const headers = Object.keys(data[0]);
-          
-          // Create CSV header
-          let csv = headers.join(delimiter) + '\n';
-          
-          // Add data rows
-          for (const row of data) {
-            const values = headers.map(header => {
-              const value = row[header];
-              // Escape values that contain the delimiter
-              if (typeof value === 'string' && value.includes(delimiter)) {
-                return `"${value.replace(/"/g, '""')}"`;
-              }
-              return value !== null && value !== undefined ? value : '';
-            });
-            csv += values.join(delimiter) + '\n';
-          }
-          
-          ctx.log(`Converted ${data.length} records to CSV`);
-          
-          return {
-            csv: csv,
-            rows: data.length,
-            columns: headers.length,
-            delimiter: delimiter
-          };
-        } catch (error) {
-          throw new Error('Invalid JSON data: ' + error.message);
-        }
-      }
+      label: 'Cancel',
+      onClick: () => {},
     },
-    {
-      name: 'base64_encode',
-      description: 'Encode text to base64 or decode base64 to text',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          data: { type: 'string', description: 'Text or base64 string' },
-          operation: { 
-            type: 'string', 
-            enum: ['encode', 'decode'],
-            description: 'Encode or decode operation' 
-          }
-        },
-        required: ['data', 'operation']
-      },
-      async call(args, ctx) {
-        const { data, operation } = args;
-        let result;
-        
-        try {
-          if (operation === 'encode') {
-            result = btoa(unescape(encodeURIComponent(data)));
-          } else {
-            result = decodeURIComponent(escape(atob(data)));
-          }
-        } catch (error) {
-          throw new Error(`Failed to ${operation} base64: ${error.message}`);
-        }
-        
-        ctx.log(`${operation === 'encode' ? 'Encoded' : 'Decoded'} data (${data.length} chars)`);
-        
-        return {
-          input: data,
-          output: result,
-          operation: operation,
-          input_length: data.length,
-          output_length: result.length
-        };
-      }
-    }
-  ]
+  ],
+  onClose: () => console.log('modal closed'),
 });
+
+// Close programmatically (e.g. after an async operation)
+setTimeout(close, 5000);
 ```
 
-## Best Practices
+Clicking the backdrop also closes the modal and fires `onClose`.
 
-### 1. Error Handling
+> **Security:** `<script>` tags, `<style>` tags, and inline event attributes (`onclick`, `onload`, etc.) are stripped from the HTML body before rendering.
 
-Always handle errors gracefully and provide meaningful error messages:
+---
 
-```javascript
-async call(args, ctx) {
-  try {
-    // Your logic here
-    if (!args.text) {
-      throw new Error('Text parameter is required');
-    }
-    return { result: 'Success' };
-  } catch (error) {
-    ctx.error('Tool failed: ' + error.message);
-    throw error; // Re-throw to show error to user
-  }
-}
+### 4.6 Toolbar Buttons
+
+Add a button to the chat input toolbar. Returns a `remove()` function.
+
+```js
+const remove = api.ui.addButton(options)
 ```
 
-### 2. Input Validation
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `label` | `string` | ✓ | Text label (shown if no icon, or used for accessibility) |
+| `icon` | `string` | — | Emoji or short text rendered as the button face |
+| `tooltip` | `string` | — | `title` attribute shown on hover |
+| `location` | `'chat-toolbar' \| 'sidebar'` | `'chat-toolbar'` | Where the button appears |
+| `onClick` | `() => void` | ✓ | Called when clicked |
 
-Validate inputs early and provide clear error messages:
-
-```javascript
-async call(args, ctx) {
-  const { number } = args;
-  
-  if (typeof number !== 'number') {
-    throw new Error('Number parameter must be a number');
-  }
-  
-  if (number < 0) {
-    throw new Error('Number must be positive');
-  }
-  
-  // Continue with valid input
-}
-```
-
-### 3. Logging
-
-Use the context logging methods for debugging:
-
-```javascript
-async call(args, ctx) {
-  ctx.log('Starting tool execution');
-  ctx.log(`Processing ${args.items.length} items`);
-  
-  // ... processing ...
-  
-  ctx.warn('Processing took longer than expected');
-  ctx.log('Tool execution completed');
-}
-```
-
-### 4. Return Format
-
-Always return structured data:
-
-```javascript
-return {
-  result: 'Main result',
-  metadata: {
-    processed: 10,
-    duration: '2.5s',
-    version: '1.0.0'
-  }
-};
-```
-
-## Limitations
-
-### Restricted APIs
-
-Extensions cannot access:
-- Network requests (`fetch`, `XMLHttpRequest`)
-- File system access
-- Browser storage (`localStorage`, `sessionStorage`)
-- Dangerous functions (`eval`, `Function` with code)
-- DOM manipulation
-- Web workers
-- Crypto APIs
-
-### Performance Limits
-
-- Maximum execution time: 30 seconds
-- Memory usage is limited
-- No persistent storage between calls
-
-### Safe Alternatives
-
-Instead of restricted APIs, use:
-- `ctx.log()` for logging
-- `ctx.settings` for read-only app settings
-- Built-in JavaScript functions for data processing
-- Mathematical operations
-
-## Installation
-
-1. Open the chat application
-2. Go to Settings > Extensions
-3. Click "New Extension"
-4. Fill in the extension details
-5. Write your extension code
-6. Click "Save Extension"
-
-## Testing
-
-Test your extensions thoroughly:
-
-1. Create test cases for all input scenarios
-2. Test error conditions
-3. Verify output format
-4. Check performance with large inputs
-5. Test edge cases and boundary conditions
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Extension not loading**: Check for syntax errors in your code
-2. **Tool not found**: Ensure tool names are unique within the extension
-3. **Input validation errors**: Verify your input schema matches the actual parameters
-4. **Timeout errors**: Optimize your code for performance
-
-### Debugging
-
-Use `ctx.log()` statements to debug your extension:
-
-```javascript
-ctx.log('Debug: Processing step 1');
-ctx.log('Debug: Current value:', currentValue);
-```
-
-Check the browser console for extension logs and errors.
-
-## Integration System
-
-Extensions can also register external service integrations that allow the AI assistant to interact with third-party APIs and services.
-
-### What are Integrations?
-
-Integrations are connections to external services like GitHub, Slack, Notion, etc. They provide:
-- **Authentication**: Handle API keys, OAuth tokens, and other credentials
-- **API Clients**: Pre-built clients for common external services
-- **Tools**: AI-callable functions that use the integration
-- **UI Components**: Configuration interfaces in the settings panel
-
-### Built-in GitHub Integration
-
-The application includes a built-in GitHub integration that demonstrates the integration system:
-
-#### Features:
-- **PAT Token Authentication**: Secure Personal Access Token validation
-- **Repository Access**: List, search, and view repositories
-- **File Operations**: Read file contents and browse directory structures
-- **Issue Management**: Access and manage repository issues
-
-#### Available Tools:
-- `github_list_repos`: List all repositories for the authenticated user
-- `github_get_repo`: Get detailed information about a specific repository
-- `github_list_files`: List files and directories in a repository
-- `github_get_file`: Get the content of a specific file from a repository
-- `github_search_repos`: Search for repositories based on criteria
-- `github_get_issues`: Get issues from a repository
-
-### Creating Custom Integrations
-
-Extensions can register their own integrations using the integration registry:
-
-```javascript
-// Register a custom integration
-api.registerIntegration({
-  id: 'my-service',
-  name: 'My Service',
-  description: 'Connect to My Service API',
-  icon: 'MS',
-  authType: 'api_key',
-  validateToken: async (token) => {
-    // Validate the API key
-    const response = await fetch('https://api.myservice.com/user', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (response.ok) {
-      const user = await response.json();
-      return { valid: true, username: user.name };
-    }
-    return { valid: false, error: 'Invalid API key' };
+```js
+const remove = api.ui.addButton({
+  label: 'Translate',
+  icon: '🌐',
+  tooltip: 'Translate selection',
+  location: 'chat-toolbar',
+  onClick: async () => {
+    const lang = await api.ui.prompt('Translate to:', { placeholder: 'French' });
+    if (lang) api.ui.toast(`Translating to ${lang}…`);
   },
-  tools: [
+});
+
+// Remove later (e.g. when a setting is toggled off)
+remove();
+```
+
+When `icon` is provided it is rendered at 15 px. If no icon is given, the `label` text is shown in a small font instead.
+
+---
+
+### 4.7 Sidebar Sections & Buttons
+
+#### `addSidebarSection`
+
+Add a labelled group of items to the bottom of the sidebar (above Providers / Settings). Returns a `remove()` function.
+
+```js
+const remove = api.ui.addSidebarSection(options)
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `title` | `string` | Optional section heading (displayed in small caps) |
+| `items` | `Item[]` | List of clickable items |
+
+**Item shape:**
+
+```js
+{ id: string, label: string, icon?: string, onClick: () => void }
+```
+
+```js
+const remove = api.ui.addSidebarSection({
+  title: 'Snippets',
+  items: [
     {
-      name: 'myservice_get_data',
-      label: 'Get Data',
-      description: 'Retrieve data from My Service',
-      requiresAuth: true,
-      enabled: false,
-      handler: async (settings, params) => {
-        const apiKey = settings.integrations?.['my-service']?.apiKey;
-        const response = await fetch('https://api.myservice.com/data', {
-          headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
-        return response.json();
-      }
-    }
-  ]
+      id: 'new-snippet',
+      label: 'New Snippet',
+      icon: '✂️',
+      onClick: async () => {
+        const text = await api.ui.prompt('Snippet content:');
+        if (text) api.ui.toast('Snippet saved!', { type: 'success' });
+      },
+    },
+    {
+      id: 'view-snippets',
+      label: 'View All',
+      icon: '📋',
+      onClick: () => api.ui.openModal({ title: 'Snippets', body: '<p>No snippets yet.</p>' }),
+    },
+  ],
 });
 ```
 
-### Integration Properties
+#### `addButton` with `location: 'sidebar'`
 
-#### IntegrationDefinition
-```typescript
-interface IntegrationDefinition {
-  id: string;                    // Unique identifier
-  name: string;                  // Display name
-  description: string;           // User-facing description
-  icon: string;                  // Icon/text for UI
-  authType: 'api_key' | 'oauth' | 'none';  // Authentication type
-  configureComponent?: React.ComponentType<any>;  // Custom UI component
-  validateToken?: (token: string) => Promise<{ valid: boolean; username?: string; error?: string }>;
-  tools: IntegrationTool[];      // Tools provided by this integration
+For a single standalone button in the sidebar without a section heading, use `addButton` with `location: 'sidebar'`:
+
+```js
+api.ui.addButton({
+  label: 'Open Dashboard',
+  icon: '📊',
+  location: 'sidebar',
+  onClick: () => { /* ... */ },
+});
+```
+
+---
+
+## 5. DOM API (`api.dom`)
+
+`api.dom` gives extensions full access to the live DOM. **All side-effects registered through `api.dom` are automatically cleaned up when the extension is disabled or unloaded** — you never need to manually remove listeners or styles.
+
+### 5.1 Event Listeners
+
+```js
+// Listen on any EventTarget
+const remove = api.dom.on(target, eventType, handler, options?)
+
+// Shorthands
+const remove = api.dom.onDocument(eventType, handler, options?)
+const remove = api.dom.onWindow(eventType, handler, options?)
+```
+
+`remove()` is returned if you want to remove the listener early. Otherwise it's removed automatically on extension unload.
+
+```js
+// Log every keydown
+api.dom.onDocument('keydown', (e) => {
+  console.log('key:', e.key);
+});
+
+// Listen to window resize
+api.dom.onWindow('resize', () => {
+  console.log('viewport width:', window.innerWidth);
+});
+
+// Listen on a specific element
+const sidebar = api.dom.query('[data-tour="sidebar"]');
+if (sidebar) {
+  api.dom.on(sidebar, 'mouseleave', () => api.app.sidebar.collapse());
 }
 ```
 
-#### IntegrationTool
-```typescript
-interface IntegrationTool {
-  name: string;                  // Tool identifier
-  label: string;                 // Display label
-  description: string;            // Tool description
-  requiresAuth: boolean;          // Whether authentication is required
-  enabled: boolean;              // Whether tool is enabled
-  handler?: (settings: AppSettings, ...args: any[]) => Promise<any>;  // Tool implementation
-}
+### 5.2 Style Injection
+
+```js
+const remove = api.dom.addStyle(cssString)
 ```
 
-### Authentication Types
+Injects a `<style>` tag into `<head>`. Removed automatically on unload.
 
-#### API Key Authentication
-```javascript
-authType: 'api_key',
-validateToken: async (token) => {
-  // Validate the API key
-  const response = await fetch('https://api.example.com/validate', {
-    headers: { 'Authorization': `Bearer ${token}` }
+```js
+api.dom.addStyle(`
+  .chat-input-box {
+    border-radius: 24px !important;
+  }
+  .sidebar-item:hover {
+    background: rgba(255,255,255,0.08) !important;
+  }
+`);
+```
+
+### 5.3 Querying Elements
+
+```js
+api.dom.query(selector)    // → Element | null  (live, no tracking needed)
+api.dom.queryAll(selector) // → Element[]
+```
+
+These are plain `document.querySelector` / `querySelectorAll` calls — no cleanup needed since they don't register anything.
+
+```js
+const input = api.dom.query('[data-tour="chat-input"]');
+const buttons = api.dom.queryAll('.toolbar-btn');
+console.log(`${buttons.length} toolbar buttons found`);
+```
+
+### 5.4 MutationObserver
+
+```js
+const disconnect = api.dom.observe(target, callback, options)
+```
+
+Wraps `MutationObserver`. The observer is disconnected automatically on unload.
+
+```js
+api.dom.observe(document.body, (mutations) => {
+  for (const m of mutations) {
+    if (m.addedNodes.length) console.log('nodes added:', m.addedNodes);
+  }
+}, { childList: true, subtree: true });
+```
+
+### 5.5 Tracked Timers
+
+Standard `setInterval` / `setTimeout` but registered for automatic cleanup:
+
+```js
+const clear = api.dom.setInterval(fn, ms)  // → clearInterval() function
+const clear = api.dom.setTimeout(fn, ms)   // → clearTimeout() function
+```
+
+```js
+// Poll something every 10 seconds
+api.dom.setInterval(() => {
+  const el = api.dom.query('.unread-badge');
+  if (el) api.ui.toast(`${el.textContent} unread`, { type: 'info' });
+}, 10_000);
+```
+
+### 5.6 Manual Cleanup Registration
+
+Register any cleanup function to run when the extension is disabled or unloaded:
+
+```js
+api.dom.onCleanup(fn)
+```
+
+```js
+const myThing = startSomething();
+api.dom.onCleanup(() => myThing.stop());
+```
+
+---
+
+## 6. App API (`api.app`)
+
+`api.app` provides control over high-level app behaviour.
+
+### 6.1 Sidebar Control
+
+```js
+api.app.sidebar.collapse()              // collapse the sidebar
+api.app.sidebar.expand()               // expand the sidebar
+api.app.sidebar.toggle()               // toggle
+api.app.sidebar.isCollapsed()          // → boolean
+api.app.sidebar.onChange(fn)           // listen for state changes, returns remove()
+```
+
+**Example — auto-hide sidebar on mouse leave, reveal on hover near left edge:**
+
+```js
+const EDGE_PX = 40; // how close to the left edge to trigger open
+
+api.app.sidebar.collapse();
+
+// Open when mouse is near the left edge
+api.dom.onDocument('mousemove', (e) => {
+  if (e.clientX <= EDGE_PX && api.app.sidebar.isCollapsed()) {
+    api.app.sidebar.expand();
+  }
+});
+
+// Collapse when mouse leaves the sidebar
+const sidebar = api.dom.query('[data-tour="sidebar"]');
+if (sidebar) {
+  api.dom.on(sidebar, 'mouseleave', (e) => {
+    // Only collapse if the mouse left to the right (into chat area)
+    if (e.clientX > EDGE_PX) api.app.sidebar.collapse();
   });
-  return response.ok 
-    ? { valid: true, username: 'user123' }
-    : { valid: false, error: 'Invalid token' };
 }
-```
 
-#### OAuth Authentication
-```javascript
-authType: 'oauth',
-// OAuth flow is handled by the application
-// Token is stored and validated automatically
-```
-
-#### No Authentication
-```javascript
-authType: 'none',
-// No authentication required
-// Tools are always enabled
-```
-
-### Settings Storage
-
-Integration configurations are stored in the application settings:
-
-```typescript
-interface AppSettings {
-  integrations?: {
-    github?: {
-      configured: boolean;
-      patToken: string;
-      username: string;
-    };
-    'my-service'?: {
-      configured: boolean;
-      apiKey: string;
-      username: string;
-    };
-    // Extensions can add their own integrations
-    [key: string]: any;
-  };
-}
-```
-
-### Best Practices
-
-1. **Security**: Always validate tokens and handle errors gracefully
-2. **Rate Limiting**: Respect API rate limits and implement caching
-3. **Error Handling**: Provide clear error messages for users
-4. **User Experience**: Show loading states and progress indicators
-5. **Documentation**: Document your integration's API requirements
-
-### Example: Slack Integration
-
-```javascript
-api.registerIntegration({
-  id: 'slack',
-  name: 'Slack',
-  description: 'Send messages and notifications to Slack channels',
-  icon: 'SL',
-  authType: 'api_key',
-  validateToken: async (token) => {
-    const response = await fetch('https://slack.com/api/auth.test', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await response.json();
-    return data.ok 
-      ? { valid: true, username: data.user }
-      : { valid: false, error: data.error };
-  },
-  tools: [
-    {
-      name: 'slack_send_message',
-      label: 'Send Message',
-      description: 'Send a message to a Slack channel',
-      requiresAuth: true,
-      enabled: false,
-      handler: async (settings, channel, message) => {
-        const token = settings.integrations?.slack?.apiKey;
-        const response = await fetch('https://slack.com/api/chat.postMessage', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            channel,
-            text: message
-          })
-        });
-        return response.json();
-      }
-    }
-  ]
+// Listen for state changes
+api.app.sidebar.onChange((collapsed) => {
+  console.log('sidebar is now', collapsed ? 'hidden' : 'visible');
 });
 ```
 
-## Support
+When the extension is disabled the sidebar event listeners are cleaned up automatically and the sidebar returns to its previous behavior.
 
-For help with extension development:
+### 6.2 Cross-Extension Events
 
-1. Check this documentation first
-2. Look at example extensions
-3. Check the browser console for errors
-4. Review the extension source code for reference implementations
-5. Test integrations thoroughly before deploying
+Extensions can communicate with each other through a simple pub/sub system:
 
-Happy coding!
+```js
+// Emit an event (other extensions can listen)
+api.app.emit('eventName', { any: 'data' })
+
+// Listen for an event from any extension
+const unlisten = api.app.on('eventName', (detail) => {
+  console.log(detail); // { any: 'data' }
+})
+```
+
+Events are namespaced internally to `lumina:ext:*` so they never clash with browser events. Listeners registered via `api.app.on` are cleaned up automatically on unload.
+
+```js
+// extension A — publisher
+api.dom.setInterval(() => {
+  api.app.emit('tick', { time: Date.now() });
+}, 1000);
+
+// extension B — subscriber
+api.app.on('tick', ({ time }) => {
+  console.log('tick from extension A at', time);
+});
+```
+
+---
+
+## 7. Cleanup & Lifecycle
+
+Every `api.dom.*` call and `api.app.on` / `api.app.sidebar.onChange` registers a cleanup function internally. When an extension is **disabled**, **deleted**, or the page is **reloaded with the extension off**, all of the following happen automatically:
+
+| Registered via | Cleaned up by |
+|----------------|---------------|
+| `api.dom.on` / `onDocument` / `onWindow` | `removeEventListener` |
+| `api.dom.addStyle` | `<style>` tag removed from DOM |
+| `api.dom.observe` | `MutationObserver.disconnect()` |
+| `api.dom.setInterval` / `setTimeout` | `clearInterval` / `clearTimeout` |
+| `api.dom.onCleanup(fn)` | `fn()` called |
+| `api.ui.addButton` | button removed from toolbar/sidebar |
+| `api.ui.addSidebarSection` | section removed from sidebar |
+| `api.app.on` / `sidebar.onChange` | `removeEventListener` |
+
+You do **not** need to call any remove/cleanup functions yourself unless you want to tear down something early.
+
+---
+
+## 8. Sandbox & Limitations
+
+Extensions run inside `new Function(...)`. The following globals are **intentionally not blocked** at the sandbox level — instead, the `api.dom` wrappers are the recommended way to access the DOM because all side-effects registered through `api.dom` are automatically cleaned up when the extension is disabled.
+
+| Available via `api.dom` | Direct access? |
+|-------------------------|----------------|
+| `document`, `window` event listeners | Use `api.dom.on/onDocument/onWindow` |
+| CSS injection | Use `api.dom.addStyle` |
+| DOM queries | `api.dom.query / queryAll` (or use `document.querySelector` directly) |
+| `setInterval` / `setTimeout` | Use `api.dom.setInterval / setTimeout` (auto-cancelled) |
+
+The following globals are explicitly **blocked** as they provide no legitimate extension use case:
+
+| Blocked | Reason |
+|---------|--------|
+| `eval`, `Function` | Prevent code injection |
+| `fetch`, `XMLHttpRequest`, `WebSocket` | Network access is restricted |
+| `localStorage`, `sessionStorage`, `indexedDB` | Storage is scoped to the host app |
+| `crypto`, `navigator`, `location`, `history` | Sensitive browser APIs |
+| `process`, `require`, `import`, `global` | Node/module globals |
+
+The following **are available** as plain globals:
+
+`Object`, `Array`, `String`, `Number`, `Boolean`, `Date`, `Math`, `JSON`, `Promise`, `setTimeout` (capped at 30 s), `clearTimeout`, `setInterval`, `clearInterval`
+
+**Tool timeout:** Each tool call has a hard 30-second timeout.
+
+**Code size limit:** Extension code submitted to the marketplace is capped at 512 KB.
+
+---
+
+## 9. Marketplace
+
+The Extension Marketplace is at `/marketplace`. It requires a free account.
+
+### Publishing an extension
+
+1. Go to `/marketplace` and sign up or sign in.
+2. Click the **Submit** tab.
+3. Fill in the ID, name, version, author, description, and paste your code.
+4. Click **Submit for Review**.
+
+Extensions are reviewed by a moderator before they appear publicly. You will see your submission under **My Extensions** with a status of *Pending review*, *Approved*, or *Rejected* (with a reviewer note if rejected).
+
+### Installing from the marketplace
+
+1. Browse the **Browse** tab — no account needed.
+2. Click **Install** on any extension.
+3. The extension is saved locally and activated immediately. You can manage it in Settings → Extensions like any other extension.
+
+### Moderator accounts
+
+Moderator usernames are configured via the `MARKETPLACE_MOD_USERNAMES` environment variable on the server (comma-separated). Any account registered with a matching username automatically receives the moderator role and sees the **Review** tab, where pending submissions can be approved or rejected with an optional note to the author.
+
+---
+
+## 10. Full Examples
+
+### 10.1 Word Counter (UI + Tool)
+
+A complete extension that adds a sidebar button, prompts the user, and shows a results modal, plus an AI-callable tool:
+
+```js
+const api = createChatExtensionAPI();
+
+api.registerExtension({
+  id: 'demo.word-counter',
+  name: 'Word Counter',
+  version: '1.0.0',
+  description: 'Count words in any text via a sidebar button or AI tool',
+  author: 'Demo',
+  tools: [
+    {
+      name: 'count_words',
+      description: 'Count the number of words, sentences, and characters in a given text.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'The text to analyse' },
+        },
+        required: ['text'],
+      },
+      async call({ text }, ctx) {
+        const words     = text.trim().split(/\s+/).filter(Boolean).length;
+        const sentences = text.split(/[.!?]+/).filter(Boolean).length;
+        const chars     = text.length;
+        ctx.log(`Counted: ${words} words`);
+        return { words, sentences, characters: chars };
+      },
+    },
+  ],
+});
+
+function showResults(text) {
+  const words     = text.trim().split(/\s+/).filter(Boolean).length;
+  const sentences = text.split(/[.!?]+/).filter(Boolean).length;
+  const chars     = text.length;
+
+  api.ui.openModal({
+    title: 'Word Count Results',
+    width: 'sm',
+    body: `
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <td style="padding:6px 0;color:var(--muted)">Words</td>
+          <td style="text-align:right;font-weight:600">${words}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;color:var(--muted)">Sentences</td>
+          <td style="text-align:right;font-weight:600">${sentences}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;color:var(--muted)">Characters</td>
+          <td style="text-align:right;font-weight:600">${chars}</td>
+        </tr>
+      </table>
+    `,
+    buttons: [{ label: 'Close', primary: true, onClick: () => {} }],
+  });
+}
+
+// Sidebar section with a prompt → modal flow
+api.ui.addSidebarSection({
+  title: 'Word Counter',
+  items: [
+    {
+      id: 'count-words',
+      label: 'Count Words',
+      icon: '🔢',
+      onClick: async () => {
+        const text = await api.ui.prompt('Paste your text below:', {
+          title: 'Word Counter',
+          placeholder: 'Type or paste text here…',
+        });
+        if (text) showResults(text);
+      },
+    },
+  ],
+});
+
+// Toolbar button for quick access
+api.ui.addButton({
+  label: 'Count',
+  icon: '🔢',
+  tooltip: 'Count words in text',
+  location: 'chat-toolbar',
+  onClick: async () => {
+    const text = await api.ui.prompt('Paste text to count:');
+    if (text) showResults(text);
+  },
+});
+
+api.ui.toast('Word Counter ready', { type: 'success', duration: 2000 });
+```
+
+### 10.2 Auto-Collapse Sidebar on Mouse Leave
+
+Bypasses React state entirely — directly controls the sidebar DOM element with injected CSS transitions for a smooth slide. Also injects a **pin button** next to the cloud sync icon so the user can lock the sidebar open. Requires **Unsandboxed** mode.
+
+```js
+const api = createChatExtensionAPI();
+
+api.sandbox.requireUnsandboxed('sidebar.auto-collapse requires Unsandboxed mode for direct DOM control.');
+
+api.registerExtension({
+  id: 'sidebar.auto-collapse',
+  name: 'Auto-Collapse Sidebar',
+  version: '1.0.0',
+  description: 'Slides the sidebar in/out via direct DOM control. Pin button locks it open.',
+  author: 'Demo',
+  tools: [],
+});
+
+const EDGE_PX = 48;
+let pinned = false;
+
+// ── Styles ────────────────────────────────────────────────────────────────
+api.dom.addStyle(`
+  [data-tour="sidebar"] {
+    transition:
+      width 240ms cubic-bezier(0.4, 0, 0.2, 1),
+      min-width 240ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 180ms ease !important;
+    overflow: hidden !important;
+    min-width: 0 !important;
+  }
+  [data-tour="sidebar"].ext-sidebar-collapsed {
+    width: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  /* Pin button */
+  #ext-sidebar-pin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: rgb(var(--muted));
+    transition: color 120ms ease, background 120ms ease;
+    flex-shrink: 0;
+  }
+  #ext-sidebar-pin:hover {
+    background: rgb(var(--border) / 0.6);
+    color: rgb(var(--text));
+  }
+  #ext-sidebar-pin.pinned {
+    color: rgb(var(--accent));
+  }
+`);
+
+// ── Sidebar collapse helpers ──────────────────────────────────────────────
+const sidebar = api.dom.query('[data-tour="sidebar"]');
+
+const collapse    = () => { if (!pinned) sidebar?.classList.add('ext-sidebar-collapsed'); };
+const expand      = () => sidebar?.classList.remove('ext-sidebar-collapsed');
+const isCollapsed = () => sidebar?.classList.contains('ext-sidebar-collapsed') ?? false;
+
+// ── Pin button ────────────────────────────────────────────────────────────
+// The sidebar header is the first child of the sidebar with a border-b.
+// Insert a pin button right before the collapse/close buttons.
+const header = sidebar?.querySelector('.border-b');
+if (header) {
+  const pin = document.createElement('button');
+  pin.id = 'ext-sidebar-pin';
+  pin.title = 'Pin sidebar open';
+  pin.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+  </svg>`;
+
+  pin.addEventListener('click', () => {
+    pinned = !pinned;
+    pin.classList.toggle('pinned', pinned);
+    pin.title = pinned ? 'Unpin sidebar' : 'Pin sidebar open';
+    if (pinned) expand();
+  });
+
+  // Insert before the last two buttons (collapse + close)
+  const buttons = header.querySelectorAll('button');
+  const insertBefore = buttons[buttons.length - 2] ?? null;
+  header.insertBefore(pin, insertBefore);
+
+  api.dom.onCleanup(() => pin.remove());
+}
+
+// ── Behaviour ─────────────────────────────────────────────────────────────
+collapse();
+
+api.dom.onDocument('mousemove', (e) => {
+  if (e.clientX <= EDGE_PX && isCollapsed()) expand();
+});
+
+if (sidebar) {
+  api.dom.on(sidebar, 'mouseleave', (e) => {
+    if (e.clientX > EDGE_PX) collapse();
+  });
+}
+
+api.dom.onCleanup(expand);
+```
+
+### 10.3 Injecting a Custom CSS Theme Patch
+
+```js
+const api = createChatExtensionAPI();
+
+api.registerExtension({
+  id: 'theme.rounded-inputs',
+  name: 'Rounded Inputs',
+  version: '1.0.0',
+  description: 'Makes chat input and buttons fully pill-shaped.',
+  author: 'Demo',
+  tools: [],
+});
+
+api.dom.addStyle(`
+  [data-tour="chat-input"] {
+    border-radius: 9999px !important;
+    padding-left: 1.25rem !important;
+    padding-right: 1.25rem !important;
+  }
+  button[type="submit"] {
+    border-radius: 9999px !important;
+  }
+`);
+// Style is automatically removed when the extension is disabled.
+```

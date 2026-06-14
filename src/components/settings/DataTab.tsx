@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, Send } from 'lucide-react';
 import type { AppSettings } from '../../types';
 import { importSources, importChatFile } from '../../utils/importers';
 import type { ImportSourceId } from '../../utils/importers';
+import { checkIsTauri } from '../../utils/tauri';
 
 interface DataTabProps {
   settings: AppSettings;
@@ -12,6 +13,45 @@ interface DataTabProps {
 
 export default function DataTab({ settings, conversations, onImportData }: DataTabProps) {
   const [selectedSource, setSelectedSource] = useState<ImportSourceId>('lumina');
+
+  const exportToDesktop = () => {
+    // Get extensions from localStorage
+    const extensions = {};
+    try {
+      const extensionsData = localStorage.getItem('lumina_extensions');
+      if (extensionsData) {
+        Object.assign(extensions, JSON.parse(extensionsData));
+      }
+    } catch (error) {
+      console.error('Failed to export extensions:', error);
+    }
+
+    // Get fine-tuning data
+    let fineTuning = null;
+    try {
+      const fineTuningData = localStorage.getItem('fine-tuning-storage');
+      if (fineTuningData) {
+        fineTuning = JSON.parse(fineTuningData);
+      }
+    } catch (error) {
+      console.error('Failed to export fine-tuning:', error);
+    }
+
+    const data = {
+      settings,
+      conversations,
+      extensions,
+      fineTuning,
+      exportedAt: new Date().toISOString(),
+    };
+
+    const jsonStr = JSON.stringify(data);
+    const base64 = btoa(jsonStr);
+    const deepLink = `lumina://import?data=${encodeURIComponent(base64)}`;
+
+    // Open the deep link
+    window.location.href = deepLink;
+  };
 
   const exportData = () => {
     // Get extensions from localStorage
@@ -128,10 +168,18 @@ export default function DataTab({ settings, conversations, onImportData }: DataT
         <p className="text-sm text-[rgb(var(--muted))] mb-4">
           Export all your data including settings, API keys, providers, models, and conversations to a JSON file.
         </p>
-        <button onClick={exportData} className="btn-primary">
-          <Download size={16} />
-          Export Data to File
-        </button>
+        <div className="flex gap-3">
+          <button onClick={exportData} className="btn-primary">
+            <Download size={16} />
+            Export Data to File
+          </button>
+          {!checkIsTauri() && (
+            <button onClick={exportToDesktop} className="btn-secondary">
+              <Send size={16} />
+              Export to Desktop
+            </button>
+          )}
+        </div>
       </section>
     </div>
   );

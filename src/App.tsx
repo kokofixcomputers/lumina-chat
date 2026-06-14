@@ -60,6 +60,7 @@ export default function App() {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [codeSessions, setCodeSessions] = useState<CodeSession[]>([]);
   const [activeCodeSessionId, setActiveCodeSessionId] = useState<string | null>(null);
+  const [importDataModal, setImportDataModal] = useState<{ data: any; visible: boolean }>({ data: null, visible: false });
   const navigate = useNavigate();
 
   // Extract conversationId from pathname
@@ -173,6 +174,21 @@ export default function App() {
     ]).then(([{ getCurrentWindow }, { LogicalSize }]) => {
       getCurrentWindow().setSize(new LogicalSize(1280, 820)).catch(() => {});
     }).catch(() => {});
+  }, []);
+
+  // Listen for import data from deep links
+  useEffect(() => {
+    const handleImportDeepLink = (event: CustomEvent) => {
+      setImportDataModal({ data: event.detail, visible: true });
+    };
+
+    if (isTauri()) {
+      window.addEventListener('lumina-import-data', handleImportDeepLink as EventListener);
+    }
+
+    return () => {
+      window.removeEventListener('lumina-import-data', handleImportDeepLink as EventListener);
+    };
   }, []);
 
   // Load code sessions on mount (desktop only)
@@ -556,6 +572,14 @@ export default function App() {
         localStorage.setItem('lumina_extensions', JSON.stringify(data.extensions));
       } catch (error) {
         console.error('Failed to import extensions:', error);
+      }
+    }
+    if (data.fineTuning) {
+      try {
+        // Import fine-tuning data
+        localStorage.setItem('fine-tuning-storage', JSON.stringify(data.fineTuning));
+      } catch (error) {
+        console.error('Failed to import fine-tuning:', error);
       }
     }
     if (data.conversations) {
@@ -1297,6 +1321,35 @@ export default function App() {
           onAddProvider={store.addProvider}
           onAddIntegratedProvider={store.addIntegratedProvider}
         />
+      )}
+
+      {importDataModal.visible && (
+        <>
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" />
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4">
+            <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+              <h3 className="text-base font-semibold">Import data from web?</h3>
+              <p className="text-sm text-[rgb(var(--muted))]">This will overwrite all your current data including conversations, settings, providers, extensions, and fine-tuning models. This action cannot be undone.</p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    handleImportData(importDataModal.data);
+                    setImportDataModal({ data: null, visible: false });
+                  }}
+                  className="w-full btn-primary justify-center"
+                >
+                  Yes, Overwrite All Data
+                </button>
+                <button
+                  onClick={() => setImportDataModal({ data: null, visible: false })}
+                  className="w-full btn-secondary justify-center"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {store.storageQuotaExceeded && (

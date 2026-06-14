@@ -50,6 +50,16 @@
     /*   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ NOW it can shrink from 260px down to 180px */
   }
 
+  /* Collapsed state (desktop only — mobile uses the slide-in overlay) */
+  @media (min-width: 768px) {
+    .sidebar {
+      @apply transition-[width,min-width,max-width] duration-300 ease-in-out;
+    }
+    .sidebar.collapsed {
+      @apply min-w-0 max-w-0 w-0 border-r-0 overflow-hidden;
+    }
+  }
+
   .sidebar-item {
     @apply flex items-center gap-2.5 px-3 py-[7px] rounded-xl mx-2
            text-[13px] text-[rgb(var(--text))]

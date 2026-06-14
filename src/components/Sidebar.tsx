@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Home, Settings, Database, MessageSquare,
   Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download,
-  Code2, MessageCircle, FolderOpen, Plus, Image, Monitor
+  Code2, MessageCircle, FolderOpen, Plus, Image, Monitor, PanelLeftClose, PanelLeft
 } from 'lucide-react';
 import type { Conversation, AppSettings } from '../types';
 import type { CodeSession } from '../utils/codeSessionDB';
@@ -80,7 +80,16 @@ export default function Sidebar({
   onRenameCoworkSession,
 }: SidebarProps) {
   const [hoverDel, setHoverDel] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true');
   const [searchOpen, setSearchOpen] = useState(false);
+
+  const toggleCollapse = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebar-collapsed', String(next));
+      return next;
+    });
+  };
   const [searchQ, setSearchQ] = useState('');
   const [todayOpen, setTodayOpen] = useState(true);
   const [olderOpen, setOlderOpen] = useState(true);
@@ -286,15 +295,26 @@ export default function Sidebar({
     <>
       {/* Mobile overlay */}
       {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
           onClick={onClose}
         />
       )}
-      
+
+      {/* Floating reopen button — desktop only, shown when collapsed */}
+      {collapsed && (
+        <button
+          onClick={toggleCollapse}
+          className="hidden md:flex fixed top-3 left-3 z-50 btn-icon shadow-lg items-center justify-center"
+          title="Expand sidebar"
+        >
+          <PanelLeft size={18} />
+        </button>
+      )}
+
       <aside className={`sidebar fixed inset-y-0 left-0 md:relative z-50 transition-transform duration-300 md:translate-x-0 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      } ${collapsed ? 'collapsed' : ''}`}>
       {/* User header */}
       <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-[rgb(var(--border))]">
         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center text-white dark:text-black text-[10px] font-bold shrink-0 select-none shadow-sm">
@@ -310,6 +330,9 @@ export default function Sidebar({
             'text-gray-400'
           }`}
         />
+        <button onClick={toggleCollapse} className="hidden md:flex btn-icon w-6 h-6" title="Collapse sidebar">
+          <PanelLeftClose size={16} />
+        </button>
         <button onClick={onClose} className="md:hidden btn-icon w-6 h-6">
           <X size={16} />
         </button>

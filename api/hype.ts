@@ -19,6 +19,36 @@ export default async function handler(req: Request) {
     });
   }
 
+  // Return all hype counts grouped by os/arch
+  if (req.method === 'GET') {
+    try {
+      const keys = await redis.keys('vote:*');
+      let votes: { os: string; arch: string; count: number }[] = [];
+
+      if (keys.length > 0) {
+        const values = await redis.mget<(number | string | null)[]>(...keys);
+        votes = keys.map((key, i) => {
+          const [, os, arch] = key.split(':');
+          return { os, arch, count: Number(values[i]) || 0 };
+        });
+      }
+
+      return new Response(JSON.stringify({ votes }), {
+        status: 200,
+        headers: corsHeaders(),
+      });
+    } catch (error) {
+      console.error('Hype fetch error:', error);
+      return new Response(JSON.stringify({
+        error: 'Failed to fetch hype counts',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      }), {
+        status: 500,
+        headers: corsHeaders(),
+      });
+    }
+  }
+
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
@@ -69,7 +99,7 @@ export default async function handler(req: Request) {
 function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': '*',
   };
 }

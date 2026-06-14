@@ -18,6 +18,7 @@ import FineTuningList from './pages/FineTuningList';
 import FineTuningDetail from './pages/FineTuningDetail';
 import DownloadPage from './components/DownloadPage';
 import VersionsPage from './components/VersionsPage';
+import HypePage from './components/HypePage';
 import InstallationPage from './components/InstallationPage';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
@@ -1389,6 +1390,7 @@ export default function App() {
         <Route path="/versions/:platform" element={<VersionsPage />} />
         <Route path="/versions/:platform/:arch" element={<VersionsPage />} />
         <Route path="/install" element={<InstallationPage />} />
+        <Route path="/hype" element={<HypePage />} />
         <Route path="*" element={
           <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
             {/* Mobile menu button */}

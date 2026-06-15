@@ -40,6 +40,7 @@ import type { CodeSession } from './utils/codeSessionDB';
 import { codeSessionDB } from './utils/codeSessionDB';
 import type { CoworkSession } from './utils/coworkSessionDB';
 import { coworkSessionDB } from './utils/coworkSessionDB';
+import { imageDB } from './utils/imageDB';
 
 const isTauri = () => typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
@@ -1345,7 +1346,12 @@ export default function App() {
 
     const buildSnapshot = async () => {
       const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
-      const conversations = await SyncIndexedDB.exportConversations();
+      const [conversations, codeSessions, coworkSessions, images] = await Promise.all([
+        SyncIndexedDB.exportConversations(),
+        codeSessionDB.getAll(),
+        coworkSessionDB.getAll(),
+        imageDB.getAll(),
+      ]);
       const rawSettings = localStorage.getItem('lumina_settings');
       const rawExtensions = localStorage.getItem('lumina_extensions');
       const rawFineTuning = localStorage.getItem('fine-tuning-storage');
@@ -1355,6 +1361,9 @@ export default function App() {
         version: 1,
         pushedAt: Date.now(),
         conversations,
+        codeSessions,
+        coworkSessions,
+        images,
         settings: {
           ...safeSettings,
           extensions: rawExtensions ? JSON.parse(rawExtensions) : {},
@@ -1364,7 +1373,9 @@ export default function App() {
     };
 
     const snapshotKey = (snap: any) =>
-      JSON.stringify(snap.conversations) + JSON.stringify(snap.settings);
+      JSON.stringify(snap.conversations) + JSON.stringify(snap.codeSessions) +
+      JSON.stringify(snap.coworkSessions) + JSON.stringify(snap.images) +
+      JSON.stringify(snap.settings);
 
     const mergeRemote = async (data: any) => {
       if (!data) return;
@@ -1376,6 +1387,17 @@ export default function App() {
         const merged = syncUtils.mergeConversationsSafely(local, data.conversations);
         await SyncIndexedDB.importConversations(merged);
         store.setConversations(merged);
+      }
+      if (data.codeSessions?.length) {
+        await codeSessionDB.putAll(data.codeSessions);
+        setCodeSessions(await codeSessionDB.getAll());
+      }
+      if (data.coworkSessions?.length) {
+        await coworkSessionDB.putAll(data.coworkSessions);
+        setCoworkSessions(await coworkSessionDB.getAll());
+      }
+      if (data.images?.length) {
+        await imageDB.putAll(data.images);
       }
       if (data.settings) {
         const { cloudSync: _cs, extensions, fineTuning, ...rest } = data.settings;
@@ -1406,6 +1428,11 @@ export default function App() {
         return;
       }
 
+      // Seed per-DB hashes after initial snapshot so we can detect changes
+      let lastCodeHash = JSON.stringify(await codeSessionDB.getAll());
+      let lastCoworkHash = JSON.stringify(await coworkSessionDB.getAll());
+      let lastImageHash = JSON.stringify(await imageDB.getAll());
+
       // Check for local changes every second — push immediately when something differs
       const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
       changeInterval = setInterval(async () => {
@@ -1418,7 +1445,17 @@ export default function App() {
           const settingsChanged = rawSettings !== (window as any).__fileSyncLastSettings;
           const extensionsChanged = rawExtensions !== (window as any).__fileSyncLastExtensions;
 
-          if (!hasChanges && !settingsChanged && !extensionsChanged) return;
+          const [codeNow, coworkNow, imageNow] = await Promise.all([
+            codeSessionDB.getAll(),
+            coworkSessionDB.getAll(),
+            imageDB.getAll(),
+          ]);
+          const codeHash = JSON.stringify(codeNow);
+          const coworkHash = JSON.stringify(coworkNow);
+          const imageHash = JSON.stringify(imageNow);
+          const extraChanged = codeHash !== lastCodeHash || coworkHash !== lastCoworkHash || imageHash !== lastImageHash;
+
+          if (!hasChanges && !settingsChanged && !extensionsChanged && !extraChanged) return;
 
           pushing = true;
           reportStatus('syncing');
@@ -1426,6 +1463,9 @@ export default function App() {
             await SyncIndexedDB.updateSnapshot();
             (window as any).__fileSyncLastSettings = rawSettings;
             (window as any).__fileSyncLastExtensions = rawExtensions;
+            lastCodeHash = codeHash;
+            lastCoworkHash = coworkHash;
+            lastImageHash = imageHash;
             const snap = await buildSnapshot();
             const key = snapshotKey(snap);
             if (key !== lastPushedJson) {

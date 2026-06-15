@@ -74,6 +74,17 @@ class CodeSessionDB {
       req.onsuccess = () => resolve();
     });
   }
+
+  async putAll(sessions: CodeSession[]): Promise<void> {
+    const db = await this.db_();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_NAME], 'readwrite');
+      tx.onerror = () => reject(tx.error);
+      tx.oncomplete = () => resolve();
+      const store = tx.objectStore(STORE_NAME);
+      for (const s of sessions) store.put(s);
+    });
+  }
 }
 
 export const codeSessionDB = new CodeSessionDB();

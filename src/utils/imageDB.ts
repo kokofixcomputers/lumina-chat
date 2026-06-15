@@ -65,6 +65,17 @@ class ImageDB {
       req.onsuccess = () => resolve();
     });
   }
+
+  async putAll(images: GeneratedImage[]): Promise<void> {
+    const db = await this.db_();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE], 'readwrite');
+      tx.onerror = () => reject(tx.error);
+      tx.oncomplete = () => resolve();
+      const store = tx.objectStore(STORE);
+      for (const img of images) store.put(img);
+    });
+  }
 }
 
 export const imageDB = new ImageDB();

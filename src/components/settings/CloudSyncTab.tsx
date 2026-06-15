@@ -9,7 +9,7 @@ import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from '../../utils
 import type { SyncActionTypes } from '../../types/sync';
 import { getFileSyncStatus, getFileSyncLastSyncedAt, subscribeFileSyncStatus, type FileSyncStatus } from '../../utils/fileSyncStatus';
 
-type Provider = 'lumina' | 's3' | 'webdav';
+type Provider = 'lumina' | 's3' | 'webdav' | 'onedrive';
 
 function dispatchForceSync(action: 'push' | 'pull' | 'both') {
   window.dispatchEvent(new CustomEvent('fileSyncForce', { detail: { action } }));
@@ -67,10 +67,11 @@ interface CloudSyncTabProps {
 
 // ── Custom dropdown ──────────────────────────────────────────────────────────
 
-const PROVIDERS: { id: Provider; label: string; icon: typeof Cloud; desc: string }[] = [
+const PROVIDERS: { id: Provider; label: string; icon: typeof Cloud; desc: string; comingSoon?: boolean }[] = [
   { id: 'lumina', label: 'Lumina Sync', icon: Cloud, desc: 'Real-time sync via Lumina servers' },
   { id: 's3', label: 'Amazon S3 / S3-Compatible', icon: Database, desc: 'Sync to any S3-compatible bucket' },
   { id: 'webdav', label: 'WebDAV', icon: Server, desc: 'Sync to any WebDAV server' },
+  { id: 'onedrive', label: 'OneDrive', icon: Cloud, desc: 'Microsoft OneDrive storage', comingSoon: true },
 ];
 
 function ProviderDropdown({ value, onChange }: { value: Provider; onChange: (v: Provider) => void }) {
@@ -102,17 +103,25 @@ function ProviderDropdown({ value, onChange }: { value: Provider; onChange: (v: 
         <div className="absolute top-full mt-1 left-0 right-0 z-50 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl shadow-xl overflow-hidden">
           {PROVIDERS.map(p => (
             <button
-              key={p.id}
+              key={`${p.id}-${p.comingSoon}`}
               type="button"
-              onClick={() => { onChange(p.id); setOpen(false); }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-black/[0.05] dark:hover:bg-white/[0.05] transition-colors text-left"
+              disabled={p.comingSoon}
+              onClick={() => { if (!p.comingSoon) { onChange(p.id); setOpen(false); } }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${p.comingSoon ? 'opacity-50 cursor-not-allowed' : 'hover:bg-black/[0.05] dark:hover:bg-white/[0.05]'}`}
             >
-              <p.icon size={15} className={p.id === value ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--muted))]'} />
+              <p.icon size={15} className={p.id === value && !p.comingSoon ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--muted))]'} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{p.label}</p>
+                <p className="text-sm font-medium flex items-center gap-2">
+                  {p.label}
+                  {p.comingSoon && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] px-1.5 py-0.5 rounded-full">
+                      Coming soon
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-[rgb(var(--muted))]">{p.desc}</p>
               </div>
-              {p.id === value && <Check size={13} className="text-[rgb(var(--accent))] shrink-0" />}
+              {p.id === value && !p.comingSoon && <Check size={13} className="text-[rgb(var(--accent))] shrink-0" />}
             </button>
           ))}
         </div>

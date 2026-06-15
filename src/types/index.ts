@@ -161,7 +161,7 @@ export interface AppSettings {
     enabled: boolean;
     email: string;
     password: string;
-    provider?: 'lumina' | 's3' | 'webdav';
+    provider?: 'lumina' | 's3' | 'webdav' | 'onedrive';
     s3?: {
       endpoint: string;
       bucket: string;

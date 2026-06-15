@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Upload, Download, Trash2, Wifi, WifiOff, ChevronDown,
-  Cloud, Database, Server, Check, RefreshCw, LogIn, LogOut, Copy,
+  Cloud, Database, Server, Check, RefreshCw, LogIn, LogOut,
 } from 'lucide-react';
 import type { AppSettings } from '../../types';
 import { getSyncManager, destroySyncManager } from '../../utils/syncManager';
@@ -9,11 +9,9 @@ import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from '../../utils
 import type { SyncActionTypes } from '../../types/sync';
 import { getFileSyncStatus, getFileSyncLastSyncedAt, subscribeFileSyncStatus, type FileSyncStatus } from '../../utils/fileSyncStatus';
 import {
-  startDeviceFlow, pollDeviceToken, disconnectOneDrive,
+  startOAuthFlow, disconnectOneDrive,
   isOneDriveConnected, getOneDriveUserInfo,
-  type DeviceCodeResponse,
 } from '../../utils/onedriveSync';
-
 
 type Provider = 'lumina' | 's3' | 'webdav' | 'onedrive';
 
@@ -519,13 +517,9 @@ function OneDriveSection({
 }) {
   const [connected, setConnected] = useState(isOneDriveConnected);
   const [userInfo, setUserInfo] = useState<{ displayName: string; mail: string } | null>(null);
-  const [deviceFlow, setDeviceFlow] = useState<DeviceCodeResponse | null>(null);
-  const [flowState, setFlowState] = useState<'idle' | 'starting' | 'waiting' | 'error'>('idle');
-  const [flowError, setFlowError] = useState('');
-  const [copied, setCopied] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [signing, setSigning] = useState(false);
+  const [error, setError] = useState('');
 
-  // Load user info when connected
   useEffect(() => {
     if (connected) {
       getOneDriveUserInfo().then(setUserInfo).catch(() => setUserInfo(null));
@@ -534,72 +528,26 @@ function OneDriveSection({
     }
   }, [connected]);
 
-  const stopPolling = () => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  };
-
   const handleConnect = async () => {
-    setFlowState('starting');
-    setFlowError('');
+    setSigning(true);
+    setError('');
     try {
-      const flow = await startDeviceFlow();
-      setDeviceFlow(flow);
-      setFlowState('waiting');
-
-      let expired = false;
-      const expireTimer = setTimeout(() => {
-        expired = true;
-        stopPolling();
-        setFlowState('error');
-        setFlowError('Authorization timed out. Please try again.');
-      }, flow.expires_in * 1000);
-
-      pollRef.current = setInterval(async () => {
-        if (expired) return;
-        try {
-          const token = await pollDeviceToken(flow.device_code);
-          if (token) {
-            clearTimeout(expireTimer);
-            stopPolling();
-            setConnected(true);
-            setDeviceFlow(null);
-            setFlowState('idle');
-            onToggleEnabled(true);
-          }
-        } catch (e) {
-          clearTimeout(expireTimer);
-          stopPolling();
-          setFlowState('error');
-          setFlowError(e instanceof Error ? e.message : 'Authentication failed');
-        }
-      }, (flow.interval + 1) * 1000);
+      await startOAuthFlow();
+      setConnected(true);
+      onToggleEnabled(true);
     } catch (e) {
-      setFlowState('error');
-      setFlowError(e instanceof Error ? e.message : 'Failed to start sign-in');
+      setError(e instanceof Error ? e.message : 'Sign-in failed');
+    } finally {
+      setSigning(false);
     }
   };
 
   const handleDisconnect = () => {
-    stopPolling();
     disconnectOneDrive();
     setConnected(false);
-    setDeviceFlow(null);
-    setFlowState('idle');
-    setFlowError('');
+    setError('');
     onToggleEnabled(false);
   };
-
-  const copyCode = () => {
-    if (deviceFlow) {
-      navigator.clipboard.writeText(deviceFlow.user_code).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => () => stopPolling(), []);
 
   return (
     <section className="space-y-4">
@@ -607,48 +555,20 @@ function OneDriveSection({
 
       <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">Microsoft OneDrive</h3>
 
-      {!connected && flowState === 'idle' && (
+      {!connected && (
         <p className="text-sm text-[rgb(var(--muted))]">
-          Sign in with your Microsoft account. Your files are stored in a <code className="bg-black/10 dark:bg-white/10 px-1 rounded">Lumina/</code> folder in OneDrive.
+          Sign in with your Microsoft account. Files are stored in a{' '}
+          <code className="bg-black/10 dark:bg-white/10 px-1 rounded">Lumina/</code> folder in your OneDrive.
         </p>
       )}
 
-      {/* Device code flow UI */}
-      {flowState === 'waiting' && deviceFlow && (
-        <div className="rounded-xl border border-[rgb(var(--accent)/0.4)] bg-[rgb(var(--accent)/0.06)] p-4 space-y-3">
-          <p className="text-sm font-medium">Sign in to Microsoft</p>
-          <p className="text-sm text-[rgb(var(--muted))]">
-            1. Open <a href={deviceFlow.verification_uri} target="_blank" rel="noreferrer" className="text-[rgb(var(--accent))] underline">{deviceFlow.verification_uri}</a> in your browser
-          </p>
-          <p className="text-sm text-[rgb(var(--muted))]">2. Enter this code:</p>
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-2xl font-bold tracking-[0.3em] text-[rgb(var(--text))] select-all">
-              {deviceFlow.user_code}
-            </span>
-            <button
-              onClick={copyCode}
-              className="btn btn-secondary text-xs flex items-center gap-1.5 shrink-0"
-            >
-              <Copy size={12} />
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-[rgb(var(--muted))]">
-            <RefreshCw size={12} className="animate-spin" />
-            Waiting for authorization…
-          </div>
-          <button onClick={handleDisconnect} className="btn btn-secondary text-xs">Cancel</button>
-        </div>
-      )}
-
-      {flowState === 'error' && (
+      {error && (
         <div className="rounded-xl border border-[rgb(var(--danger)/0.4)] bg-[rgb(var(--danger)/0.06)] p-3 text-sm text-[rgb(var(--danger))]">
-          {flowError}
+          {error}
         </div>
       )}
 
-      {/* Connected state */}
-      {connected && (
+      {connected ? (
         <div className="rounded-xl border border-[rgb(var(--success)/0.4)] bg-[rgb(var(--success)/0.06)] p-3 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium text-[rgb(var(--success))]">Connected to OneDrive</p>
@@ -665,16 +585,16 @@ function OneDriveSection({
             <LogOut size={12} /> Disconnect
           </button>
         </div>
-      )}
-
-      {!connected && flowState !== 'waiting' && (
+      ) : (
         <button
-          disabled={flowState === 'starting'}
+          disabled={signing}
           onClick={handleConnect}
           className="btn btn-primary flex items-center gap-2"
         >
           <LogIn size={15} />
-          {flowState === 'starting' ? 'Starting sign-in…' : 'Sign in with Microsoft'}
+          {signing ? (
+            <><RefreshCw size={14} className="animate-spin" /> Opening sign-in…</>
+          ) : 'Sign in with Microsoft'}
         </button>
       )}
 
@@ -685,7 +605,7 @@ function OneDriveSection({
           <div className="flex items-center justify-between">
             <div>
               <label className="form-label mb-0">Enable Sync</label>
-              <p className="form-help mt-0.5">Pushes changes every 5 s · pulls remote every 60 s</p>
+              <p className="form-help mt-0.5">Pushes changes on every edit · pulls remote every 60 s</p>
             </div>
             <button
               onClick={() => onToggleEnabled(!enabled)}

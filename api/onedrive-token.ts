@@ -46,38 +46,30 @@ export default async function handler(req: Request) {
 
   const { action } = body;
 
-  // ── Start device code flow ────────────────────────────────────────────────
-  if (action === 'devicecode') {
-    const res = await fetch(`${MS}/devicecode`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: clientId, scope: SCOPE }).toString(),
-    });
-    const data = await res.json();
-    if (!res.ok) return json({ error: data.error_description ?? data.error }, res.status);
-    return json(data);
+  // ── Return public client ID (needed by frontend to build the auth URL) ─────
+  if (action === 'client_id') {
+    return json({ client_id: clientId });
   }
 
-  // ── Poll for token after device code ─────────────────────────────────────
-  if (action === 'poll') {
-    const { device_code } = body;
-    if (!device_code) return json({ error: 'Missing device_code' }, 400);
+  // ── Exchange auth code for tokens (Auth Code + PKCE) ─────────────────────
+  if (action === 'exchange') {
+    const { code, redirect_uri, code_verifier } = body;
+    if (!code || !redirect_uri || !code_verifier) return json({ error: 'Missing code, redirect_uri, or code_verifier' }, 400);
     const res = await fetch(`${MS}/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id:     clientId,
         client_secret: clientSecret,
-        grant_type:    'urn:ietf:params:oauth:grant-type:device_code',
-        device_code,
+        grant_type:    'authorization_code',
+        code,
+        redirect_uri,
+        code_verifier,
+        scope:         SCOPE,
       }).toString(),
     });
     const data = await res.json();
-    // Pass through pending/slow_down as 202 so the frontend can distinguish
-    if (!res.ok) {
-      const pending = data.error === 'authorization_pending' || data.error === 'slow_down';
-      return json(data, pending ? 202 : res.status);
-    }
+    if (!res.ok) return json({ error: data.error_description ?? data.error }, res.status);
     return json(data);
   }
 

@@ -23,6 +23,7 @@ import VersionsPage from './components/VersionsPage';
 import HypePage from './components/HypePage';
 import MarketplacePage from './components/MarketplacePage';
 import InstallationPage from './components/InstallationPage';
+import OAuthOneDriveCallback from './pages/OAuthOneDriveCallback';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { fileSyncManager } from './utils/fileSyncManager';
@@ -1669,6 +1670,7 @@ export default function App() {
         <Route path="/install" element={<InstallationPage />} />
         <Route path="/hype" element={<HypePage />} />
         <Route path="/marketplace" element={<MarketplacePage />} />
+        <Route path="/oauth/onedrive/callback" element={<OAuthOneDriveCallback />} />
         <Route path="*" element={
           <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
             {/* Mobile menu button */}

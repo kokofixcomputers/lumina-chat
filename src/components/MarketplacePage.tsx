@@ -99,7 +99,10 @@ function Navbar({ view, setView, user, onLogout, navigate }: {
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-4">
         {/* Back + brand */}
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('openSettings', { detail: { tab: 'extensions' } }));
+            navigate('/');
+          }}
           className="btn-icon shrink-0"
           title="Back"
         >

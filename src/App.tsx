@@ -700,6 +700,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleOpenSettings = (e: CustomEvent<{ tab?: string }>) => {
+      if (e.detail?.tab) setSettingsInitialTab(e.detail.tab as any);
+      setPanel('settings');
+    };
+    window.addEventListener('openSettings', handleOpenSettings as EventListener);
+    return () => window.removeEventListener('openSettings', handleOpenSettings as EventListener);
+  }, []);
+
+  useEffect(() => {
     return subscribeSyncStatus(setSyncStatus);
   }, []);
 

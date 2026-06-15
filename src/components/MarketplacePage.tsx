@@ -2,12 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Download, Upload, LogIn, LogOut, UserPlus, Store, Clock,
-  CheckCircle, XCircle, ChevronLeft, AlertCircle, Loader2, Check, ShieldCheck, ShieldAlert,
+  CheckCircle, XCircle, AlertCircle, Loader2, Check, ShieldCheck, ShieldAlert,
+  ArrowLeft, ChevronRight, Package, Eye, EyeOff, LayoutGrid, Shield,
 } from 'lucide-react';
 import { extensionStorage } from '../extensions/extensionStorage';
 import { extensionLoader } from '../extensions/extensionLoader';
 
 const API = '/api/marketplace';
+
+// ── Types ─────────────────────────────────────────────────────────────────
 
 interface MarketExt {
   id: string;
@@ -22,6 +25,7 @@ interface MarketExt {
   reviewedAt?: number;
   reviewNote?: string;
   downloads: number;
+  code?: string;
 }
 
 interface User {
@@ -29,7 +33,9 @@ interface User {
   role: 'user' | 'moderator';
 }
 
-type Tab = 'browse' | 'mine' | 'submit' | 'review';
+type View = 'browse' | 'mine' | 'submit' | 'login' | 'signup' | 'review' | 'review-detail';
+
+// ── API helper ────────────────────────────────────────────────────────────
 
 async function apiFetch(path: string, opts: RequestInit = {}, token?: string) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -38,31 +44,636 @@ async function apiFetch(path: string, opts: RequestInit = {}, token?: string) {
   return res.json();
 }
 
+// ── Shared badge helpers ──────────────────────────────────────────────────
+
+function TypeBadge({ type }: { type?: string }) {
+  return (type ?? 'sandboxed') === 'unsandboxed' ? (
+    <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+      <ShieldAlert size={10} /> Unsandboxed
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+      <ShieldCheck size={10} /> Sandboxed
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: MarketExt['status'] }) {
+  if (status === 'approved') return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+      <CheckCircle size={10} /> Approved
+    </span>
+  );
+  if (status === 'rejected') return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+      <XCircle size={10} /> Rejected
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+      <Clock size={10} /> Pending review
+    </span>
+  );
+}
+
+// ── Top navigation bar ────────────────────────────────────────────────────
+
+function Navbar({ view, setView, user, onLogout, navigate }: {
+  view: View;
+  setView: (v: View) => void;
+  user: User | null;
+  onLogout: () => void;
+  navigate: ReturnType<typeof useNavigate>;
+}) {
+  const navLinks: { id: View; label: string; modOnly?: boolean }[] = [
+    { id: 'browse', label: 'Browse' },
+    ...(user ? [
+      { id: 'mine' as View, label: 'My Extensions' },
+      { id: 'submit' as View, label: 'Submit' },
+    ] : []),
+    ...(user?.role === 'moderator' ? [{ id: 'review' as View, label: 'Review Queue', modOnly: true }] : []),
+  ];
+
+  return (
+    <header className="sticky top-0 z-40 bg-[rgb(var(--bg))]/90 backdrop-blur border-b border-[rgb(var(--border))]">
+      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-4">
+        {/* Back + brand */}
+        <button
+          onClick={() => navigate(-1)}
+          className="btn-icon shrink-0"
+          title="Back"
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <button
+          onClick={() => setView('browse')}
+          className="flex items-center gap-2 font-semibold text-[rgb(var(--text))] hover:opacity-80 transition-opacity shrink-0"
+        >
+          <Store size={18} />
+          Marketplace
+        </button>
+
+        {/* Nav links */}
+        <nav className="flex items-center gap-1 ml-2 flex-1 min-w-0 overflow-x-auto">
+          {navLinks.map(link => (
+            <button
+              key={link.id}
+              onClick={() => setView(link.id)}
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                view === link.id || (link.id === 'review' && view === 'review-detail')
+                  ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))]'
+                  : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
+              } ${link.modOnly ? 'text-purple-500 dark:text-purple-400' : ''}`}
+            >
+              {link.modOnly && <Shield size={12} className="inline mr-1 -mt-0.5" />}
+              {link.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Auth */}
+        <div className="flex items-center gap-2 shrink-0">
+          {user ? (
+            <>
+              <div className="hidden sm:flex items-center gap-1.5 text-sm text-[rgb(var(--muted))]">
+                <span>{user.username}</span>
+                {user.role === 'moderator' && (
+                  <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-[10px] font-medium">MOD</span>
+                )}
+              </div>
+              <button onClick={onLogout} className="btn-icon" title="Sign out">
+                <LogOut size={16} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setView('login')} className="btn-secondary text-sm px-3 py-1.5 inline-flex items-center gap-1.5">
+                <LogIn size={14} /> Sign in
+              </button>
+              <button onClick={() => setView('signup')} className="btn-primary text-sm px-3 py-1.5 inline-flex items-center gap-1.5">
+                <UserPlus size={14} /> Sign up
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ── Auth pages ────────────────────────────────────────────────────────────
+
+function AuthPage({ mode, setView, onSuccess }: {
+  mode: 'login' | 'signup';
+  setView: (v: View) => void;
+  onSuccess: (token: string, user: User) => void;
+}) {
+  const [form, setForm] = useState({ username: '', password: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  const submit = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const data = await apiFetch('/auth', { method: 'POST', body: JSON.stringify({ action: mode, ...form }) });
+      if (data.error) { setError(data.error); return; }
+      localStorage.setItem('market-token', data.token);
+      onSuccess(data.token, { username: data.username, role: data.role });
+    } catch { setError('Network error'); }
+    finally { setLoading(false); }
+  };
+
+  const isLogin = mode === 'login';
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center px-4 py-16 min-h-[calc(100vh-56px)]">
+      <div className="w-full max-w-sm">
+        {/* Icon */}
+        <div className="w-14 h-14 rounded-2xl bg-[rgb(var(--text))] flex items-center justify-center mb-6 mx-auto">
+          {isLogin ? <LogIn size={24} className="text-[rgb(var(--bg))]" /> : <UserPlus size={24} className="text-[rgb(var(--bg))]" />}
+        </div>
+
+        <h1 className="text-2xl font-bold text-center mb-1">{isLogin ? 'Welcome back' : 'Create account'}</h1>
+        <p className="text-sm text-[rgb(var(--muted))] text-center mb-8">
+          {isLogin ? 'Sign in to submit and manage your extensions.' : 'Join to publish extensions to the marketplace.'}
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="form-label">Username</label>
+            <input
+              type="text"
+              placeholder="yourname"
+              value={form.username}
+              onChange={e => setForm(p => ({ ...p, username: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && submit()}
+              className="input w-full"
+              autoFocus
+              autoComplete="username"
+            />
+          </div>
+          <div>
+            <label className="form-label">Password</label>
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={form.password}
+                onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && submit()}
+                className="input w-full pr-10"
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(s => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+              >
+                {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              <AlertCircle size={14} className="shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={submit}
+            disabled={loading || !form.username || !form.password}
+            className="btn-primary w-full py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {loading && <Loader2 size={15} className="animate-spin" />}
+            {isLogin ? 'Sign in' : 'Create account'}
+          </button>
+        </div>
+
+        <p className="text-sm text-center text-[rgb(var(--muted))] mt-6">
+          {isLogin ? "Don't have an account?" : 'Already have an account?'}{' '}
+          <button
+            className="text-[rgb(var(--accent))] hover:underline font-medium"
+            onClick={() => { setView(isLogin ? 'signup' : 'login'); }}
+          >
+            {isLogin ? 'Sign up' : 'Sign in'}
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Browse / Mine extension list ──────────────────────────────────────────
+
+function ExtensionCard({ ext, tab, installing, installed, onInstall, reviewNote, reviewLoading, onReview, onSetNote, onViewDetail }: {
+  ext: MarketExt;
+  tab: View;
+  installing: boolean;
+  installed: boolean;
+  onInstall: () => void;
+  reviewNote: string;
+  reviewLoading: boolean;
+  onReview?: (action: 'approve' | 'reject') => void;
+  onSetNote?: (note: string) => void;
+  onViewDetail?: () => void;
+}) {
+  return (
+    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-5 hover:border-[rgb(var(--accent))]/30 transition-colors">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          {/* Title row */}
+          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+            <h3 className="font-semibold text-[rgb(var(--text))]">{ext.name}</h3>
+            <span className="text-xs text-[rgb(var(--muted))] bg-[rgb(var(--bg))] px-2 py-0.5 rounded-full border border-[rgb(var(--border))]">
+              v{ext.version}
+            </span>
+            <TypeBadge type={ext.type} />
+            {tab === 'mine' && <StatusBadge status={ext.status} />}
+          </div>
+
+          {/* Description */}
+          <p className="text-sm text-[rgb(var(--muted))] mb-2 line-clamp-2">{ext.description}</p>
+
+          {/* Unsandboxed warning */}
+          {(ext.type ?? 'sandboxed') === 'unsandboxed' && tab === 'browse' && (
+            <p className="text-[10px] text-orange-500 flex items-center gap-1 mb-2">
+              <ShieldAlert size={10} /> Full DOM access — only install from trusted authors.
+            </p>
+          )}
+
+          {/* Meta */}
+          <div className="flex items-center gap-4 text-xs text-[rgb(var(--muted))]">
+            <span>by {ext.author}</span>
+            {tab === 'browse' && (
+              <span className="flex items-center gap-1"><Download size={11} />{ext.downloads} installs</span>
+            )}
+            {tab === 'mine' && ext.reviewNote && (
+              <span className="flex items-center gap-1 text-orange-500">
+                <AlertCircle size={11} /> {ext.reviewNote}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          {tab === 'browse' && (
+            <button
+              onClick={onInstall}
+              disabled={installing || installed}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                installed ? 'btn-secondary opacity-70 cursor-default' : 'btn-primary'
+              }`}
+            >
+              {installing ? <Loader2 size={13} className="animate-spin" /> :
+               installed ? <><Check size={13} /> Installed</> :
+               <><Download size={13} /> Install</>}
+            </button>
+          )}
+
+          {tab === 'review' && onViewDetail && (
+            <button
+              onClick={onViewDetail}
+              className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm"
+            >
+              <Eye size={13} /> Review
+              <ChevronRight size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Moderator review detail page ──────────────────────────────────────────
+
+function ReviewDetail({ ext, token, onDone, onBack }: {
+  ext: MarketExt;
+  token: string;
+  onDone: (id: string) => void;
+  onBack: () => void;
+}) {
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState<'approve' | 'reject' | null>(null);
+  const [showCode, setShowCode] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (action: 'approve' | 'reject') => {
+    setLoading(action);
+    setError('');
+    try {
+      const data = await apiFetch('/review', {
+        method: 'POST',
+        body: JSON.stringify({ id: ext.id, action, note }),
+      }, token);
+      if (data.error) { setError(data.error); return; }
+      onDone(ext.id);
+    } catch { setError('Network error'); }
+    finally { setLoading(null); }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      <button onClick={onBack} className="inline-flex items-center gap-2 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors mb-6 text-sm">
+        <ArrowLeft size={16} /> Back to queue
+      </button>
+
+      <div className="grid lg:grid-cols-[1fr_320px] gap-6">
+        {/* Main info */}
+        <div className="space-y-5">
+          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-6">
+            <div className="flex items-center gap-2 flex-wrap mb-3">
+              <h2 className="text-xl font-bold">{ext.name}</h2>
+              <span className="text-sm text-[rgb(var(--muted))] bg-[rgb(var(--bg))] px-2 py-0.5 rounded-full border border-[rgb(var(--border))]">v{ext.version}</span>
+              <TypeBadge type={ext.type} />
+              <StatusBadge status={ext.status} />
+            </div>
+            <p className="text-[rgb(var(--muted))] mb-4">{ext.description}</p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-xs text-[rgb(var(--muted))] mb-0.5">Author</p>
+                <p className="font-medium">{ext.author}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[rgb(var(--muted))] mb-0.5">Submitted by</p>
+                <p className="font-medium">{ext.submittedBy}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[rgb(var(--muted))] mb-0.5">Extension ID</p>
+                <code className="text-xs bg-[rgb(var(--bg))] px-2 py-0.5 rounded border border-[rgb(var(--border))]">{ext.id}</code>
+              </div>
+              <div>
+                <p className="text-xs text-[rgb(var(--muted))] mb-0.5">Submitted</p>
+                <p className="font-medium">{new Date(ext.submittedAt).toLocaleDateString()}</p>
+              </div>
+            </div>
+
+            {(ext.type ?? 'sandboxed') === 'unsandboxed' && (
+              <div className="mt-4 flex items-start gap-2 bg-orange-500/10 border border-orange-500/20 rounded-xl px-4 py-3">
+                <ShieldAlert size={16} className="text-orange-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-orange-400">Unsandboxed extension</p>
+                  <p className="text-xs text-orange-400/80 mt-0.5">This extension requests full DOM and window access. Review the code carefully before approving.</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Code viewer */}
+          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl overflow-hidden">
+            <button
+              onClick={() => setShowCode(s => !s)}
+              className="w-full flex items-center justify-between px-5 py-3.5 text-sm font-medium hover:bg-[rgb(var(--bg))] transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                {showCode ? <EyeOff size={15} /> : <Eye size={15} />}
+                Extension Code
+              </span>
+              <span className="text-xs text-[rgb(var(--muted))]">
+                {ext.code ? `${ext.code.split('\n').length} lines` : 'unavailable'}
+              </span>
+            </button>
+            {showCode && ext.code && (
+              <pre className="overflow-x-auto p-5 text-[11px] font-mono text-[rgb(var(--muted))] bg-[rgb(var(--bg))] border-t border-[rgb(var(--border))] leading-relaxed max-h-[60vh] overflow-y-auto whitespace-pre">
+                {ext.code}
+              </pre>
+            )}
+          </div>
+        </div>
+
+        {/* Decision panel */}
+        <div className="space-y-4">
+          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-5 sticky top-20">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <Shield size={16} className="text-purple-400" />
+              Moderator Decision
+            </h3>
+
+            <div className="mb-4">
+              <label className="form-label">Note to author (optional)</label>
+              <textarea
+                placeholder="Explain your decision, request changes, or leave feedback..."
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                rows={4}
+                className="input w-full resize-none text-sm"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-4">
+                <AlertCircle size={14} className="shrink-0" /> {error}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => submit('approve')}
+                disabled={!!loading}
+                className="btn-primary py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading === 'approve' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                Approve & publish
+              </button>
+              <button
+                onClick={() => submit('reject')}
+                disabled={!!loading}
+                className="py-2.5 flex items-center justify-center gap-2 rounded-lg border border-red-500/30 text-red-500 hover:bg-red-500/10 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                {loading === 'reject' ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                Reject
+              </button>
+            </div>
+
+            <p className="text-[10px] text-[rgb(var(--muted))] mt-3 text-center">
+              Approved extensions are immediately visible in the Browse tab.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Submit page ───────────────────────────────────────────────────────────
+
+function SubmitPage({ token, user, setView }: { token: string; user: User | null; setView: (v: View) => void }) {
+  const [form, setForm] = useState({ id: '', name: '', version: '1.0.0', description: '', author: '', code: '', type: 'sandboxed' as 'sandboxed' | 'unsandboxed' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-[rgb(var(--panel))] border border-[rgb(var(--border))] flex items-center justify-center mb-5">
+          <Upload size={24} className="text-[rgb(var(--muted))]" />
+        </div>
+        <h2 className="text-xl font-bold mb-2">Sign in to submit</h2>
+        <p className="text-[rgb(var(--muted))] mb-6">You need an account to publish extensions to the marketplace.</p>
+        <div className="flex gap-3">
+          <button onClick={() => setView('login')} className="btn-secondary px-5 py-2.5 inline-flex items-center gap-2">
+            <LogIn size={15} /> Sign in
+          </button>
+          <button onClick={() => setView('signup')} className="btn-primary px-5 py-2.5 inline-flex items-center gap-2">
+            <UserPlus size={15} /> Sign up
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const submit = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const data = await apiFetch('/extensions', { method: 'POST', body: JSON.stringify(form) }, token);
+      if (data.error) { setError(data.error); return; }
+      setDone(true);
+    } catch { setError('Network error'); }
+    finally { setLoading(false); }
+  };
+
+  if (done) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
+        <div className="w-14 h-14 rounded-full bg-[rgb(var(--text))] flex items-center justify-center mb-5">
+          <CheckCircle size={28} className="text-[rgb(var(--bg))]" />
+        </div>
+        <h2 className="text-2xl font-bold mb-2">Extension submitted!</h2>
+        <p className="text-[rgb(var(--muted))] mb-8">A moderator will review it before it appears in the marketplace.</p>
+        <div className="flex gap-3">
+          <button onClick={() => { setDone(false); setForm({ id: '', name: '', version: '1.0.0', description: '', author: '', code: '', type: 'sandboxed' }); }} className="btn-secondary px-5 py-2.5">
+            Submit another
+          </button>
+          <button onClick={() => setView('mine')} className="btn-primary px-5 py-2.5 inline-flex items-center gap-2">
+            <Package size={15} /> My Extensions
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold mb-1">Submit an extension</h1>
+        <p className="text-[rgb(var(--muted))]">All extensions are reviewed by a moderator before going live.</p>
+      </div>
+
+      <div className="space-y-5">
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="form-label">Extension ID <span className="text-red-500">*</span></label>
+            <input type="text" placeholder="yourname.weather" value={form.id} onChange={e => setForm(p => ({ ...p, id: e.target.value }))} className="input w-full" />
+            <p className="text-xs text-[rgb(var(--muted))] mt-1">Letters, numbers, dots, dashes. Must be unique.</p>
+          </div>
+          <div>
+            <label className="form-label">Display Name <span className="text-red-500">*</span></label>
+            <input type="text" placeholder="Weather Tool" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="input w-full" />
+          </div>
+          <div>
+            <label className="form-label">Version <span className="text-red-500">*</span></label>
+            <input type="text" placeholder="1.0.0" value={form.version} onChange={e => setForm(p => ({ ...p, version: e.target.value }))} className="input w-full" />
+          </div>
+          <div>
+            <label className="form-label">Author name <span className="text-red-500">*</span></label>
+            <input type="text" placeholder="Your Name" value={form.author} onChange={e => setForm(p => ({ ...p, author: e.target.value }))} className="input w-full" />
+          </div>
+        </div>
+
+        <div>
+          <label className="form-label">Description <span className="text-red-500">*</span></label>
+          <textarea placeholder="What does this extension do?" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} className="input w-full min-h-[80px] resize-y" />
+        </div>
+
+        {/* Type selector */}
+        <div>
+          <label className="form-label mb-2">Extension Type</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['sandboxed', 'unsandboxed'] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setForm(p => ({ ...p, type: t }))}
+                className={`flex items-start gap-2 p-3 rounded-xl border text-left transition-colors ${
+                  form.type === t
+                    ? t === 'unsandboxed' ? 'border-orange-400 bg-orange-500/10' : 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10'
+                    : 'border-[rgb(var(--border))] hover:border-[rgb(var(--accent))]/40'
+                }`}
+              >
+                {t === 'sandboxed'
+                  ? <ShieldCheck size={15} className="text-green-500 mt-0.5 shrink-0" />
+                  : <ShieldAlert size={15} className="text-orange-400 mt-0.5 shrink-0" />}
+                <div>
+                  <p className="text-xs font-semibold capitalize">{t}</p>
+                  <p className="text-[10px] text-[rgb(var(--muted))] mt-0.5">
+                    {t === 'sandboxed' ? 'Tools + UI only. No DOM access.' : 'Full DOM, window, api.dom/app.'}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+          {form.type === 'unsandboxed' && (
+            <p className="text-[10px] text-orange-400 mt-2 flex items-center gap-1">
+              <ShieldAlert size={10} /> Unsandboxed extensions face stricter moderation scrutiny.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="form-label">Extension Code <span className="text-red-500">*</span></label>
+          <textarea
+            placeholder="// Paste your extension code here..."
+            value={form.code}
+            onChange={e => setForm(p => ({ ...p, code: e.target.value }))}
+            className="input w-full font-mono text-xs min-h-[320px] resize-y"
+            spellCheck={false}
+          />
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            <AlertCircle size={14} className="shrink-0" /> {error}
+          </div>
+        )}
+
+        <button
+          onClick={submit}
+          disabled={loading || !form.id || !form.name || !form.description || !form.code}
+          className="btn-primary inline-flex items-center gap-2 px-6 py-3 rounded-full disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+          Submit for Review
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────
+
 export default function MarketplacePage() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>('browse');
+  const [view, setView] = useState<View>('browse');
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState(() => localStorage.getItem('market-token') || '');
-  const [authMode, setAuthMode] = useState<'login' | 'signup' | null>(null);
-  const [authForm, setAuthForm] = useState({ username: '', password: '' });
-  const [authError, setAuthError] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
 
   const [extensions, setExtensions] = useState<MarketExt[]>([]);
   const [listLoading, setListLoading] = useState(false);
 
-  const [submitForm, setSubmitForm] = useState({ id: '', name: '', version: '1.0.0', description: '', author: '', code: '', type: 'sandboxed' as 'sandboxed' | 'unsandboxed' });
-  const [submitError, setSubmitError] = useState('');
-  const [submitLoading, setSubmitLoading] = useState(false);
-  const [submitDone, setSubmitDone] = useState(false);
-
   const [installing, setInstalling] = useState<Record<string, boolean>>({});
   const [installed, setInstalled] = useState<Record<string, boolean>>({});
-
   const [reviewNote, setReviewNote] = useState<Record<string, string>>({});
   const [reviewLoading, setReviewLoading] = useState<Record<string, boolean>>({});
+  const [detailExt, setDetailExt] = useState<MarketExt | null>(null);
 
-  // Check existing token
+  // Restore session
   useEffect(() => {
     if (!token) return;
     apiFetch('/auth', {}, token).then(data => {
@@ -71,7 +682,7 @@ export default function MarketplacePage() {
     });
   }, []);
 
-  // Mark already-installed extensions
+  // Mark installed
   useEffect(() => {
     const local = extensionStorage.getAllExtensions();
     const map: Record<string, boolean> = {};
@@ -79,53 +690,31 @@ export default function MarketplacePage() {
     setInstalled(map);
   }, []);
 
-  const loadExtensions = useCallback(async (t: Tab) => {
+  const loadExtensions = useCallback(async (v: View) => {
+    if (v === 'submit' || v === 'login' || v === 'signup' || v === 'review-detail') return;
     setListLoading(true);
     try {
       let url = '/extensions?status=approved';
-      if (t === 'mine') url = '/extensions?mine=1';
-      if (t === 'review') url = '/extensions?status=pending';
+      if (v === 'mine') url = '/extensions?mine=1';
+      if (v === 'review') url = '/extensions?status=pending';
       const data = await apiFetch(url, {}, token);
       setExtensions(data.extensions || []);
-    } catch {
-      setExtensions([]);
-    } finally {
-      setListLoading(false);
-    }
+    } catch { setExtensions([]); }
+    finally { setListLoading(false); }
   }, [token]);
 
-  useEffect(() => {
-    if (tab === 'submit') return;
-    loadExtensions(tab);
-  }, [tab, loadExtensions]);
-
-  const handleAuth = async () => {
-    setAuthError('');
-    setAuthLoading(true);
-    try {
-      const data = await apiFetch('/auth', {
-        method: 'POST',
-        body: JSON.stringify({ action: authMode, ...authForm }),
-      });
-      if (data.error) { setAuthError(data.error); return; }
-      const t = data.token;
-      setToken(t);
-      localStorage.setItem('market-token', t);
-      setUser({ username: data.username, role: data.role });
-      setAuthMode(null);
-      setAuthForm({ username: '', password: '' });
-    } catch {
-      setAuthError('Network error');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
+  useEffect(() => { loadExtensions(view); }, [view, loadExtensions]);
 
   const handleLogout = async () => {
     await apiFetch('/auth', { method: 'POST', body: JSON.stringify({ action: 'logout' }) }, token);
-    setToken('');
-    setUser(null);
+    setToken(''); setUser(null);
     localStorage.removeItem('market-token');
+    setView('browse');
+  };
+
+  const handleAuthSuccess = (t: string, u: User) => {
+    setToken(t); setUser(u);
+    setView('browse');
   };
 
   const handleInstall = async (id: string) => {
@@ -147,362 +736,155 @@ export default function MarketplacePage() {
     finally { setInstalling(p => ({ ...p, [id]: false })); }
   };
 
-  const handleSubmit = async () => {
-    setSubmitError('');
-    setSubmitLoading(true);
-    try {
-      const data = await apiFetch('/extensions', { method: 'POST', body: JSON.stringify(submitForm) }, token);
-      if (data.error) { setSubmitError(data.error); return; }
-      setSubmitDone(true);
-      setSubmitForm({ id: '', name: '', version: '1.0.0', description: '', author: '', code: '', type: 'sandboxed' });
-    } catch { setSubmitError('Network error'); }
-    finally { setSubmitLoading(false); }
+  const handleReviewDone = (id: string) => {
+    setExtensions(prev => prev.filter(e => e.id !== id));
+    setDetailExt(null);
+    setView('review');
   };
 
-  const handleReview = async (id: string, action: 'approve' | 'reject') => {
-    setReviewLoading(p => ({ ...p, [id]: true }));
-    try {
-      const data = await apiFetch('/review', {
-        method: 'POST',
-        body: JSON.stringify({ id, action, note: reviewNote[id] || '' }),
-      }, token);
-      if (data.error) { alert(data.error); return; }
-      setExtensions(prev => prev.filter(e => e.id !== id));
-    } catch { alert('Review failed'); }
-    finally { setReviewLoading(p => ({ ...p, [id]: false })); }
-  };
-
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'browse', label: 'Browse' },
-    ...(user ? [{ id: 'mine' as Tab, label: 'My Extensions' }, { id: 'submit' as Tab, label: 'Submit' }] : []),
-    ...(user?.role === 'moderator' ? [{ id: 'review' as Tab, label: 'Review' }] : []),
-  ];
+  // ── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[rgb(var(--bg))]">
-      <div className="max-w-4xl mx-auto px-4 py-12 pb-16">
+    <div className="min-h-screen bg-[rgb(var(--bg))] flex flex-col">
+      <Navbar view={view} setView={setView} user={user} onLogout={handleLogout} navigate={navigate} />
 
-        {/* Auth overlay */}
-        {authMode && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-scale-in">
-              <div className="flex items-center gap-2 mb-1">
-                <button onClick={() => { setAuthMode(null); setAuthError(''); }} className="btn-icon">
-                  <ChevronLeft size={16} />
-                </button>
-                <h3 className="font-semibold">{authMode === 'login' ? 'Sign in' : 'Create account'}</h3>
-              </div>
-              <input
-                type="text"
-                placeholder="Username"
-                value={authForm.username}
-                onChange={e => setAuthForm(p => ({ ...p, username: e.target.value }))}
-                className="input w-full"
-                onKeyDown={e => e.key === 'Enter' && handleAuth()}
-                autoFocus
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={authForm.password}
-                onChange={e => setAuthForm(p => ({ ...p, password: e.target.value }))}
-                className="input w-full"
-                onKeyDown={e => e.key === 'Enter' && handleAuth()}
-              />
-              {authError && <p className="text-sm text-red-500">{authError}</p>}
-              <button onClick={handleAuth} disabled={authLoading} className="btn-primary w-full py-2.5 rounded-full flex items-center justify-center gap-2">
-                {authLoading && <Loader2 size={15} className="animate-spin" />}
-                {authMode === 'login' ? 'Sign in' : 'Create account'}
-              </button>
-              <p className="text-xs text-center text-[rgb(var(--muted))]">
-                {authMode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
-                <button className="underline" onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthError(''); }}>
-                  {authMode === 'login' ? 'Sign up' : 'Sign in'}
-                </button>
-              </p>
-            </div>
-          </div>
-        )}
+      {/* Auth pages */}
+      {(view === 'login' || view === 'signup') && (
+        <AuthPage
+          mode={view}
+          setView={setView}
+          onSuccess={handleAuthSuccess}
+        />
+      )}
 
-        {/* Page header */}
-        <div className="mb-10">
-          <button
-            onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-2 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors mb-6"
-          >
-            <ChevronLeft size={20} />
-            Back
-          </button>
+      {/* Submit */}
+      {view === 'submit' && (
+        <SubmitPage token={token} user={user} setView={setView} />
+      )}
 
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[rgb(var(--text))] mb-5">
-                <Store size={28} className="text-[rgb(var(--bg))]" />
-              </div>
-              <h1 className="text-4xl font-bold text-[rgb(var(--text))] mb-2">Extension Marketplace</h1>
-              <p className="text-lg text-[rgb(var(--muted))]">Discover, install, and share Lumina Chat extensions.</p>
-            </div>
+      {/* Review detail */}
+      {view === 'review-detail' && detailExt && (
+        <ReviewDetail
+          ext={detailExt}
+          token={token}
+          onDone={handleReviewDone}
+          onBack={() => setView('review')}
+        />
+      )}
 
-            {/* Auth controls */}
-            <div className="flex items-center gap-2 pt-1">
-              {user ? (
-                <>
-                  <div className="text-sm text-[rgb(var(--muted))]">
-                    {user.username}
-                    {user.role === 'moderator' && (
-                      <span className="ml-2 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">moderator</span>
-                    )}
+      {/* Browse / Mine / Review list */}
+      {(view === 'browse' || view === 'mine' || view === 'review') && (
+        <div className="flex-1">
+          {/* Page hero — browse only */}
+          {view === 'browse' && (
+            <div className="border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40">
+              <div className="max-w-6xl mx-auto px-4 py-10">
+                <div className="flex items-center gap-4 mb-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[rgb(var(--text))] flex items-center justify-center shrink-0">
+                    <LayoutGrid size={22} className="text-[rgb(var(--bg))]" />
                   </div>
-                  <button onClick={handleLogout} className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm">
-                    <LogOut size={14} /> Sign out
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => setAuthMode('login')} className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm">
-                    <LogIn size={14} /> Sign in
-                  </button>
-                  <button onClick={() => setAuthMode('signup')} className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm">
-                    <UserPlus size={14} /> Sign up
-                  </button>
-                </>
-              )}
+                  <div>
+                    <h1 className="text-2xl font-bold">Browse Extensions</h1>
+                    <p className="text-[rgb(var(--muted))] text-sm">Community-built tools and UI enhancements for Lumina Chat.</p>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Tabs */}
-        <div className="flex items-center gap-1 border-b border-[rgb(var(--border))] mb-8">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                tab === t.id
-                  ? 'border-[rgb(var(--text))] text-[rgb(var(--text))]'
-                  : 'border-transparent text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+          {/* Mine hero */}
+          {view === 'mine' && (
+            <div className="border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40">
+              <div className="max-w-6xl mx-auto px-4 py-10">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-[rgb(var(--text))] flex items-center justify-center shrink-0">
+                      <Package size={22} className="text-[rgb(var(--bg))]" />
+                    </div>
+                    <div>
+                      <h1 className="text-2xl font-bold">My Extensions</h1>
+                      <p className="text-[rgb(var(--muted))] text-sm">Extensions you've submitted to the marketplace.</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setView('submit')} className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 shrink-0">
+                    <Upload size={15} /> Submit new
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
-        {/* Browse / Mine / Review */}
-        {(tab === 'browse' || tab === 'mine' || tab === 'review') && (
-          <div className="space-y-3">
+          {/* Review queue hero */}
+          {view === 'review' && (
+            <div className="border-b border-[rgb(var(--border))] bg-purple-500/5">
+              <div className="max-w-6xl mx-auto px-4 py-10">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-500 flex items-center justify-center shrink-0">
+                    <Shield size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <h1 className="text-2xl font-bold">Review Queue</h1>
+                      {extensions.length > 0 && (
+                        <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded-full text-xs font-semibold">
+                          {extensions.length} pending
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[rgb(var(--muted))] text-sm">Review and approve or reject community-submitted extensions.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* List */}
+          <div className="max-w-6xl mx-auto px-4 py-6">
             {listLoading && (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 size={32} className="animate-spin text-[rgb(var(--muted))]" />
+              <div className="flex items-center justify-center py-24">
+                <Loader2 size={28} className="animate-spin text-[rgb(var(--muted))]" />
               </div>
             )}
 
             {!listLoading && extensions.length === 0 && (
-              <div className="text-center py-20 text-[rgb(var(--muted))]">
-                {tab === 'browse' && 'No extensions published yet.'}
-                {tab === 'mine' && "You haven't submitted any extensions yet."}
-                {tab === 'review' && 'No extensions pending review. 🎉'}
-              </div>
-            )}
-
-            {extensions.map(ext => (
-              <div key={ext.id} className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                      <h3 className="font-semibold text-[rgb(var(--text))]">{ext.name}</h3>
-                      <span className="text-xs text-[rgb(var(--muted))] bg-[rgb(var(--bg))] px-2 py-0.5 rounded-full border border-[rgb(var(--border))]">v{ext.version}</span>
-                      {(ext.type ?? 'sandboxed') === 'unsandboxed' ? (
-                        <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-                          <ShieldAlert size={10} /> Unsandboxed
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
-                          <ShieldCheck size={10} /> Sandboxed
-                        </span>
-                      )}
-                      {tab === 'mine' && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          ext.status === 'approved' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
-                          ext.status === 'rejected' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                          'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                        }`}>
-                          {ext.status === 'approved' && <><CheckCircle size={10} className="inline mr-1" />Approved</>}
-                          {ext.status === 'rejected' && <><XCircle size={10} className="inline mr-1" />Rejected</>}
-                          {ext.status === 'pending' && <><Clock size={10} className="inline mr-1" />Pending review</>}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-[rgb(var(--muted))] mb-2">{ext.description}</p>
-                    {(ext.type ?? 'sandboxed') === 'unsandboxed' && (
-                      <p className="text-[10px] text-orange-500 flex items-center gap-1 mb-2">
-                        <ShieldAlert size={10} /> This extension has full DOM access. Only install if you trust the author.
-                      </p>
-                    )}
-                    <div className="flex items-center gap-4 text-xs text-[rgb(var(--muted))]">
-                      <span>by {ext.author}</span>
-                      {tab === 'browse' && (
-                        <span className="flex items-center gap-1"><Download size={11} />{ext.downloads} installs</span>
-                      )}
-                      {tab === 'mine' && ext.reviewNote && (
-                        <span className="flex items-center gap-1 text-orange-500"><AlertCircle size={11} />Reviewer note: {ext.reviewNote}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Install button */}
-                  {tab === 'browse' && (
-                    <button
-                      onClick={() => handleInstall(ext.id)}
-                      disabled={installing[ext.id] || installed[ext.id]}
-                      className={`shrink-0 inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all ${
-                        installed[ext.id] ? 'btn-secondary opacity-70 cursor-default' : 'btn-primary'
-                      }`}
-                    >
-                      {installing[ext.id] ? <Loader2 size={14} className="animate-spin" /> :
-                       installed[ext.id] ? <><Check size={14} /> Installed</> :
-                       <><Download size={14} /> Install</>}
-                    </button>
-                  )}
-
-                  {/* Review buttons */}
-                  {tab === 'review' && (
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => handleReview(ext.id, 'approve')}
-                        disabled={reviewLoading[ext.id]}
-                        className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm"
-                      >
-                        {reviewLoading[ext.id] ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleReview(ext.id, 'reject')}
-                        disabled={reviewLoading[ext.id]}
-                        className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm text-red-500"
-                      >
-                        <XCircle size={13} /> Reject
-                      </button>
-                    </div>
-                  )}
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-[rgb(var(--panel))] border border-[rgb(var(--border))] flex items-center justify-center mb-4">
+                  {view === 'review' ? <Shield size={24} className="text-purple-400" /> : <Package size={24} className="text-[rgb(var(--muted))]" />}
                 </div>
-
-                {/* Per-extension review note */}
-                {tab === 'review' && (
-                  <input
-                    type="text"
-                    placeholder="Optional note to the author..."
-                    value={reviewNote[ext.id] || ''}
-                    onChange={e => setReviewNote(p => ({ ...p, [ext.id]: e.target.value }))}
-                    className="input w-full mt-3 text-sm"
-                  />
+                <p className="text-[rgb(var(--muted))]">
+                  {view === 'browse' && 'No extensions published yet.'}
+                  {view === 'mine' && "You haven't submitted any extensions yet."}
+                  {view === 'review' && 'The queue is empty — all caught up! 🎉'}
+                </p>
+                {view === 'mine' && (
+                  <button onClick={() => setView('submit')} className="btn-primary mt-5 px-5 py-2.5 inline-flex items-center gap-2">
+                    <Upload size={15} /> Submit your first extension
+                  </button>
                 )}
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        {/* Submit */}
-        {tab === 'submit' && (
-          <div className="max-w-2xl space-y-5">
-            {submitDone ? (
-              <div className="text-center py-20 space-y-4">
-                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[rgb(var(--text))]">
-                  <CheckCircle size={28} className="text-[rgb(var(--bg))]" />
-                </div>
-                <h2 className="text-2xl font-bold text-[rgb(var(--text))]">Extension submitted!</h2>
-                <p className="text-[rgb(var(--muted))]">A moderator will review it before it appears in the marketplace.</p>
-                <button onClick={() => setSubmitDone(false)} className="btn-primary px-6 py-2.5 rounded-full">Submit another</button>
-              </div>
-            ) : (
-              <>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="form-label">Extension ID <span className="text-red-500">*</span></label>
-                    <input type="text" placeholder="e.g., yourname.weather" value={submitForm.id} onChange={e => setSubmitForm(p => ({ ...p, id: e.target.value }))} className="input w-full" />
-                    <p className="text-xs text-[rgb(var(--muted))] mt-1">Letters, numbers, dots, underscores, dashes. Must be unique.</p>
-                  </div>
-                  <div>
-                    <label className="form-label">Name <span className="text-red-500">*</span></label>
-                    <input type="text" placeholder="Weather Tool" value={submitForm.name} onChange={e => setSubmitForm(p => ({ ...p, name: e.target.value }))} className="input w-full" />
-                  </div>
-                  <div>
-                    <label className="form-label">Version <span className="text-red-500">*</span></label>
-                    <input type="text" placeholder="1.0.0" value={submitForm.version} onChange={e => setSubmitForm(p => ({ ...p, version: e.target.value }))} className="input w-full" />
-                  </div>
-                  <div>
-                    <label className="form-label">Author display name <span className="text-red-500">*</span></label>
-                    <input type="text" placeholder="Your Name" value={submitForm.author} onChange={e => setSubmitForm(p => ({ ...p, author: e.target.value }))} className="input w-full" />
-                  </div>
-                </div>
-                <div>
-                  <label className="form-label">Description <span className="text-red-500">*</span></label>
-                  <textarea placeholder="What does this extension do?" value={submitForm.description} onChange={e => setSubmitForm(p => ({ ...p, description: e.target.value }))} className="input w-full min-h-[80px] resize-y" />
-                </div>
-                <div>
-                  <label className="form-label mb-2">Extension Type</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSubmitForm(p => ({ ...p, type: 'sandboxed' }))}
-                      className={`flex items-start gap-2 p-3 rounded-lg border text-left transition-colors ${
-                        submitForm.type === 'sandboxed'
-                          ? 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10'
-                          : 'border-[rgb(var(--border))] hover:border-[rgb(var(--accent))]/50'
-                      }`}
-                    >
-                      <ShieldCheck size={15} className="text-green-500 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-semibold">Sandboxed</p>
-                        <p className="text-[10px] text-[rgb(var(--muted))] mt-0.5">Tools + UI only. No DOM access.</p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSubmitForm(p => ({ ...p, type: 'unsandboxed' }))}
-                      className={`flex items-start gap-2 p-3 rounded-lg border text-left transition-colors ${
-                        submitForm.type === 'unsandboxed'
-                          ? 'border-orange-400 bg-orange-500/10'
-                          : 'border-[rgb(var(--border))] hover:border-orange-400/50'
-                      }`}
-                    >
-                      <ShieldAlert size={15} className="text-orange-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-semibold">Unsandboxed</p>
-                        <p className="text-[10px] text-[rgb(var(--muted))] mt-0.5">Full DOM, script injection, api.dom/app.</p>
-                      </div>
-                    </button>
-                  </div>
-                  {submitForm.type === 'unsandboxed' && (
-                    <p className="text-[10px] text-orange-400 mt-2 flex items-center gap-1">
-                      <ShieldAlert size={10} /> Unsandboxed extensions will be reviewed more carefully by moderators.
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="form-label">Extension Code <span className="text-red-500">*</span></label>
-                  <textarea
-                    placeholder="// Paste your extension code here..."
-                    value={submitForm.code}
-                    onChange={e => setSubmitForm(p => ({ ...p, code: e.target.value }))}
-                    className="input w-full font-mono text-xs min-h-[320px] resize-y"
-                    spellCheck={false}
+            {!listLoading && extensions.length > 0 && (
+              <div className="space-y-3">
+                {extensions.map(ext => (
+                  <ExtensionCard
+                    key={ext.id}
+                    ext={ext}
+                    tab={view}
+                    installing={installing[ext.id]}
+                    installed={installed[ext.id]}
+                    onInstall={() => handleInstall(ext.id)}
+                    reviewNote={reviewNote[ext.id] || ''}
+                    reviewLoading={reviewLoading[ext.id]}
+                    onSetNote={n => setReviewNote(p => ({ ...p, [ext.id]: n }))}
+                    onViewDetail={() => { setDetailExt(ext); setView('review-detail'); }}
                   />
-                </div>
-                {submitError && <p className="text-sm text-red-500">{submitError}</p>}
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitLoading || !submitForm.id || !submitForm.name || !submitForm.description || !submitForm.code}
-                  className="btn-primary inline-flex items-center gap-2 px-6 py-3 rounded-full disabled:opacity-50"
-                >
-                  {submitLoading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                  Submit for Review
-                </button>
-              </>
+                ))}
+              </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

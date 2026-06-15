@@ -42,7 +42,6 @@ Extensions let you add custom AI tools, UI elements, DOM behaviour patches, and 
 Open **Settings → Extensions → New Extension**. The editor opens with a template. Every extension must call `api.registerExtension(...)` to identify itself.
 
 ```js
-const api = createChatExtensionAPI();
 
 api.registerExtension({
   id: 'hello.world',
@@ -695,7 +694,6 @@ Moderator usernames are configured via the `MARKETPLACE_MOD_USERNAMES` environme
 A complete extension that adds a sidebar button, prompts the user, and shows a results modal, plus an AI-callable tool:
 
 ```js
-const api = createChatExtensionAPI();
 
 api.registerExtension({
   id: 'demo.word-counter',
@@ -792,7 +790,6 @@ api.ui.toast('Word Counter ready', { type: 'success', duration: 2000 });
 Bypasses React state entirely — directly controls the sidebar DOM element with injected CSS transitions for a smooth slide. Also injects a **pin button** next to the cloud sync icon so the user can lock the sidebar open. Requires **Unsandboxed** mode.
 
 ```js
-const api = createChatExtensionAPI();
 
 api.sandbox.requireUnsandboxed('sidebar.auto-collapse requires Unsandboxed mode for direct DOM control.');
 
@@ -902,7 +899,6 @@ api.dom.onCleanup(expand);
 ### 10.3 Injecting a Custom CSS Theme Patch
 
 ```js
-const api = createChatExtensionAPI();
 
 api.registerExtension({
   id: 'theme.rounded-inputs',

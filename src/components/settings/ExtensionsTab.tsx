@@ -41,7 +41,6 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
 
   const sandboxedTemplate = `// Sandboxed Extension Template
 // Tools + UI only. No DOM/window access.
-const api = createChatExtensionAPI();
 
 api.registerExtension({
   id: 'your.extension.id',
@@ -80,7 +79,6 @@ api.registerExtension({
 
   const unsandboxedTemplate = `// Unsandboxed Extension Template
 // Full access: DOM, window, document, api.dom, api.app, api.ui, tools.
-const api = createChatExtensionAPI();
 
 api.registerExtension({
   id: 'your.extension.id',

@@ -3,6 +3,7 @@
 // Web:   token exchange goes through /api/onedrive-token (Vercel keeps the secret).
 // Tauri: if VITE_ONEDRIVE_CLIENT_ID + VITE_ONEDRIVE_CLIENT_SECRET are baked in,
 //        calls Microsoft directly — no Vercel proxy needed.
+//        Uses WebviewWindow instead of window.open() (popups blocked in Tauri).
 
 import { isTauri } from './tauri';
 import { universalFetch } from './tauriFetch';
@@ -82,6 +83,61 @@ async function msFormPost(url: string, params: Record<string, string>): Promise<
   return fetch(url, { method: 'POST', headers, body });
 }
 
+// ── Tauri OAuth via external browser + deep link ──────────────────────────────
+// Tauri webviews block window.open(). Instead:
+//   1. Open the Microsoft auth URL in the system browser via opener.
+//   2. Microsoft redirects to lumina://oauth/callback?code=...
+//   3. The OS triggers the deep link; the app receives it via onOpenUrl.
+//   4. We extract the code, exchange it, and resolve.
+
+const TAURI_REDIRECT_URI = 'lumina://oauth/callback';
+
+async function openOAuthDeepLinkTauri(
+  authUrl: string,
+  expectedState: string,
+  verifier: string,
+): Promise<OneDriveToken> {
+  const { openUrl }  = await import('@tauri-apps/plugin-opener');
+  const { onOpenUrl } = await import('@tauri-apps/plugin-deep-link');
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let unlisten: (() => void) | undefined;
+
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      unlisten?.();
+      fn();
+    };
+
+    onOpenUrl((urls: string[]) => {
+      for (const raw of urls) {
+        let url: URL;
+        try { url = new URL(raw); } catch { continue; }
+        if (url.protocol !== 'lumina:' || url.pathname !== '/oauth/callback') continue;
+
+        const code     = url.searchParams.get('code') ?? undefined;
+        const retState = url.searchParams.get('state') ?? undefined;
+        const error    = url.searchParams.get('error') ?? undefined;
+        const errorDesc = url.searchParams.get('error_description') ?? undefined;
+
+        if (error) { settle(() => reject(new Error(errorDesc ?? error))); return; }
+        if (retState !== expectedState) { settle(() => reject(new Error('OAuth state mismatch'))); return; }
+        if (!code) { settle(() => reject(new Error('No code in deep link'))); return; }
+
+        exchangeCode(code, TAURI_REDIRECT_URI, verifier)
+          .then(token => settle(() => resolve(token)))
+          .catch(e    => settle(() => reject(e)));
+        return;
+      }
+    }).then(fn => { unlisten = fn; }).catch(reject);
+
+    // Open auth URL in the system browser
+    openUrl(authUrl).catch(reject);
+  });
+}
+
 // ── OAuth: start flow ─────────────────────────────────────────────────────────
 
 /**
@@ -89,10 +145,10 @@ async function msFormPost(url: string, params: Record<string, string>): Promise<
  * the saved OneDriveToken once the user completes the flow.
  */
 export async function startOAuthFlow(): Promise<OneDriveToken> {
-  const verifier   = generateVerifier();
-  const challenge  = await deriveChallenge(verifier);
-  const state      = generateVerifier().slice(0, 16);
-  const redirectUri = getRedirectUri();
+  const verifier    = generateVerifier();
+  const challenge   = await deriveChallenge(verifier);
+  const state       = generateVerifier().slice(0, 16);
+  const redirectUri = isTauri ? TAURI_REDIRECT_URI : getRedirectUri();
 
   // Persist verifier so the callback can retrieve it after the redirect
   sessionStorage.setItem(VERIFIER_KEY, JSON.stringify({ verifier, state }));
@@ -115,6 +171,10 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
   authUrl.searchParams.set('state',                 state);
   authUrl.searchParams.set('response_mode',         'query');
 
+  if (isTauri) {
+    return openOAuthDeepLinkTauri(authUrl.toString(), state, verifier);
+  }
+
   return new Promise((resolve, reject) => {
     const popup = window.open(authUrl.toString(), 'onedrive_oauth', 'width=520,height=680,left=200,top=100');
     if (!popup) { reject(new Error('Popup blocked — please allow popups for this site.')); return; }
@@ -122,6 +182,7 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
     const onMessage = async (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type !== 'onedrive_oauth') return;
+      clearInterval(check);
       window.removeEventListener('message', onMessage);
 
       const { code, state: retState, error, errorDesc } = event.data;

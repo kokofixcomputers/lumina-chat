@@ -1,27 +1,43 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { isTauri } from '../utils/tauri';
 
 /**
  * Rendered inside the OAuth popup window.
- * Reads `code` + `state` from the URL, postMessages them to the opener, then closes.
+ * Reads `code` + `state` from the URL, notifies the opener, then closes.
+ *
+ * Web:   postMessage to window.opener
+ * Tauri: emits 'onedrive_oauth_callback' Tauri event (window.open is not available)
  */
 export default function OAuthOneDriveCallback() {
   const location = useLocation();
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const code  = params.get('code');
-    const state = params.get('state');
-    const error = params.get('error');
-    const errorDesc = params.get('error_description');
+    const payload = {
+      code:      params.get('code')             ?? undefined,
+      state:     params.get('state')            ?? undefined,
+      error:     params.get('error')            ?? undefined,
+      errorDesc: params.get('error_description') ?? undefined,
+    };
 
-    if (window.opener) {
-      window.opener.postMessage(
-        { type: 'onedrive_oauth', code, state, error, errorDesc },
-        window.location.origin,
-      );
+    if (isTauri) {
+      import('@tauri-apps/api/event').then(({ emit }) => {
+        emit('onedrive_oauth_callback', payload).finally(() => {
+          import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+            getCurrentWindow().close();
+          });
+        });
+      });
+    } else {
+      if (window.opener) {
+        window.opener.postMessage(
+          { type: 'onedrive_oauth', ...payload },
+          window.location.origin,
+        );
+      }
+      window.close();
     }
-    window.close();
   }, []);
 
   return (

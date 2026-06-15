@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "main",
+    "onedrive-oauth"
   ],
   "remote": {
     "urls": [
@@ -34,6 +35,7 @@
       "identifier": "fs:scope",
       "allow": [{ "path": "/**" }, { "path": "*" }]
     },
+    "core:webview:allow-create-webview-window",
     "http:default",
     {
       "identifier": "http:allow-fetch",

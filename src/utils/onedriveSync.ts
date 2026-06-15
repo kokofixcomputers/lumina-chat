@@ -29,6 +29,7 @@ export interface OneDriveToken {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
+  publicClient?: boolean; // true when obtained via lumina:// (no client_secret)
 }
 
 export function getStoredToken(): OneDriveToken | null {
@@ -115,7 +116,7 @@ async function openOAuthDeepLinkTauri(
       for (const raw of urls) {
         let url: URL;
         try { url = new URL(raw); } catch { continue; }
-        if (url.protocol !== 'lumina:' || url.pathname !== '/oauth/callback') continue;
+        if (url.protocol !== 'lumina:' || url.host !== 'oauth' || url.pathname !== '/callback') continue;
 
         const code     = url.searchParams.get('code') ?? undefined;
         const retState = url.searchParams.get('state') ?? undefined;
@@ -126,7 +127,7 @@ async function openOAuthDeepLinkTauri(
         if (retState !== expectedState) { settle(() => reject(new Error('OAuth state mismatch'))); return; }
         if (!code) { settle(() => reject(new Error('No code in deep link'))); return; }
 
-        exchangeCode(code, TAURI_REDIRECT_URI, verifier)
+        exchangeCodePublic(code, verifier)
           .then(token => settle(() => resolve(token)))
           .catch(e    => settle(() => reject(e)));
         return;
@@ -136,6 +137,32 @@ async function openOAuthDeepLinkTauri(
     // Open auth URL in the system browser
     openUrl(authUrl).catch(reject);
   });
+}
+
+// Public-client exchange: PKCE only, no client_secret.
+// Uses universalFetch (Tauri HTTP plugin / Rust reqwest) — no browser Origin header.
+async function exchangeCodePublic(code: string, codeVerifier: string): Promise<OneDriveToken> {
+  const clientId = BAKED_CLIENT_ID || await proxyPost({ action: 'client_id' }).then(r => r.json()).then(d => d.client_id as string);
+
+  const res = await msFormPost(`${MS_AUTH}/token`, {
+    client_id:     clientId,
+    grant_type:    'authorization_code',
+    code,
+    redirect_uri:  TAURI_REDIRECT_URI,
+    code_verifier: codeVerifier,
+    scope:         SCOPE,
+  });
+  const data = await res.json() as Record<string, unknown>;
+  if (!res.ok) throw new Error((data.error_description ?? data.error ?? `Exchange failed (${res.status})`) as string);
+
+  const token: OneDriveToken = {
+    accessToken:  data.access_token as string,
+    refreshToken: data.refresh_token as string,
+    expiresAt:    Date.now() + (data.expires_in as number) * 1000,
+    publicClient: true,
+  };
+  saveToken(token);
+  return token;
 }
 
 // ── OAuth: start flow ─────────────────────────────────────────────────────────
@@ -184,6 +211,7 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
       if (event.data?.type !== 'onedrive_oauth') return;
       clearInterval(check);
       window.removeEventListener('message', onMessage);
+      popup.close();
 
       const { code, state: retState, error, errorDesc } = event.data;
       if (error) { reject(new Error(errorDesc ?? error)); return; }
@@ -217,15 +245,18 @@ async function exchangeCode(code: string, redirectUri: string, codeVerifier: str
   let data: Record<string, unknown>;
 
   if (USE_DIRECT) {
-    const res = await msFormPost(`${MS_AUTH}/token`, {
+    // lumina:// is a public-client redirect URI — Microsoft rejects client_secret for it.
+    // PKCE alone is sufficient; only include the secret for confidential-client (https://) URIs.
+    const params: Record<string, string> = {
       client_id:     BAKED_CLIENT_ID,
-      client_secret: BAKED_CLIENT_SECRET,
       grant_type:    'authorization_code',
       code,
       redirect_uri:  redirectUri,
       code_verifier: codeVerifier,
       scope:         SCOPE,
-    });
+    };
+    if (!redirectUri.startsWith('lumina:')) params.client_secret = BAKED_CLIENT_SECRET;
+    const res = await msFormPost(`${MS_AUTH}/token`, params);
     data = await res.json();
     if (!res.ok) throw new Error((data.error_description ?? data.error ?? `Exchange failed (${res.status})`) as string);
   } else {
@@ -238,6 +269,7 @@ async function exchangeCode(code: string, redirectUri: string, codeVerifier: str
     accessToken:  data.access_token as string,
     refreshToken: data.refresh_token as string,
     expiresAt:    Date.now() + (data.expires_in as number) * 1000,
+    publicClient: redirectUri.startsWith('lumina:'),
   };
   saveToken(token);
   return token;
@@ -251,7 +283,18 @@ async function refreshAccessToken(): Promise<string> {
 
   let data: Record<string, unknown>;
 
-  if (USE_DIRECT) {
+  if (stored.publicClient) {
+    // Public client (lumina:// deep-link) — direct MS call via Rust HTTP, no secret
+    const clientId = BAKED_CLIENT_ID || await proxyPost({ action: 'client_id' }).then(r => r.json()).then(d => d.client_id as string);
+    const res = await msFormPost(`${MS_AUTH}/token`, {
+      client_id:     clientId,
+      grant_type:    'refresh_token',
+      refresh_token: stored.refreshToken,
+      scope:         SCOPE,
+    });
+    data = await res.json();
+    if (!res.ok) { saveToken(null); throw new Error((data.error_description ?? data.error ?? `Refresh failed (${res.status})`) as string); }
+  } else if (USE_DIRECT) {
     const res = await msFormPost(`${MS_AUTH}/token`, {
       client_id:     BAKED_CLIENT_ID,
       client_secret: BAKED_CLIENT_SECRET,
@@ -271,6 +314,7 @@ async function refreshAccessToken(): Promise<string> {
     accessToken:  data.access_token as string,
     refreshToken: (data.refresh_token as string | undefined) ?? stored.refreshToken,
     expiresAt:    Date.now() + (data.expires_in as number) * 1000,
+    publicClient: stored.publicClient,
   };
   saveToken(token);
   return token.accessToken;

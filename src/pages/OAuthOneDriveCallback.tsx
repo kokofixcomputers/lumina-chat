@@ -35,8 +35,11 @@ export default function OAuthOneDriveCallback() {
           { type: 'onedrive_oauth', ...payload },
           window.location.origin,
         );
+        // Don't close here — main window closes the popup after handling the message,
+        // so the interval check doesn't see it closed before onMessage fires.
+      } else {
+        window.close();
       }
-      window.close();
     }
   }, []);
 

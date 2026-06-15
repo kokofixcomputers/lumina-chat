@@ -51,7 +51,7 @@ export default async function handler(req: Request) {
     return json({ client_id: clientId });
   }
 
-  // ── Exchange auth code for tokens (Auth Code + PKCE) ─────────────────────
+  // ── Exchange auth code for tokens (Auth Code + PKCE, confidential client) ──
   if (action === 'exchange') {
     const { code, redirect_uri, code_verifier } = body;
     if (!code || !redirect_uri || !code_verifier) return json({ error: 'Missing code, redirect_uri, or code_verifier' }, 400);
@@ -65,6 +65,47 @@ export default async function handler(req: Request) {
         code,
         redirect_uri,
         code_verifier,
+        scope:         SCOPE,
+      }).toString(),
+    });
+    const data = await res.json();
+    if (!res.ok) return json({ error: data.error_description ?? data.error }, res.status);
+    return json(data);
+  }
+
+  // ── Exchange auth code for tokens (Auth Code + PKCE, public/native client) ─
+  // Used for lumina:// deep-link redirect — no client_secret (Microsoft forbids it).
+  if (action === 'exchange_public') {
+    const { code, redirect_uri, code_verifier } = body;
+    if (!code || !redirect_uri || !code_verifier) return json({ error: 'Missing code, redirect_uri, or code_verifier' }, 400);
+    const res = await fetch(`${MS}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:  clientId,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri,
+        code_verifier,
+        scope:      SCOPE,
+      }).toString(),
+    });
+    const data = await res.json();
+    if (!res.ok) return json({ error: data.error_description ?? data.error }, res.status);
+    return json(data);
+  }
+
+  // ── Refresh access token (public/native client, no secret) ───────────────
+  if (action === 'refresh_public') {
+    const { refresh_token } = body;
+    if (!refresh_token) return json({ error: 'Missing refresh_token' }, 400);
+    const res = await fetch(`${MS}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     clientId,
+        grant_type:    'refresh_token',
+        refresh_token,
         scope:         SCOPE,
       }).toString(),
     });

@@ -149,6 +149,21 @@ fn open_accessibility_settings() -> Result<(), String> {
     Ok(())
 }
 
+/// Exchange an OAuth auth code for tokens using pure Rust/reqwest.
+/// This avoids any webview Origin header that would trigger AADSTS90023.
+#[tauri::command]
+async fn ms_token_exchange(params: std::collections::HashMap<String, String>) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let res = client
+        .post("https://login.microsoftonline.com/common/oauth2/v2.0/token")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    res.text().await.map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -167,6 +182,7 @@ pub fn run() {
             scroll_mouse,
             check_accessibility,
             open_accessibility_settings,
+            ms_token_exchange,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

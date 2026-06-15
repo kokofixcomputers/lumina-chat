@@ -84,6 +84,13 @@ async function msFormPost(url: string, params: Record<string, string>): Promise<
   return fetch(url, { method: 'POST', headers, body });
 }
 
+// Calls the ms_token_exchange Rust command — pure reqwest, no webview Origin header.
+async function msTokenExchangeRust(params: Record<string, string>): Promise<Record<string, unknown>> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const text = await invoke<string>('ms_token_exchange', { params });
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
 // ── Tauri OAuth via external browser + deep link ──────────────────────────────
 // Tauri webviews block window.open(). Instead:
 //   1. Open the Microsoft auth URL in the system browser via opener.
@@ -140,11 +147,11 @@ async function openOAuthDeepLinkTauri(
 }
 
 // Public-client exchange: PKCE only, no client_secret.
-// Uses universalFetch (Tauri HTTP plugin / Rust reqwest) — no browser Origin header.
+// Uses a Rust Tauri command (pure reqwest, no webview) to avoid AADSTS90023
+// cross-origin rejection that occurs even with the Tauri HTTP plugin.
 async function exchangeCodePublic(code: string, codeVerifier: string): Promise<OneDriveToken> {
   const clientId = BAKED_CLIENT_ID || await proxyPost({ action: 'client_id' }).then(r => r.json()).then(d => d.client_id as string);
-
-  const res = await msFormPost(`${MS_AUTH}/token`, {
+  const data = await msTokenExchangeRust({
     client_id:     clientId,
     grant_type:    'authorization_code',
     code,
@@ -152,8 +159,7 @@ async function exchangeCodePublic(code: string, codeVerifier: string): Promise<O
     code_verifier: codeVerifier,
     scope:         SCOPE,
   });
-  const data = await res.json() as Record<string, unknown>;
-  if (!res.ok) throw new Error((data.error_description ?? data.error ?? `Exchange failed (${res.status})`) as string);
+  if (data.error) throw new Error((data.error_description ?? data.error) as string);
 
   const token: OneDriveToken = {
     accessToken:  data.access_token as string,
@@ -284,16 +290,15 @@ async function refreshAccessToken(): Promise<string> {
   let data: Record<string, unknown>;
 
   if (stored.publicClient) {
-    // Public client (lumina:// deep-link) — direct MS call via Rust HTTP, no secret
+    // Public client (lumina:// deep-link) — Rust command, no webview Origin header
     const clientId = BAKED_CLIENT_ID || await proxyPost({ action: 'client_id' }).then(r => r.json()).then(d => d.client_id as string);
-    const res = await msFormPost(`${MS_AUTH}/token`, {
+    data = await msTokenExchangeRust({
       client_id:     clientId,
       grant_type:    'refresh_token',
       refresh_token: stored.refreshToken,
       scope:         SCOPE,
     });
-    data = await res.json();
-    if (!res.ok) { saveToken(null); throw new Error((data.error_description ?? data.error ?? `Refresh failed (${res.status})`) as string); }
+    if (data.error) { saveToken(null); throw new Error((data.error_description ?? data.error ?? 'Refresh failed') as string); }
   } else if (USE_DIRECT) {
     const res = await msFormPost(`${MS_AUTH}/token`, {
       client_id:     BAKED_CLIENT_ID,

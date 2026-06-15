@@ -12,15 +12,25 @@
 import { isTauri } from './tauri';
 import { universalFetch } from './tauriFetch';
 
-// ── Proxy URL ─────────────────────────────────────────────────────────────────
-// On web: relative path works because we're on the same Vercel deployment.
-// On Tauri: needs the absolute Vercel URL — set VITE_APP_URL in .env.
-const APP_BASE = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '') ?? '';
-const TOKEN_PROXY = `${APP_BASE}/api/onedrive-token`;
-
-const GRAPH = 'https://graph.microsoft.com/v1.0';
-const FOLDER = 'Lumina';
+const GRAPH   = 'https://graph.microsoft.com/v1.0';
+const MS_AUTH = 'https://login.microsoftonline.com/common/oauth2/v2.0';
+const SCOPE   = 'Files.ReadWrite offline_access User.Read';
+const FOLDER  = 'Lumina';
 const TOKEN_KEY = 'lumina_onedrive_auth';
+
+// ── Credential strategy ───────────────────────────────────────────────────────
+// Desktop (Tauri): CLIENT_ID + CLIENT_SECRET baked in at build time via
+//   VITE_ONEDRIVE_CLIENT_ID / VITE_ONEDRIVE_CLIENT_SECRET in .env.
+//   Calls Microsoft directly — no Vercel proxy needed.
+// Web: credentials stay server-side in Vercel env vars; frontend calls
+//   /api/onedrive-token which adds them before forwarding to Microsoft.
+
+const BAKED_CLIENT_ID     = (import.meta.env.VITE_ONEDRIVE_CLIENT_ID     as string | undefined) ?? '';
+const BAKED_CLIENT_SECRET = (import.meta.env.VITE_ONEDRIVE_CLIENT_SECRET as string | undefined) ?? '';
+const USE_DIRECT = !!(BAKED_CLIENT_ID && BAKED_CLIENT_SECRET);
+
+const APP_BASE    = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const TOKEN_PROXY = `${APP_BASE}/api/onedrive-token`;
 
 // ── Token storage ─────────────────────────────────────────────────────────────
 
@@ -47,11 +57,16 @@ export function disconnectOneDrive(): void {
   saveToken(null);
 }
 
-// ── Auth proxy calls ──────────────────────────────────────────────────────────
+// ── Auth calls ────────────────────────────────────────────────────────────────
+
+async function msPost(url: string, params: Record<string, string>): Promise<Response> {
+  const body = new URLSearchParams(params).toString();
+  const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+  if (isTauri) return universalFetch(url, { method: 'POST', headers, body });
+  return fetch(url, { method: 'POST', headers, body });
+}
 
 async function proxyPost(body: Record<string, string>): Promise<Response> {
-  // Both web and Tauri can POST to the Vercel function over HTTPS.
-  // We use universalFetch so Tauri's native HTTP plugin handles it.
   if (isTauri) {
     return universalFetch(TOKEN_PROXY, {
       method: 'POST',
@@ -66,6 +81,39 @@ async function proxyPost(body: Record<string, string>): Promise<Response> {
   });
 }
 
+/** POST to Microsoft directly (baked credentials) or through Vercel proxy. */
+async function authPost(action: string, extra: Record<string, string> = {}): Promise<Response> {
+  if (USE_DIRECT) {
+    // Call Microsoft directly with baked-in credentials
+    if (action === 'devicecode') {
+      return msPost(`${MS_AUTH}/devicecode`, {
+        client_id: BAKED_CLIENT_ID,
+        scope: SCOPE,
+        ...extra,
+      });
+    }
+    if (action === 'poll') {
+      return msPost(`${MS_AUTH}/token`, {
+        client_id:     BAKED_CLIENT_ID,
+        client_secret: BAKED_CLIENT_SECRET,
+        grant_type:    'urn:ietf:params:oauth:grant-type:device_code',
+        ...extra,
+      });
+    }
+    if (action === 'refresh') {
+      return msPost(`${MS_AUTH}/token`, {
+        client_id:     BAKED_CLIENT_ID,
+        client_secret: BAKED_CLIENT_SECRET,
+        grant_type:    'refresh_token',
+        scope:         SCOPE,
+        ...extra,
+      });
+    }
+  }
+  // Fall back to Vercel proxy (web builds)
+  return proxyPost({ action, ...extra });
+}
+
 // ── Device Code flow ──────────────────────────────────────────────────────────
 
 export interface DeviceCodeResponse {
@@ -78,10 +126,10 @@ export interface DeviceCodeResponse {
 }
 
 export async function startDeviceFlow(): Promise<DeviceCodeResponse> {
-  const res = await proxyPost({ action: 'devicecode' });
+  const res = await authPost('devicecode');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? `Device code request failed (${res.status})`);
+    throw new Error(err.error_description ?? err.error ?? `Device code request failed (${res.status})`);
   }
   return res.json();
 }
@@ -91,11 +139,13 @@ export async function startDeviceFlow(): Promise<DeviceCodeResponse> {
  * Throws on real errors (expired, declined, server error).
  */
 export async function pollDeviceToken(deviceCode: string): Promise<OneDriveToken | null> {
-  const res = await proxyPost({ action: 'poll', device_code: deviceCode });
+  const res = await authPost('poll', { device_code: deviceCode });
   const data = await res.json();
 
-  // 202 = authorization_pending or slow_down → keep waiting
+  // Direct path: Microsoft returns 400 with authorization_pending
+  // Proxy path: Vercel returns 202 for pending
   if (res.status === 202) return null;
+  if (!res.ok && (data.error === 'authorization_pending' || data.error === 'slow_down')) return null;
 
   if (!res.ok) {
     throw new Error(data.error_description ?? data.error ?? `Token poll failed (${res.status})`);
@@ -116,7 +166,7 @@ async function refreshAccessToken(): Promise<string> {
   const stored = getStoredToken();
   if (!stored) throw new Error('Not authenticated with OneDrive');
 
-  const res = await proxyPost({ action: 'refresh', refresh_token: stored.refreshToken });
+  const res = await authPost('refresh', { refresh_token: stored.refreshToken });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     // Refresh token revoked / expired — force re-auth

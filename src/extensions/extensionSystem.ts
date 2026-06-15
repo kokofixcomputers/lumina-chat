@@ -3,6 +3,44 @@ import { extensionUIRegistry } from './extensionUIRegistry';
 import type { ToastType, AlertType, ButtonLocation } from './extensionUIRegistry';
 import { extensionPatchRegistry } from './extensionPatchRegistry';
 
+const EXT_STORES_KEY = 'lumina_ext_stores';
+
+function readAllStores(): Record<string, Record<string, unknown>> {
+  try { return JSON.parse(localStorage.getItem(EXT_STORES_KEY) || '{}'); } catch { return {}; }
+}
+
+function writeAllStores(stores: Record<string, Record<string, unknown>>) {
+  localStorage.setItem(EXT_STORES_KEY, JSON.stringify(stores));
+  // Let the file-sync polling detect the change naturally (it watches localStorage)
+  window.dispatchEvent(new CustomEvent('lumina:ext:store:changed'));
+}
+
+/** Read all extension KV stores — used by the cloud sync layer. */
+export function getExtensionStores(): Record<string, Record<string, unknown>> {
+  return readAllStores();
+}
+
+/** Restore all extension KV stores from a cloud snapshot — used by the cloud sync layer. */
+export function setExtensionStores(stores: Record<string, Record<string, unknown>>) {
+  localStorage.setItem(EXT_STORES_KEY, JSON.stringify(stores));
+}
+
+function makeExtensionStorage(extensionId: string): ExtensionStorageAPI {
+  const read = (): Record<string, unknown> => readAllStores()[extensionId] ?? {};
+  const write = (store: Record<string, unknown>) => {
+    const all = readAllStores();
+    all[extensionId] = store;
+    writeAllStores(all);
+  };
+  return {
+    get: <T>(key: string) => read()[key] as T | undefined,
+    set: (key, value) => { const s = read(); s[key] = value; write(s); },
+    delete: (key) => { const s = read(); delete s[key]; write(s); },
+    getAll: () => ({ ...read() }),
+    clear: () => write({}),
+  };
+}
+
 export interface ExtensionTool {
   name: string;
   description: string;
@@ -107,6 +145,19 @@ export interface ExtensionAppAPI {
   on(event: string, handler: (detail: unknown) => void): () => void;
 }
 
+export interface ExtensionStorageAPI {
+  /** Get a value by key. Returns undefined if not set. */
+  get<T = unknown>(key: string): T | undefined;
+  /** Set a key-value pair. Persists to localStorage and syncs to cloud if enabled. */
+  set(key: string, value: unknown): void;
+  /** Delete a key. */
+  delete(key: string): void;
+  /** Get all key-value pairs for this extension. */
+  getAll(): Record<string, unknown>;
+  /** Delete all keys for this extension. */
+  clear(): void;
+}
+
 export interface ExtensionSandboxAPI {
   /** Returns true if this extension is running sandboxed (no DOM/app access). */
   isSandboxed(): boolean;
@@ -133,6 +184,7 @@ export interface ExtensionAPI {
   dom: ExtensionDOMAPI;
   app: ExtensionAppAPI;
   sandbox: ExtensionSandboxAPI;
+  storage: ExtensionStorageAPI;
 }
 
 export interface SandboxedExtensionAPI {
@@ -142,6 +194,7 @@ export interface SandboxedExtensionAPI {
   getExtension: (id: string) => Extension | null;
   ui: ExtensionUIAPI;
   sandbox: ExtensionSandboxAPI;
+  storage: ExtensionStorageAPI;
 }
 
 class ExtensionManager {
@@ -216,6 +269,8 @@ class ExtensionManager {
       on: (event, handler) => pr.on(eid, window, `lumina:ext:${event}`, (e) => handler((e as CustomEvent).detail)),
     };
 
+    const storage = makeExtensionStorage(eid);
+
     return {
       registerExtension: (extension: Extension) => this.registerExtension(extension),
       unregisterExtension: (id: string) => this.unregisterExtension(id),
@@ -225,6 +280,7 @@ class ExtensionManager {
       dom,
       app,
       sandbox,
+      storage,
     };
   }
 
@@ -491,6 +547,7 @@ export function createSandboxedExtensionAPI(extensionId?: string): SandboxedExte
     getExtension: full.getExtension,
     ui: full.ui,
     sandbox: full.sandbox,
+    storage: full.storage,
   };
 }
 

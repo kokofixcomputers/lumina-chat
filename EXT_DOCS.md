@@ -30,10 +30,11 @@ Extensions let you add custom AI tools, UI elements, DOM behaviour patches, and 
 6. [App API (`api.app`)](#6-app-api-apiapp)
    - [Sidebar Control](#61-sidebar-control)
    - [Cross-Extension Events](#62-cross-extension-events)
-7. [Cleanup & Lifecycle](#7-cleanup--lifecycle)
-8. [Sandbox & Limitations](#8-sandbox--limitations)
-9. [Marketplace](#9-marketplace)
-10. [Full Examples](#10-full-examples)
+7. [Storage API (`api.storage`)](#7-storage-api-apistorage)
+8. [Cleanup & Lifecycle](#8-cleanup--lifecycle)
+9. [Sandbox & Limitations](#9-sandbox--limitations)
+10. [Marketplace](#10-marketplace)
+11. [Full Examples](#11-full-examples)
 
 ---
 
@@ -612,7 +613,103 @@ api.app.on('tick', ({ time }) => {
 
 ---
 
-## 7. Cleanup & Lifecycle
+## 7. Storage API (`api.storage`)
+
+`api.storage` is a simple key-value store scoped to your extension. Data is persisted in `localStorage` and automatically included in cloud sync (S3, WebDAV, or Lumina Sync) if the user has it enabled. Every extension has its own namespace — extensions cannot read each other's data.
+
+Available in both **sandboxed** and **unsandboxed** modes.
+
+### Methods
+
+```js
+api.storage.set(key, value)   // store any JSON-serialisable value
+api.storage.get(key)          // → value | undefined
+api.storage.delete(key)       // remove a key
+api.storage.getAll()          // → { key: value, ... } (a copy of all stored pairs)
+api.storage.clear()           // delete everything for this extension
+```
+
+### Basic usage
+
+```js
+// Save a user preference
+api.storage.set('theme', 'dark');
+api.storage.set('count', 42);
+api.storage.set('tags', ['one', 'two']);
+
+// Read it back (any type is preserved)
+const theme = api.storage.get('theme');   // → 'dark'
+const count = api.storage.get('count');   // → 42
+
+// Read all pairs at once
+const all = api.storage.getAll();
+// → { theme: 'dark', count: 42, tags: ['one', 'two'] }
+
+// Remove one key
+api.storage.delete('theme');
+
+// Wipe everything
+api.storage.clear();
+```
+
+### Storing objects
+
+Any JSON-serialisable value works — strings, numbers, booleans, arrays, and plain objects:
+
+```js
+api.storage.set('config', {
+  enabled: true,
+  interval: 5000,
+  labels: ['a', 'b'],
+});
+
+const cfg = api.storage.get('config');
+// → { enabled: true, interval: 5000, labels: ['a', 'b'] }
+```
+
+### Reading on startup
+
+`api.storage.get` is synchronous and available immediately when your extension code runs. A common pattern is to read saved settings at the top of your extension and fall back to a default:
+
+```js
+const interval = api.storage.get('pollInterval') ?? 10_000;
+
+api.dom.setInterval(() => {
+  // do something every `interval` ms
+}, interval);
+```
+
+### Prompting users to configure settings
+
+```js
+api.ui.addButton({
+  label: 'Settings',
+  icon: '⚙️',
+  location: 'sidebar',
+  onClick: async () => {
+    const current = api.storage.get('apiKey') ?? '';
+    const key = await api.ui.prompt('Enter your API key:', {
+      title: 'Configure My Extension',
+      defaultValue: current,
+      placeholder: 'sk-...',
+    });
+    if (key !== null) {
+      api.storage.set('apiKey', key);
+      api.ui.toast('API key saved', { type: 'success' });
+    }
+  },
+});
+```
+
+### Cloud sync behaviour
+
+When the user enables S3, WebDAV, or Lumina Sync, all extension storage is included in the sync payload and merged across devices automatically. No extra code is needed — `api.storage.set` triggers the sync pipeline the same way any other data change does.
+
+On a fresh device, data is pulled from the remote and available through `api.storage.get` after the initial sync completes (usually within a few seconds of app load).
+
+---
+
+## 8. Cleanup & Lifecycle
 
 Every `api.dom.*` call and `api.app.on` / `api.app.sidebar.onChange` registers a cleanup function internally. When an extension is **disabled**, **deleted**, or the page is **reloaded with the extension off**, all of the following happen automatically:
 
@@ -626,12 +723,13 @@ Every `api.dom.*` call and `api.app.on` / `api.app.sidebar.onChange` registers a
 | `api.ui.addButton` | button removed from toolbar/sidebar |
 | `api.ui.addSidebarSection` | section removed from sidebar |
 | `api.app.on` / `sidebar.onChange` | `removeEventListener` |
+| `api.storage.set` | **Not cleaned up** — storage is intentionally persistent across enable/disable cycles. Call `api.storage.clear()` explicitly if you want to wipe it. |
 
 You do **not** need to call any remove/cleanup functions yourself unless you want to tear down something early.
 
 ---
 
-## 8. Sandbox & Limitations
+## 9. Sandbox & Limitations
 
 Extensions run inside `new Function(...)`. The following globals are **intentionally not blocked** at the sandbox level — instead, the `api.dom` wrappers are the recommended way to access the DOM because all side-effects registered through `api.dom` are automatically cleaned up when the extension is disabled.
 
@@ -648,7 +746,7 @@ The following globals are explicitly **blocked** as they provide no legitimate e
 |---------|--------|
 | `eval`, `Function` | Prevent code injection |
 | `fetch`, `XMLHttpRequest`, `WebSocket` | Network access is restricted |
-| `localStorage`, `sessionStorage`, `indexedDB` | Storage is scoped to the host app |
+| `localStorage`, `sessionStorage`, `indexedDB` | Use `api.storage` instead — it is scoped to your extension and cloud-synced |
 | `crypto`, `navigator`, `location`, `history` | Sensitive browser APIs |
 | `process`, `require`, `import`, `global` | Node/module globals |
 
@@ -662,7 +760,7 @@ The following **are available** as plain globals:
 
 ---
 
-## 9. Marketplace
+## 10. Marketplace
 
 The Extension Marketplace is at `/marketplace`. It requires a free account.
 
@@ -687,9 +785,9 @@ Moderator usernames are configured via the `MARKETPLACE_MOD_USERNAMES` environme
 
 ---
 
-## 10. Full Examples
+## 11. Full Examples
 
-### 10.1 Word Counter (UI + Tool)
+### 11.1 Word Counter (UI + Tool)
 
 A complete extension that adds a sidebar button, prompts the user, and shows a results modal, plus an AI-callable tool:
 
@@ -785,7 +883,7 @@ api.ui.addButton({
 api.ui.toast('Word Counter ready', { type: 'success', duration: 2000 });
 ```
 
-### 10.2 Auto-Collapse Sidebar on Mouse Leave
+### 11.2 Auto-Collapse Sidebar on Mouse Leave
 
 Bypasses React state entirely — directly controls the sidebar DOM element with injected CSS transitions for a smooth slide. Also injects a **pin button** next to the cloud sync icon so the user can lock the sidebar open. Requires **Unsandboxed** mode.
 
@@ -896,7 +994,7 @@ if (sidebar) {
 api.dom.onCleanup(expand);
 ```
 
-### 10.3 Injecting a Custom CSS Theme Patch
+### 11.3 Injecting a Custom CSS Theme Patch
 
 ```js
 

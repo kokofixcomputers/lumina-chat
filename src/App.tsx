@@ -27,6 +27,7 @@ import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { fileSyncManager } from './utils/fileSyncManager';
 import { setFileSyncStatus } from './utils/fileSyncStatus';
+import { getExtensionStores, setExtensionStores } from './extensions/extensionSystem';
 import { mergeConversations } from './utils/mergeConversations';
 import { extensionLoader } from './extensions/extensionLoader';
 import { shouldSkipExtensions } from './components/ErrorBoundary';
@@ -1367,6 +1368,7 @@ export default function App() {
           ...safeSettings,
           extensions: rawExtensions ? JSON.parse(rawExtensions) : {},
           fineTuning: rawFineTuning ? JSON.parse(rawFineTuning) : undefined,
+          extensionStores: getExtensionStores(),
         },
       };
     };
@@ -1401,11 +1403,12 @@ export default function App() {
         if (remoteImages.length) await imageDB.putAll(remoteImages as any[]);
       } catch { /* ignore image pull errors during merge */ }
       if (data.settings) {
-        const { cloudSync: _cs, extensions, fineTuning, ...rest } = data.settings;
+        const { cloudSync: _cs, extensions, fineTuning, extensionStores, ...rest } = data.settings;
         const current = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
         localStorage.setItem('lumina_settings', JSON.stringify({ ...rest, cloudSync: current.cloudSync }));
         if (extensions) localStorage.setItem('lumina_extensions', JSON.stringify(extensions));
         if (fineTuning) localStorage.setItem('fine-tuning-storage', JSON.stringify(fineTuning));
+        if (extensionStores) setExtensionStores(extensionStores);
       }
     };
 
@@ -1445,8 +1448,10 @@ export default function App() {
           const { hasChanges } = await SyncIndexedDB.checkForChanges();
           const rawSettings = localStorage.getItem('lumina_settings');
           const rawExtensions = localStorage.getItem('lumina_extensions');
+          const rawExtStores = localStorage.getItem('lumina_ext_stores');
           const settingsChanged = rawSettings !== (window as any).__fileSyncLastSettings;
           const extensionsChanged = rawExtensions !== (window as any).__fileSyncLastExtensions;
+          const extStoresChanged = rawExtStores !== (window as any).__fileSyncLastExtStores;
 
           const [codeNow, coworkNow, imageNow] = await Promise.all([
             codeSessionDB.getAll(),
@@ -1458,7 +1463,7 @@ export default function App() {
           const imageHash = JSON.stringify(imageNow);
           const extraChanged = codeHash !== lastCodeHash || coworkHash !== lastCoworkHash || imageHash !== lastImageHash;
 
-          if (!hasChanges && !settingsChanged && !extensionsChanged && !extraChanged) return;
+          if (!hasChanges && !settingsChanged && !extensionsChanged && !extStoresChanged && !extraChanged) return;
 
           pushing = true;
           reportStatus('syncing');
@@ -1466,6 +1471,7 @@ export default function App() {
             await SyncIndexedDB.updateSnapshot();
             (window as any).__fileSyncLastSettings = rawSettings;
             (window as any).__fileSyncLastExtensions = rawExtensions;
+            (window as any).__fileSyncLastExtStores = rawExtStores;
             lastCodeHash = codeHash;
             lastCoworkHash = coworkHash;
             // Push new images as individual files (deduped)
@@ -1513,6 +1519,7 @@ export default function App() {
     // Seed tracking vars so first-run doesn't false-positive on settings change
     (window as any).__fileSyncLastSettings = localStorage.getItem('lumina_settings');
     (window as any).__fileSyncLastExtensions = localStorage.getItem('lumina_extensions');
+    (window as any).__fileSyncLastExtStores = localStorage.getItem('lumina_ext_stores');
 
     const handleForceSync = async (e: Event) => {
       const action = (e as CustomEvent<{ action: 'push' | 'pull' | 'both' }>).detail?.action;

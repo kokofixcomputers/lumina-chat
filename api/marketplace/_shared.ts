@@ -79,7 +79,13 @@ export async function getSession(req: Request): Promise<SessionRecord | null> {
   const auth = req.headers.get('authorization') || '';
   const token = auth.replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
-  return redis.get<SessionRecord>(`market:token:${token}`);
+  const session = await redis.get<SessionRecord>(`market:token:${token}`);
+  if (!session) return null;
+  // Always re-derive role from the env var — never trust the value stored in the session.
+  // This means adding/removing a mod username takes effect immediately without re-login,
+  // and a leaked or tampered token can never claim privileges the username doesn't have.
+  const role = isModUsername(session.username) ? 'moderator' : 'user';
+  return { username: session.username, role };
 }
 
 export function isModUsername(username: string): boolean {

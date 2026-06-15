@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Download, Upload, LogIn, LogOut, UserPlus, Store, Clock,
   CheckCircle, XCircle, AlertCircle, Loader2, Check, ShieldCheck, ShieldAlert,
-  ArrowLeft, ChevronRight, Package, Eye, EyeOff, LayoutGrid, Shield,
+  ArrowLeft, ChevronRight, Package, Eye, EyeOff, LayoutGrid, Shield, RefreshCw,
 } from 'lucide-react';
 import { extensionStorage } from '../extensions/extensionStorage';
 import { extensionLoader } from '../extensions/extensionLoader';
@@ -269,7 +269,7 @@ function AuthPage({ mode, setView, onSuccess }: {
 
 // ── Browse / Mine extension list ──────────────────────────────────────────
 
-function ExtensionCard({ ext, tab, installing, installed, onInstall, reviewNote, reviewLoading, onReview, onSetNote, onViewDetail }: {
+function ExtensionCard({ ext, tab, installing, installed, onInstall, reviewNote, reviewLoading, onReview, onSetNote, onViewDetail, onUpdate }: {
   ext: MarketExt;
   tab: View;
   installing: boolean;
@@ -280,6 +280,7 @@ function ExtensionCard({ ext, tab, installing, installed, onInstall, reviewNote,
   onReview?: (action: 'approve' | 'reject') => void;
   onSetNote?: (note: string) => void;
   onViewDetail?: () => void;
+  onUpdate?: () => void;
 }) {
   return (
     <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-5 hover:border-[rgb(var(--accent))]/30 transition-colors">
@@ -333,6 +334,18 @@ function ExtensionCard({ ext, tab, installing, installed, onInstall, reviewNote,
                installed ? <><Check size={13} /> Installed</> :
                <><Download size={13} /> Install</>}
             </button>
+          )}
+
+          {tab === 'mine' && onUpdate && ext.status !== 'pending' && (
+            <button
+              onClick={onUpdate}
+              className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm"
+            >
+              <RefreshCw size={13} /> Publish update
+            </button>
+          )}
+          {tab === 'mine' && ext.status === 'pending' && (
+            <span className="text-xs text-[rgb(var(--muted))] italic">Under review</span>
           )}
 
           {tab === 'review' && onViewDetail && (
@@ -502,8 +515,17 @@ function ReviewDetail({ ext, token, onDone, onBack }: {
 
 // ── Submit page ───────────────────────────────────────────────────────────
 
-function SubmitPage({ token, user, setView }: { token: string; user: User | null; setView: (v: View) => void }) {
-  const [form, setForm] = useState({ id: '', name: '', version: '1.0.0', description: '', author: '', code: '', type: 'sandboxed' as 'sandboxed' | 'unsandboxed' });
+function SubmitPage({ token, user, setView, prefill }: { token: string; user: User | null; setView: (v: View) => void; prefill?: Partial<MarketExt> }) {
+  const isUpdate = !!prefill?.id;
+  const [form, setForm] = useState({
+    id: prefill?.id ?? '',
+    name: prefill?.name ?? '',
+    version: prefill?.version ?? '1.0.0',
+    description: prefill?.description ?? '',
+    author: prefill?.author ?? '',
+    code: '',
+    type: (prefill?.type ?? 'sandboxed') as 'sandboxed' | 'unsandboxed',
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -545,12 +567,14 @@ function SubmitPage({ token, user, setView }: { token: string; user: User | null
         <div className="w-14 h-14 rounded-full bg-[rgb(var(--text))] flex items-center justify-center mb-5">
           <CheckCircle size={28} className="text-[rgb(var(--bg))]" />
         </div>
-        <h2 className="text-2xl font-bold mb-2">Extension submitted!</h2>
-        <p className="text-[rgb(var(--muted))] mb-8">A moderator will review it before it appears in the marketplace.</p>
+        <h2 className="text-2xl font-bold mb-2">{isUpdate ? 'Update submitted!' : 'Extension submitted!'}</h2>
+        <p className="text-[rgb(var(--muted))] mb-8">A moderator will review it before {isUpdate ? 'the update goes live' : 'it appears in the marketplace'}.</p>
         <div className="flex gap-3">
-          <button onClick={() => { setDone(false); setForm({ id: '', name: '', version: '1.0.0', description: '', author: '', code: '', type: 'sandboxed' }); }} className="btn-secondary px-5 py-2.5">
-            Submit another
-          </button>
+          {!isUpdate && (
+            <button onClick={() => { setDone(false); setForm({ id: '', name: '', version: '1.0.0', description: '', author: '', code: '', type: 'sandboxed' }); }} className="btn-secondary px-5 py-2.5">
+              Submit another
+            </button>
+          )}
           <button onClick={() => setView('mine')} className="btn-primary px-5 py-2.5 inline-flex items-center gap-2">
             <Package size={15} /> My Extensions
           </button>
@@ -562,16 +586,33 @@ function SubmitPage({ token, user, setView }: { token: string; user: User | null
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-1">Submit an extension</h1>
-        <p className="text-[rgb(var(--muted))]">All extensions are reviewed by a moderator before going live.</p>
+        {isUpdate && (
+          <button onClick={() => setView('mine')} className="inline-flex items-center gap-2 text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors mb-4 text-sm">
+            <ArrowLeft size={15} /> My Extensions
+          </button>
+        )}
+        <h1 className="text-2xl font-bold mb-1">{isUpdate ? `Update ${prefill!.name}` : 'Submit an extension'}</h1>
+        <p className="text-[rgb(var(--muted))]">
+          {isUpdate
+            ? `Publishing a new version of ${prefill!.id}. The current published version is v${prefill!.version}. Mod approval required before the update goes live.`
+            : 'All extensions are reviewed by a moderator before going live.'}
+        </p>
       </div>
 
       <div className="space-y-5">
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="form-label">Extension ID <span className="text-red-500">*</span></label>
-            <input type="text" placeholder="yourname.weather" value={form.id} onChange={e => setForm(p => ({ ...p, id: e.target.value }))} className="input w-full" />
-            <p className="text-xs text-[rgb(var(--muted))] mt-1">Letters, numbers, dots, dashes. Must be unique.</p>
+            <input
+              type="text"
+              placeholder="yourname.weather"
+              value={form.id}
+              onChange={e => setForm(p => ({ ...p, id: e.target.value }))}
+              className="input w-full"
+              readOnly={isUpdate}
+              title={isUpdate ? 'Extension ID cannot be changed when updating' : undefined}
+            />
+            {!isUpdate && <p className="text-xs text-[rgb(var(--muted))] mt-1">Letters, numbers, dots, dashes. Must be unique.</p>}
           </div>
           <div>
             <label className="form-label">Display Name <span className="text-red-500">*</span></label>
@@ -672,6 +713,7 @@ export default function MarketplacePage() {
   const [reviewNote, setReviewNote] = useState<Record<string, string>>({});
   const [reviewLoading, setReviewLoading] = useState<Record<string, boolean>>({});
   const [detailExt, setDetailExt] = useState<MarketExt | null>(null);
+  const [submitPrefill, setSubmitPrefill] = useState<Partial<MarketExt> | undefined>();
 
   // Restore session
   useEffect(() => {
@@ -759,7 +801,7 @@ export default function MarketplacePage() {
 
       {/* Submit */}
       {view === 'submit' && (
-        <SubmitPage token={token} user={user} setView={setView} />
+        <SubmitPage token={token} user={user} setView={setView} prefill={submitPrefill} />
       )}
 
       {/* Review detail */}
@@ -878,6 +920,7 @@ export default function MarketplacePage() {
                     reviewLoading={reviewLoading[ext.id]}
                     onSetNote={n => setReviewNote(p => ({ ...p, [ext.id]: n }))}
                     onViewDetail={() => { setDetailExt(ext); setView('review-detail'); }}
+                    onUpdate={() => { setSubmitPrefill(ext); setView('submit'); }}
                   />
                 ))}
               </div>

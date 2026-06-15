@@ -34,8 +34,8 @@ export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors() });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-  const clientId     = process.env.ONEDRIVE_CLIENT_ID;
-  const clientSecret = process.env.ONEDRIVE_CLIENT_SECRET;
+  const clientId     = process.env.CLIENT_ID;
+  const clientSecret = process.env.CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     return json({ error: 'OneDrive credentials not configured on server' }, 503);

@@ -28,6 +28,7 @@ import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syn
 import { fileSyncManager } from './utils/fileSyncManager';
 import { setFileSyncStatus } from './utils/fileSyncStatus';
 import { getExtensionStores, setExtensionStores } from './extensions/extensionSystem';
+import { isOneDriveConnected } from './utils/onedriveSync';
 import { mergeConversations } from './utils/mergeConversations';
 import { extensionLoader } from './extensions/extensionLoader';
 import { shouldSkipExtensions } from './components/ErrorBoundary';
@@ -1325,13 +1326,20 @@ export default function App() {
     };
   }, [store.settings.cloudSync?.enabled, syncStatus]);
 
-  // File-based sync (S3 / WebDAV) — mirrors sidebar icon via setSyncStatus
+  // File-based sync (S3 / WebDAV / OneDrive) — mirrors sidebar icon via setSyncStatus
   useEffect(() => {
     const cloudSync = store.settings.cloudSync;
     const provider = cloudSync?.provider;
-    if (!cloudSync?.enabled || (provider !== 's3' && provider !== 'webdav')) return;
+    if (!cloudSync?.enabled || (provider !== 's3' && provider !== 'webdav' && provider !== 'onedrive')) return;
 
-    const cfg = provider === 's3' ? cloudSync.s3 : cloudSync.webdav;
+    let cfg: object | undefined;
+    if (provider === 's3') cfg = cloudSync.s3;
+    else if (provider === 'webdav') cfg = cloudSync.webdav;
+    else {
+      // OneDrive: just need a stored token (credentials are server-side)
+      if (!isOneDriveConnected()) return;
+      cfg = {};
+    }
     if (!cfg) return;
 
     let changeInterval: ReturnType<typeof setInterval>;
@@ -1561,7 +1569,8 @@ export default function App() {
       setSyncStatus('disabled');
     };
   }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.provider,
-      store.settings.cloudSync?.s3, store.settings.cloudSync?.webdav]);
+      store.settings.cloudSync?.s3, store.settings.cloudSync?.webdav,
+      store.settings.cloudSync?.onedrive]);
 
   return (
     <>

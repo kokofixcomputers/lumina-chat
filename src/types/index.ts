@@ -176,6 +176,10 @@ export interface AppSettings {
       password: string;
       path: string;
     };
+    onedrive?: {
+      clientId: string;
+      // access/refresh tokens are stored in localStorage separately (not synced)
+    };
   };
   devEnv?: {
     address?: string;

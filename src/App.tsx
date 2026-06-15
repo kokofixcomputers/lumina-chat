@@ -1346,11 +1346,10 @@ export default function App() {
 
     const buildSnapshot = async () => {
       const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
-      const [conversations, codeSessions, coworkSessions, images] = await Promise.all([
+      const [conversations, codeSessions, coworkSessions] = await Promise.all([
         SyncIndexedDB.exportConversations(),
         codeSessionDB.getAll(),
         coworkSessionDB.getAll(),
-        imageDB.getAll(),
       ]);
       const rawSettings = localStorage.getItem('lumina_settings');
       const rawExtensions = localStorage.getItem('lumina_extensions');
@@ -1363,7 +1362,7 @@ export default function App() {
         conversations,
         codeSessions,
         coworkSessions,
-        images,
+        // images stored as individual files — not inlined here
         settings: {
           ...safeSettings,
           extensions: rawExtensions ? JSON.parse(rawExtensions) : {},
@@ -1374,7 +1373,7 @@ export default function App() {
 
     const snapshotKey = (snap: any) =>
       JSON.stringify(snap.conversations) + JSON.stringify(snap.codeSessions) +
-      JSON.stringify(snap.coworkSessions) + JSON.stringify(snap.images) +
+      JSON.stringify(snap.coworkSessions) +
       JSON.stringify(snap.settings);
 
     const mergeRemote = async (data: any) => {
@@ -1396,9 +1395,11 @@ export default function App() {
         await coworkSessionDB.putAll(data.coworkSessions);
         setCoworkSessions(await coworkSessionDB.getAll());
       }
-      if (data.images?.length) {
-        await imageDB.putAll(data.images);
-      }
+      // Images come from individual remote files, not the main snapshot
+      try {
+        const remoteImages = await fileSyncManager.pullImages();
+        if (remoteImages.length) await imageDB.putAll(remoteImages as any[]);
+      } catch { /* ignore image pull errors during merge */ }
       if (data.settings) {
         const { cloudSync: _cs, extensions, fineTuning, ...rest } = data.settings;
         const current = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
@@ -1419,7 +1420,9 @@ export default function App() {
         // No remote file yet — create it now with current local data
         if (!remoteData) {
           reportStatus('syncing');
+          const initImages = await imageDB.getAll();
           await fileSyncManager.push(snap);
+          await fileSyncManager.pushImages(initImages as any[]);
         }
         reportStatus('synced');
       } catch (e) {
@@ -1465,7 +1468,11 @@ export default function App() {
             (window as any).__fileSyncLastExtensions = rawExtensions;
             lastCodeHash = codeHash;
             lastCoworkHash = coworkHash;
-            lastImageHash = imageHash;
+            // Push new images as individual files (deduped)
+            if (imageHash !== lastImageHash) {
+              lastImageHash = imageHash;
+              await fileSyncManager.pushImages(imageNow as any[]);
+            }
             const snap = await buildSnapshot();
             const key = snapshotKey(snap);
             if (key !== lastPushedJson) {
@@ -1507,12 +1514,41 @@ export default function App() {
     (window as any).__fileSyncLastSettings = localStorage.getItem('lumina_settings');
     (window as any).__fileSyncLastExtensions = localStorage.getItem('lumina_extensions');
 
+    const handleForceSync = async (e: Event) => {
+      const action = (e as CustomEvent<{ action: 'push' | 'pull' | 'both' }>).detail?.action;
+      if (!fileSyncManager.connected) return;
+      pushing = true;
+      reportStatus('syncing');
+      try {
+        const localImages = await imageDB.getAll();
+        const snap = await buildSnapshot();
+        if (action === 'push' || action === 'both') {
+          await fileSyncManager.forcePush(snap, localImages as any[]);
+        }
+        if (action === 'pull' || action === 'both') {
+          const { main, images } = await fileSyncManager.forcePull();
+          await mergeRemote(main);
+          if (images.length) await imageDB.putAll(images as any[]);
+        }
+        const freshSnap = await buildSnapshot();
+        lastPushedJson = snapshotKey(freshSnap);
+        reportStatus('synced');
+      } catch (e) {
+        console.error('[FileSync] force sync failed:', e);
+        reportStatus('error');
+      } finally {
+        pushing = false;
+      }
+    };
+    window.addEventListener('fileSyncForce', handleForceSync);
+
     init();
 
     return () => {
       active = false;
       clearInterval(changeInterval);
       clearInterval(pullInterval);
+      window.removeEventListener('fileSyncForce', handleForceSync);
       fileSyncManager.disconnect();
       setFileSyncStatus('idle');
       setSyncStatus('disabled');

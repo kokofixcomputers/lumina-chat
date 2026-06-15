@@ -11,6 +11,52 @@ import { getFileSyncStatus, getFileSyncLastSyncedAt, subscribeFileSyncStatus, ty
 
 type Provider = 'lumina' | 's3' | 'webdav';
 
+function dispatchForceSync(action: 'push' | 'pull' | 'both') {
+  window.dispatchEvent(new CustomEvent('fileSyncForce', { detail: { action } }));
+}
+
+function ForceSyncButtons({ enabled }: { enabled: boolean }) {
+  const [busy, setBusy] = useState<'push' | 'pull' | 'both' | null>(null);
+  if (!enabled) return null;
+  const run = (action: 'push' | 'pull' | 'both') => {
+    setBusy(action);
+    dispatchForceSync(action);
+    setTimeout(() => setBusy(null), 3000);
+  };
+  return (
+    <div className="form-group">
+      <label className="form-label">Force Sync</label>
+      <div className="flex gap-2">
+        <button
+          className="btn btn-secondary text-xs flex items-center gap-1.5 flex-1"
+          onClick={() => run('push')}
+          disabled={busy !== null}
+        >
+          <Upload size={12} />
+          {busy === 'push' ? 'Pushing…' : 'Push'}
+        </button>
+        <button
+          className="btn btn-secondary text-xs flex items-center gap-1.5 flex-1"
+          onClick={() => run('pull')}
+          disabled={busy !== null}
+        >
+          <Download size={12} />
+          {busy === 'pull' ? 'Pulling…' : 'Pull'}
+        </button>
+        <button
+          className="btn btn-secondary text-xs flex items-center gap-1.5 flex-1"
+          onClick={() => run('both')}
+          disabled={busy !== null}
+        >
+          <RefreshCw size={12} className={busy === 'both' ? 'animate-spin' : ''} />
+          {busy === 'both' ? 'Syncing…' : 'Sync'}
+        </button>
+      </div>
+      <p className="form-help">Push overwrites remote. Pull overwrites local. Sync does both.</p>
+    </div>
+  );
+}
+
 interface CloudSyncTabProps {
   settings: AppSettings;
   conversations: any[];
@@ -181,6 +227,8 @@ function S3Section({
         </p>
       </div>
 
+      <ForceSyncButtons enabled={enabled} />
+
       <div className="form-group">
         <div className="flex items-center justify-between">
           <div>
@@ -260,6 +308,8 @@ function WebDAVSection({
           Sync file stored at <code className="text-xs bg-black/10 dark:bg-white/10 px-1 rounded">{(dav.path || '') + '/lumina-backup.json'}</code>
         </p>
       </div>
+
+      <ForceSyncButtons enabled={enabled} />
 
       <div className="form-group">
         <div className="flex items-center justify-between">

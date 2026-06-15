@@ -1,4 +1,4 @@
-// AWS SigV4 signing + S3 PUT/GET.
+// AWS SigV4 signing + S3 operations.
 // On Tauri: direct fetch via the HTTP plugin (no CORS restrictions).
 // On web:   route through /api/proxy to bypass browser CORS.
 
@@ -6,31 +6,6 @@ import { isTauri } from './tauri';
 import { universalFetch } from './tauriFetch';
 
 const PROXY_URL = '/api/proxy';
-
-// Set to true temporarily to log canonical request + string-to-sign to console
-const S3_SIGV4_DEBUG = true;
-
-function strToBuffer(str: string): ArrayBuffer {
-  const u8 = new TextEncoder().encode(str);
-  // Copy into a fresh ArrayBuffer so byteOffset is always 0
-  const buf = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(buf).set(u8);
-  return buf;
-}
-
-async function hmac(key: ArrayBuffer, msg: string): Promise<ArrayBuffer> {
-  const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return crypto.subtle.sign('HMAC', k, strToBuffer(msg));
-}
-
-async function sha256Hex(str: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', strToBuffer(str));
-  return bufToHex(buf);
-}
-
-function bufToHex(buf: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 export interface S3Config {
   endpoint: string;
@@ -41,79 +16,62 @@ export interface S3Config {
   keyPrefix: string;
 }
 
-async function sigV4Sign(
+// ── Crypto helpers ───────────────────────────────────────────────────────────
+
+function strToBuffer(str: string): ArrayBuffer {
+  const u8 = new TextEncoder().encode(str);
+  const buf = new ArrayBuffer(u8.byteLength);
+  new Uint8Array(buf).set(u8);
+  return buf;
+}
+async function hmac(key: ArrayBuffer, msg: string): Promise<ArrayBuffer> {
+  const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.sign('HMAC', k, strToBuffer(msg));
+}
+async function sha256Hex(str: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', strToBuffer(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function bufToHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ── SigV4 ────────────────────────────────────────────────────────────────────
+
+async function sigV4(
   cfg: S3Config,
-  method: 'GET' | 'PUT',
-  key: string,
+  method: string,
+  objectKey: string,
   body: string,
+  extraQuery = '',      // pre-encoded query string e.g. "list-type=2&prefix=foo"
 ): Promise<{ headers: Record<string, string>; url: string }> {
   const now = new Date();
-  const datestamp = now.toISOString().slice(0, 10).replace(/-/g, '');       // YYYYMMDD
-  const amzdate   = datestamp + 'T' + now.toISOString().slice(11, 19).replace(/:/g, '') + 'Z'; // YYYYMMDDTHHmmssZ
+  const datestamp = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const amzdate   = datestamp + 'T' + now.toISOString().slice(11, 19).replace(/:/g, '') + 'Z';
 
   const endpoint = (cfg.endpoint || 'https://s3.amazonaws.com').replace(/\/$/, '');
-  const region = cfg.region || 'us-east-1';
-  const parsed = new URL(endpoint);
-  const host = parsed.host; // includes port if non-default
+  const region   = cfg.region || 'us-east-1';
+  const host     = new URL(endpoint).host;
 
   const isPut = method === 'PUT';
-
-  // Canonical URI: just percent-encode each segment (leave slashes and safe chars alone)
-  const pathSegments = `/${cfg.bucket}/${key}`.split('/').map(s =>
+  const pathSegments = `/${cfg.bucket}/${objectKey}`.split('/').map(s =>
     encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
   );
   const canonicalUri = pathSegments.join('/');
-  const url = `${endpoint}${canonicalUri}`;
+  const url = `${endpoint}${canonicalUri}${extraQuery ? '?' + extraQuery : ''}`;
 
   const payloadHash = await sha256Hex(isPut ? body : '');
 
-  // For GET: sign host + x-amz-date only (x-amz-content-sha256 is extra/unsigned)
-  // For PUT: sign content-type + host + x-amz-content-sha256 + x-amz-date
-  let canonicalHeaders: string;
-  let signedHeadersList: string[];
+  const canonicalHeaders = isPut
+    ? `content-type:application/json\nhost:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzdate}\n`
+    : `host:${host}\nx-amz-date:${amzdate}\n`;
+  const signedHeaders = isPut
+    ? 'content-type;host;x-amz-content-sha256;x-amz-date'
+    : 'host;x-amz-date';
 
-  if (isPut) {
-    canonicalHeaders =
-      `content-type:application/json\n` +
-      `host:${host}\n` +
-      `x-amz-content-sha256:${payloadHash}\n` +
-      `x-amz-date:${amzdate}\n`;
-    signedHeadersList = ['content-type', 'host', 'x-amz-content-sha256', 'x-amz-date'];
-  } else {
-    canonicalHeaders =
-      `host:${host}\n` +
-      `x-amz-date:${amzdate}\n`;
-    signedHeadersList = ['host', 'x-amz-date'];
-  }
-
-  const signedHeaders = signedHeadersList.join(';');
-
-  const canonicalRequest = [
-    method,
-    canonicalUri,
-    '',               // empty query string
-    canonicalHeaders, // already ends with \n
-    signedHeaders,
-    payloadHash,
-  ].join('\n');
-
+  const canonicalRequest = [method, canonicalUri, extraQuery, canonicalHeaders, signedHeaders, payloadHash].join('\n');
   const credScope = `${datestamp}/${region}/s3/aws4_request`;
-  const hashOfCanonical = await sha256Hex(canonicalRequest);
-  const stringToSign = ['AWS4-HMAC-SHA256', amzdate, credScope, hashOfCanonical].join('\n');
-
-  if (S3_SIGV4_DEBUG) {
-    console.group('[S3 SigV4 Debug]');
-    console.log('method:', method);
-    console.log('url:', url);
-    console.log('host:', host);
-    console.log('amzdate:', amzdate);
-    console.log('datestamp:', datestamp);
-    console.log('canonicalUri:', canonicalUri);
-    console.log('payloadHash:', payloadHash);
-    console.log('canonicalRequest:\n' + canonicalRequest);
-    console.log('stringToSign:\n' + stringToSign);
-    console.groupEnd();
-  }
+  const stringToSign = ['AWS4-HMAC-SHA256', amzdate, credScope, await sha256Hex(canonicalRequest)].join('\n');
 
   const kDate    = await hmac(strToBuffer(`AWS4${cfg.secretAccessKey}`), datestamp);
   const kRegion  = await hmac(kDate, region);
@@ -121,53 +79,84 @@ async function sigV4Sign(
   const kSigning = await hmac(kService, 'aws4_request');
   const signature = bufToHex(await hmac(kSigning, stringToSign));
 
-  const reqHeaders: Record<string, string> = {
+  const headers: Record<string, string> = {
     'Authorization': `AWS4-HMAC-SHA256 Credential=${cfg.accessKeyId}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
     'x-amz-date': amzdate,
-    'x-amz-content-sha256': payloadHash, // send always, signed on PUT only
+    'x-amz-content-sha256': payloadHash,
   };
-  if (isPut) reqHeaders['content-type'] = 'application/json';
-
-  return { headers: reqHeaders, url };
+  if (isPut) headers['content-type'] = 'application/json';
+  return { headers, url };
 }
 
-function objectKey(cfg: S3Config): string {
-  const prefix = cfg.keyPrefix ? cfg.keyPrefix.replace(/\/$/, '') + '/' : '';
-  return `${prefix}lumina-backup.json`;
-}
+// ── HTTP helpers ─────────────────────────────────────────────────────────────
 
-export async function s3Put(cfg: S3Config, data: object): Promise<void> {
-  const body = JSON.stringify(data);
-  const key = objectKey(cfg);
-  const { headers, url } = await sigV4Sign(cfg, 'PUT', key, body);
-
-  let res: Response;
+async function s3Fetch(url: string, method: string, headers: Record<string, string>, body?: string): Promise<Response> {
   if (isTauri) {
-    res = await universalFetch(url, { method: 'PUT', headers, body });
-  } else {
-    res = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url, method: 'PUT', headers, body }),
-    });
+    return universalFetch(url, { method, headers, body });
   }
+  return fetch(PROXY_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url, method, headers, body }),
+  });
+}
+
+// ── Key helpers ──────────────────────────────────────────────────────────────
+
+function prefix(cfg: S3Config): string {
+  return cfg.keyPrefix ? cfg.keyPrefix.replace(/\/$/, '') + '/' : '';
+}
+function mainKey(cfg: S3Config): string { return `${prefix(cfg)}lumina-backup.json`; }
+function imageKey(cfg: S3Config, id: string): string { return `${prefix(cfg)}lumina-images/${id}.json`; }
+function imagePrefix(cfg: S3Config): string { return `${prefix(cfg)}lumina-images/`; }
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+export async function s3PutMain(cfg: S3Config, data: object): Promise<void> {
+  const body = JSON.stringify(data);
+  const { headers, url } = await sigV4(cfg, 'PUT', mainKey(cfg), body);
+  const res = await s3Fetch(url, 'PUT', headers, body);
   if (!res.ok) throw new Error(`S3 PUT failed: ${res.status} ${await res.text()}`);
 }
 
-export async function s3Get(cfg: S3Config): Promise<object> {
-  const key = objectKey(cfg);
-  const { headers, url } = await sigV4Sign(cfg, 'GET', key, '');
-
-  let res: Response;
-  if (isTauri) {
-    res = await universalFetch(url, { method: 'GET', headers });
-  } else {
-    res = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url, method: 'GET', headers }),
-    });
-  }
+export async function s3GetMain(cfg: S3Config): Promise<object> {
+  const { headers, url } = await sigV4(cfg, 'GET', mainKey(cfg), '');
+  const res = await s3Fetch(url, 'GET', headers);
   if (!res.ok) throw new Error(`S3 GET failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
+
+export async function s3PutImage(cfg: S3Config, id: string, data: object): Promise<void> {
+  const body = JSON.stringify(data);
+  const { headers, url } = await sigV4(cfg, 'PUT', imageKey(cfg, id), body);
+  const res = await s3Fetch(url, 'PUT', headers, body);
+  if (!res.ok) throw new Error(`S3 PUT image failed: ${res.status} ${await res.text()}`);
+}
+
+export async function s3GetImage(cfg: S3Config, id: string): Promise<object> {
+  const { headers, url } = await sigV4(cfg, 'GET', imageKey(cfg, id), '');
+  const res = await s3Fetch(url, 'GET', headers);
+  if (!res.ok) throw new Error(`S3 GET image failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+/** Returns image IDs currently stored in the lumina-images/ prefix. */
+export async function s3ListImageIds(cfg: S3Config): Promise<string[]> {
+  const pfx = imagePrefix(cfg);
+  // ListObjectsV2: query params must be sorted alphabetically
+  const query = `list-type=2&prefix=${encodeURIComponent(pfx)}`;
+  // ListObjectsV2 is a GET on the bucket root (no object key)
+  const { headers, url } = await sigV4(cfg, 'GET', '', '', query);
+  const res = await s3Fetch(url, 'GET', headers);
+  if (!res.ok) throw new Error(`S3 ListObjects failed: ${res.status} ${await res.text()}`);
+  const xml = await res.text();
+  // Parse <Key> elements from the XML response
+  const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map(m => m[1]);
+  return keys
+    .filter(k => k.startsWith(pfx) && k.endsWith('.json'))
+    .map(k => k.slice(pfx.length, -5)); // strip prefix and .json → bare id
+}
+
+// Legacy aliases so existing callers still work
+export const s3Put = s3PutMain;
+export const s3Get = s3GetMain;

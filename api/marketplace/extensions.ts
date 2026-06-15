@@ -34,8 +34,11 @@ export default async function handler(req: Request) {
     // Sort newest first
     exts.sort((a, b) => b.submittedAt - a.submittedAt);
 
-    // Strip code from list view
-    const safe = exts.map(({ code: _code, ...rest }) => rest);
+    // Mods reviewing the queue get the code; everyone else gets it stripped
+    const isMod = session?.role === 'moderator';
+    const safe = isMod && status === 'pending'
+      ? exts
+      : exts.map(({ code: _code, ...rest }) => rest);
     return json({ extensions: safe });
   }
 

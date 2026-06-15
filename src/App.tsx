@@ -1517,7 +1517,7 @@ export default function App() {
           reportStatus('synced');
         } catch (e) {
           const msg = e instanceof Error ? e.message : '';
-          if (msg.includes('404') || msg.includes('NoSuchKey')) return; // file deleted remotely — ignore
+          if (msg.includes('404') || msg.includes('NoSuchKey') || msg.includes('itemNotFound')) return; // file not yet on remote — ignore
           console.error('[FileSync] pull failed:', e);
           reportStatus('error');
         }

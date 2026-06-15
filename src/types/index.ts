@@ -161,6 +161,21 @@ export interface AppSettings {
     enabled: boolean;
     email: string;
     password: string;
+    provider?: 'lumina' | 's3' | 'webdav';
+    s3?: {
+      endpoint: string;
+      bucket: string;
+      region: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      keyPrefix: string;
+    };
+    webdav?: {
+      url: string;
+      username: string;
+      password: string;
+      path: string;
+    };
   };
   devEnv?: {
     address?: string;

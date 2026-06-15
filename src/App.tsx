@@ -25,6 +25,8 @@ import MarketplacePage from './components/MarketplacePage';
 import InstallationPage from './components/InstallationPage';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
+import { fileSyncManager } from './utils/fileSyncManager';
+import { setFileSyncStatus } from './utils/fileSyncStatus';
 import { mergeConversations } from './utils/mergeConversations';
 import { extensionLoader } from './extensions/extensionLoader';
 import { shouldSkipExtensions } from './components/ErrorBoundary';
@@ -1320,6 +1322,163 @@ export default function App() {
       cleanupFn?.();
     };
   }, [store.settings.cloudSync?.enabled, syncStatus]);
+
+  // File-based sync (S3 / WebDAV) — mirrors sidebar icon via setSyncStatus
+  useEffect(() => {
+    const cloudSync = store.settings.cloudSync;
+    const provider = cloudSync?.provider;
+    if (!cloudSync?.enabled || (provider !== 's3' && provider !== 'webdav')) return;
+
+    const cfg = provider === 's3' ? cloudSync.s3 : cloudSync.webdav;
+    if (!cfg) return;
+
+    let changeInterval: ReturnType<typeof setInterval>;
+    let pullInterval: ReturnType<typeof setInterval>;
+    let lastPushedJson = '';
+    let active = true;
+    let pushing = false;
+
+    const reportStatus = (s: 'connecting' | 'synced' | 'syncing' | 'error') => {
+      setFileSyncStatus(s === 'synced' ? 'connected' : s === 'syncing' ? 'syncing' : s === 'connecting' ? 'connecting' : 'error', s === 'synced' ? Date.now() : undefined);
+      setSyncStatus(s);
+    };
+
+    const buildSnapshot = async () => {
+      const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+      const conversations = await SyncIndexedDB.exportConversations();
+      const rawSettings = localStorage.getItem('lumina_settings');
+      const rawExtensions = localStorage.getItem('lumina_extensions');
+      const rawFineTuning = localStorage.getItem('fine-tuning-storage');
+      const settingsObj = rawSettings ? JSON.parse(rawSettings) : {};
+      const { cloudSync: _cs, ...safeSettings } = settingsObj;
+      return {
+        version: 1,
+        pushedAt: Date.now(),
+        conversations,
+        settings: {
+          ...safeSettings,
+          extensions: rawExtensions ? JSON.parse(rawExtensions) : {},
+          fineTuning: rawFineTuning ? JSON.parse(rawFineTuning) : undefined,
+        },
+      };
+    };
+
+    const snapshotKey = (snap: any) =>
+      JSON.stringify(snap.conversations) + JSON.stringify(snap.settings);
+
+    const mergeRemote = async (data: any) => {
+      if (!data) return;
+      (window as any).__syncSuppressUntil = Date.now() + 5000;
+      if (data.conversations?.length) {
+        const syncUtils = await import('./utils/syncUtils');
+        const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+        const local = await SyncIndexedDB.exportConversations();
+        const merged = syncUtils.mergeConversationsSafely(local, data.conversations);
+        await SyncIndexedDB.importConversations(merged);
+        store.setConversations(merged);
+      }
+      if (data.settings) {
+        const { cloudSync: _cs, extensions, fineTuning, ...rest } = data.settings;
+        const current = JSON.parse(localStorage.getItem('lumina_settings') || '{}');
+        localStorage.setItem('lumina_settings', JSON.stringify({ ...rest, cloudSync: current.cloudSync }));
+        if (extensions) localStorage.setItem('lumina_extensions', JSON.stringify(extensions));
+        if (fineTuning) localStorage.setItem('fine-tuning-storage', JSON.stringify(fineTuning));
+      }
+    };
+
+    const init = async () => {
+      reportStatus('connecting');
+      try {
+        const remoteData = await fileSyncManager.connect(provider, cfg as any);
+        if (!active) return;
+        await mergeRemote(remoteData);
+        const snap = await buildSnapshot();
+        lastPushedJson = snapshotKey(snap);
+        // No remote file yet — create it now with current local data
+        if (!remoteData) {
+          reportStatus('syncing');
+          await fileSyncManager.push(snap);
+        }
+        reportStatus('synced');
+      } catch (e) {
+        console.error('[FileSync] connect failed:', e);
+        reportStatus('error');
+        return;
+      }
+
+      // Check for local changes every second — push immediately when something differs
+      const { SyncIndexedDB } = await import('./utils/syncIndexedDB');
+      changeInterval = setInterval(async () => {
+        if (!active || pushing) return;
+        if ((window as any).__syncSuppressUntil && Date.now() < (window as any).__syncSuppressUntil) return;
+        try {
+          const { hasChanges } = await SyncIndexedDB.checkForChanges();
+          const rawSettings = localStorage.getItem('lumina_settings');
+          const rawExtensions = localStorage.getItem('lumina_extensions');
+          const settingsChanged = rawSettings !== (window as any).__fileSyncLastSettings;
+          const extensionsChanged = rawExtensions !== (window as any).__fileSyncLastExtensions;
+
+          if (!hasChanges && !settingsChanged && !extensionsChanged) return;
+
+          pushing = true;
+          reportStatus('syncing');
+          try {
+            await SyncIndexedDB.updateSnapshot();
+            (window as any).__fileSyncLastSettings = rawSettings;
+            (window as any).__fileSyncLastExtensions = rawExtensions;
+            const snap = await buildSnapshot();
+            const key = snapshotKey(snap);
+            if (key !== lastPushedJson) {
+              await fileSyncManager.push(snap);
+              lastPushedJson = key;
+            }
+            reportStatus('synced');
+          } catch (e) {
+            console.error('[FileSync] push failed:', e);
+            reportStatus('error');
+          } finally {
+            pushing = false;
+          }
+        } catch (e) {
+          console.error('[FileSync] change check failed:', e);
+        }
+      }, 1000);
+
+      // Pull remote changes every 60s (multi-device)
+      pullInterval = setInterval(async () => {
+        if (!active || pushing) return;
+        try {
+          const remoteData = await fileSyncManager.pull();
+          if (!active) return;
+          await mergeRemote(remoteData);
+          const snap = await buildSnapshot();
+          lastPushedJson = snapshotKey(snap);
+          reportStatus('synced');
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : '';
+          if (msg.includes('404') || msg.includes('NoSuchKey')) return; // file deleted remotely — ignore
+          console.error('[FileSync] pull failed:', e);
+          reportStatus('error');
+        }
+      }, 60000);
+    };
+
+    // Seed tracking vars so first-run doesn't false-positive on settings change
+    (window as any).__fileSyncLastSettings = localStorage.getItem('lumina_settings');
+    (window as any).__fileSyncLastExtensions = localStorage.getItem('lumina_extensions');
+
+    init();
+
+    return () => {
+      active = false;
+      clearInterval(changeInterval);
+      clearInterval(pullInterval);
+      fileSyncManager.disconnect();
+      setFileSyncStatus('idle');
+      setSyncStatus('disabled');
+    };
+  }, [store.settings.cloudSync?.enabled, store.settings.cloudSync?.provider,
+      store.settings.cloudSync?.s3, store.settings.cloudSync?.webdav]);
 
   return (
     <>

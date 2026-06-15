@@ -31,7 +31,7 @@ export default async function handler(req: Request) {
     const upstream = await fetch(url, {
       method,
       headers: forwardHeaders ?? {},
-      body: body ? JSON.stringify(body) : undefined,
+      body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
     });
 
     // Stream the response body directly back to the client

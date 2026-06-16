@@ -177,8 +177,13 @@ async function exchangeCodePublic(code: string, codeVerifier: string): Promise<O
 /**
  * Opens the Microsoft sign-in popup and returns a Promise that resolves with
  * the saved OneDriveToken once the user completes the flow.
+ *
+ * Pass an AbortSignal to let the user manually cancel — we don't try to detect
+ * the popup being closed ourselves, since `popup.closed` is unreliable once the
+ * popup has navigated through Microsoft's login pages (cross-origin + COOP can
+ * make it report closed/inaccessible while the user is still mid-flow).
  */
-export async function startOAuthFlow(): Promise<OneDriveToken> {
+export async function startOAuthFlow(signal?: AbortSignal): Promise<OneDriveToken> {
   const verifier    = generateVerifier();
   const challenge   = await deriveChallenge(verifier);
   const state       = generateVerifier().slice(0, 16);
@@ -224,8 +229,18 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
       clearInterval(check);
       window.removeEventListener('message', onMessage);
       window.removeEventListener('storage', onStorage);
+      signal?.removeEventListener('abort', onAbort);
       try { localStorage.removeItem(ONEDRIVE_OAUTH_STORAGE_KEY); } catch { /* ignore */ }
     };
+
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try { popup.close(); } catch { /* ignore */ }
+      reject(new Error('Sign-in cancelled'));
+    };
+    signal?.addEventListener('abort', onAbort);
 
     const handlePayload = async (payload: { code?: string; state?: string; error?: string; errorDesc?: string }) => {
       if (settled) return;
@@ -277,22 +292,17 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
     // Also poll localStorage directly: some browsers don't fire 'storage' events
     // reliably for popups opened via window.open (only fires in *other* windows
     // of the same origin, which should include us, but be defensive anyway).
+    //
+    // Deliberately not polling popup.closed here — it's unreliable through
+    // Microsoft's redirect chain and was causing false "window was closed"
+    // errors while the user was still signing in. The user can cancel manually
+    // via the abort signal instead.
     const check = setInterval(() => {
       if (settled) { clearInterval(check); return; }
       try {
         const raw = localStorage.getItem(ONEDRIVE_OAUTH_STORAGE_KEY);
-        if (raw) { handlePayload(JSON.parse(raw)); return; }
+        if (raw) handlePayload(JSON.parse(raw));
       } catch { /* ignore */ }
-
-      if (popup.closed) {
-        clearInterval(check);
-        window.removeEventListener('message', onMessage);
-        window.removeEventListener('storage', onStorage);
-        if (!settled) {
-          settled = true;
-          reject(new Error('Sign-in window was closed'));
-        }
-      }
     }, 500);
   });
 }

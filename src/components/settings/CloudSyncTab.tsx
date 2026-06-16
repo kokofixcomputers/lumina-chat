@@ -519,6 +519,7 @@ function OneDriveSection({
   const [userInfo, setUserInfo] = useState<{ displayName: string; mail: string } | null>(null);
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState('');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (connected) {
@@ -531,15 +532,22 @@ function OneDriveSection({
   const handleConnect = async () => {
     setSigning(true);
     setError('');
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     try {
-      await startOAuthFlow();
+      await startOAuthFlow(controller.signal);
       setConnected(true);
       onToggleEnabled(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed');
     } finally {
       setSigning(false);
+      abortControllerRef.current = null;
     }
+  };
+
+  const handleCancelConnect = () => {
+    abortControllerRef.current?.abort();
   };
 
   const handleDisconnect = () => {
@@ -586,16 +594,23 @@ function OneDriveSection({
           </button>
         </div>
       ) : (
-        <button
-          disabled={signing}
-          onClick={handleConnect}
-          className="btn btn-primary flex items-center gap-2"
-        >
-          <LogIn size={15} />
-          {signing ? (
-            <><RefreshCw size={14} className="animate-spin" /> Opening sign-in…</>
-          ) : 'Sign in with Microsoft'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            disabled={signing}
+            onClick={handleConnect}
+            className="btn btn-primary flex items-center gap-2"
+          >
+            <LogIn size={15} />
+            {signing ? (
+              <><RefreshCw size={14} className="animate-spin" /> Waiting for sign-in…</>
+            ) : 'Sign in with Microsoft'}
+          </button>
+          {signing && (
+            <button onClick={handleCancelConnect} className="btn btn-secondary text-xs">
+              Cancel
+            </button>
+          )}
+        </div>
       )}
 
       {connected && <ForceSyncButtons enabled={enabled} />}

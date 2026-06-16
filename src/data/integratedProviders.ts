@@ -2,6 +2,7 @@ export interface IntegratedProviderTemplate {
   id: string;
   name: string;
   description?: string;
+  warning?: string;
   baseUrlTemplate: string;
   requireAuth: boolean;
   autoAuth?: string;
@@ -34,6 +35,7 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
     id: 'anthropic-subscription',
     name: 'Anthropic Subscription',
     description: 'Use your Claude.ai subscription to access the API via OAuth',
+    warning: 'Use at your own risk — this uses an undocumented OAuth flow not officially supported by Anthropic for third-party apps. Your account could be banned for using this. The developer of this app is not responsible for any consequences.',
     baseUrlTemplate: 'https://api.anthropic.com/v1',
     requireAuth: false,
     autoAuth: 'anthropic-subscription',

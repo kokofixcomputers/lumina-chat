@@ -907,8 +907,13 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           };
           const subFollowMessages = [...previousMessages, ...toolMessages].map(normalizeSubMsg).filter(Boolean);
           const subFollowBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 128000, thinking: { type: 'adaptive', display: 'summarized' }, output_config: { effort: 'medium' }, tools: anthropicTools.length ? anthropicTools : undefined, messages: subFollowMessages, stream: false, system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }] });
-          const rawText = await invoke<string>('anthropic_request', { method: 'POST', url: chatUrl, headers: subFollowHeaders, body: subFollowBody });
-          followUpResponse = new Response(rawText, { status: 200, headers: { 'Content-Type': 'application/json' } });
+          if (isTauri) {
+            const rawText = await invoke<string>('anthropic_request', { method: 'POST', url: chatUrl, headers: subFollowHeaders, body: subFollowBody });
+            followUpResponse = new Response(rawText, { status: 200, headers: { 'Content-Type': 'application/json' } });
+          } else {
+            // Web: route through the Vercel proxy (server-side fetch, no Origin header)
+            followUpResponse = await fetchWithProxyFallback(chatUrl, { method: 'POST', headers: subFollowHeaders, body: subFollowBody }, true, undefined, 'on');
+          }
         } else {
           followUpResponse = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(followUpBody) });
         }
@@ -1160,8 +1165,6 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
 
       let response: Response = new Response(null, { status: 200 });
       if (activeApiFormat?.id === 'anthropic-subscription') {
-        const { listen } = await import('@tauri-apps/api/event');
-
         // Build history in Anthropic format, preserving tool_use / tool_result turns
         const subMessages = nonSystemMessages.map((m: any) => {
           if (m.role === 'tool') {
@@ -1173,16 +1176,6 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           return { role: m.role, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] };
         });
 
-        const subBody = JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 128000,
-          thinking: { type: 'adaptive', display: 'summarized' },
-          output_config: { effort: 'medium' },
-          tools: anthropicTools.length ? anthropicTools : undefined,
-          messages: subMessages,
-          stream: true,
-          system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-        });
         const subHeaders: Record<string, string> = {
           ...headers,
           'Accept': '*/*',
@@ -1194,6 +1187,42 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           'sec-ch-ua-mobile': '?0',
           'sec-ch-ua-platform': '"macOS"',
         };
+
+        if (!isTauri) {
+          // Web: route through the Vercel proxy so the request is made server-side —
+          // this avoids the browser attaching an Origin header (which would expose
+          // this as a non-official client) and sidesteps CORS, since this OAuth
+          // endpoint doesn't send the browser-access CORS header.
+          const subBody = JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 128000,
+            thinking: { type: 'adaptive', display: 'summarized' },
+            output_config: { effort: 'medium' },
+            tools: anthropicTools.length ? anthropicTools : undefined,
+            messages: subMessages,
+            stream: false,
+            system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+          });
+          const subRes = await fetchWithProxyFallback(chatUrl, { method: 'POST', headers: subHeaders, body: subBody }, true, undefined, 'on');
+          if (!subRes.ok) {
+            const errText = await subRes.text().catch(() => subRes.statusText);
+            const parsedErr = (() => { try { return JSON.parse(errText); } catch { return null; } })();
+            throw new Error(parsedErr?.error?.message || errText || `API error: ${subRes.status}`);
+          }
+          response = subRes;
+        } else {
+        const { listen } = await import('@tauri-apps/api/event');
+
+        const subBody = JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 128000,
+          thinking: { type: 'adaptive', display: 'summarized' },
+          output_config: { effort: 'medium' },
+          tools: anthropicTools.length ? anthropicTools : undefined,
+          messages: subMessages,
+          stream: true,
+          system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+        });
 
         // Stream via Tauri events from Rust reqwest
         await new Promise<void>((resolve, reject) => {
@@ -1266,6 +1295,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
               reject(new Error(errType && errMsg ? `${errType}: ${errMsg}` : errMsg || raw));
             });
         });
+        }
       } else {
         response = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(bodyToSend), signal: controller.signal }, 3, true);
       }

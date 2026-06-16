@@ -320,6 +320,9 @@ export function IntegratedProviderCard({
           <div className="flex-1">
             <p className="text-sm font-semibold">{template.name}</p>
             {template.description && <p className="text-xs text-[rgb(var(--muted))]">{template.description}</p>}
+            {template.warning && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">⚠️ {template.warning}</p>
+            )}
           </div>
           <button onClick={onAdd} className="btn-secondary py-1 px-3 text-xs">
             <Plus size={12} />
@@ -345,6 +348,9 @@ export function IntegratedProviderCard({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">{template.name}</p>
           {template.description && <p className="text-xs text-[rgb(var(--muted))]">{template.description}</p>}
+          {template.warning && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">⚠️ {template.warning}</p>
+          )}
         </div>
         {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
       </div>

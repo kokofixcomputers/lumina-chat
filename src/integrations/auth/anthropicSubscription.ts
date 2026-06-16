@@ -9,6 +9,28 @@ const TOKEN_URL = 'https://console.anthropic.com/v1/oauth/token';
 const REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback';
 const SCOPES = 'org:create_api_key user:profile user:inference';
 
+// Web: route the OAuth token exchange through the Vercel proxy. This is a server-side
+// fetch, so no browser Origin header is sent upstream — important since this endpoint
+// isn't meant to be called directly from a browser-based client.
+async function requestOAuthToken(body: string): Promise<string> {
+  if (isTauri) {
+    return invoke<string>('anthropic_oauth_token', { body });
+  }
+  const res = await fetch('https://lumina-chat-rho.vercel.app/api/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: TOKEN_URL,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.parse(body),
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || `Token request failed: ${res.status}`);
+  return text;
+}
+
 function generatePKCE(): { verifier: string; challenge: string } {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
@@ -50,7 +72,7 @@ async function exchangeCode(code: string, verifier: string): Promise<AuthConfig>
   };
   if (state) payload.state = state;
 
-  const text = await invoke<string>('anthropic_oauth_token', { body: JSON.stringify(payload) });
+  const text = await requestOAuthToken(JSON.stringify(payload));
   const data = JSON.parse(text);
   return {
     type: 'oauth',
@@ -64,13 +86,11 @@ async function exchangeCode(code: string, verifier: string): Promise<AuthConfig>
 }
 
 async function refreshAccessToken(config: AuthConfig): Promise<AuthConfig> {
-  const text = await invoke<string>('anthropic_oauth_token', {
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      refresh_token: config.credentials.refresh_token,
-      client_id: CLIENT_ID,
-    }),
-  });
+  const text = await requestOAuthToken(JSON.stringify({
+    grant_type: 'refresh_token',
+    refresh_token: config.credentials.refresh_token,
+    client_id: CLIENT_ID,
+  }));
   const data = JSON.parse(text);
   return {
     ...config,

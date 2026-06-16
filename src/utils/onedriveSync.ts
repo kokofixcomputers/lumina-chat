@@ -7,6 +7,7 @@
 
 import { isTauri } from './tauri';
 import { universalFetch } from './tauriFetch';
+import { ONEDRIVE_OAUTH_STORAGE_KEY } from '../pages/OAuthOneDriveCallback';
 
 const GRAPH   = 'https://graph.microsoft.com/v1.0';
 const MS_AUTH = 'https://login.microsoftonline.com/common/oauth2/v2.0';
@@ -212,14 +213,22 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
     const popup = window.open(authUrl.toString(), 'onedrive_oauth', 'width=520,height=680,left=200,top=100');
     if (!popup) { reject(new Error('Popup blocked — please allow popups for this site.')); return; }
 
-    const onMessage = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== 'onedrive_oauth') return;
+    let settled = false;
+
+    const cleanup = () => {
       clearInterval(check);
       window.removeEventListener('message', onMessage);
-      popup.close();
+      window.removeEventListener('storage', onStorage);
+      try { localStorage.removeItem(ONEDRIVE_OAUTH_STORAGE_KEY); } catch { /* ignore */ }
+    };
 
-      const { code, state: retState, error, errorDesc } = event.data;
+    const handlePayload = async (payload: { code?: string; state?: string; error?: string; errorDesc?: string }) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try { popup.close(); } catch { /* ignore */ }
+
+      const { code, state: retState, error, errorDesc } = payload;
       if (error) { reject(new Error(errorDesc ?? error)); return; }
       if (retState !== state) { reject(new Error('OAuth state mismatch')); return; }
       if (!code) { reject(new Error('No code returned')); return; }
@@ -232,14 +241,43 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
       }
     };
 
+    // Primary channel: localStorage written by the callback page. This is the
+    // reliable path — Microsoft's login pages set Cross-Origin-Opener-Policy
+    // headers that sever window.opener after the redirect, so postMessage
+    // alone can silently fail and the popup just closes with no signal.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== ONEDRIVE_OAUTH_STORAGE_KEY || !event.newValue) return;
+      try { handlePayload(JSON.parse(event.newValue)); } catch { /* ignore */ }
+    };
+
+    // Secondary channel, in case window.opener survived.
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'onedrive_oauth') return;
+      handlePayload(event.data);
+    };
+
+    window.addEventListener('storage', onStorage);
     window.addEventListener('message', onMessage);
 
-    // Detect if the user closed the popup without completing the flow
+    // Also poll localStorage directly: some browsers don't fire 'storage' events
+    // reliably for popups opened via window.open (only fires in *other* windows
+    // of the same origin, which should include us, but be defensive anyway).
     const check = setInterval(() => {
+      if (settled) { clearInterval(check); return; }
+      try {
+        const raw = localStorage.getItem(ONEDRIVE_OAUTH_STORAGE_KEY);
+        if (raw) { handlePayload(JSON.parse(raw)); return; }
+      } catch { /* ignore */ }
+
       if (popup.closed) {
         clearInterval(check);
         window.removeEventListener('message', onMessage);
-        reject(new Error('Sign-in window was closed'));
+        window.removeEventListener('storage', onStorage);
+        if (!settled) {
+          settled = true;
+          reject(new Error('Sign-in window was closed'));
+        }
       }
     }, 500);
   });

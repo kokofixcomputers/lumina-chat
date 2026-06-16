@@ -6,9 +6,14 @@ import { isTauri } from '../utils/tauri';
  * Rendered inside the OAuth popup window.
  * Reads `code` + `state` from the URL, notifies the opener, then closes.
  *
- * Web:   postMessage to window.opener
+ * Web:   postMessage to window.opener AND localStorage (storage event) —
+ *        Microsoft's login pages send `Cross-Origin-Opener-Policy` headers
+ *        that sever window.opener after navigating through them, so
+ *        postMessage alone is unreliable. localStorage works regardless.
  * Tauri: emits 'onedrive_oauth_callback' Tauri event (window.open is not available)
  */
+export const ONEDRIVE_OAUTH_STORAGE_KEY = 'lumina_onedrive_oauth_result';
+
 export default function OAuthOneDriveCallback() {
   const location = useLocation();
 
@@ -30,16 +35,24 @@ export default function OAuthOneDriveCallback() {
         });
       });
     } else {
+      // Primary channel: localStorage + storage event. This works even when
+      // window.opener has been severed by Microsoft's COOP headers.
+      try {
+        localStorage.setItem(ONEDRIVE_OAUTH_STORAGE_KEY, JSON.stringify({ ...payload, ts: Date.now() }));
+      } catch { /* ignore */ }
+
+      // Best-effort secondary channel, in case opener is still intact.
       if (window.opener) {
-        window.opener.postMessage(
-          { type: 'onedrive_oauth', ...payload },
-          window.location.origin,
-        );
-        // Don't close here — main window closes the popup after handling the message,
-        // so the interval check doesn't see it closed before onMessage fires.
-      } else {
-        window.close();
+        try {
+          window.opener.postMessage(
+            { type: 'onedrive_oauth', ...payload },
+            window.location.origin,
+          );
+        } catch { /* ignore */ }
       }
+
+      // Give the opener a moment to read the storage event / message before closing.
+      setTimeout(() => window.close(), 300);
     }
   }, []);
 

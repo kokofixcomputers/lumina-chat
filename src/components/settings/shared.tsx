@@ -196,8 +196,15 @@ export function IntegratedProviderCard({
       let data: any;
       if (activeFormat.id === 'anthropic-subscription') {
         const subHeaders = { ...headers, 'Accept': '*/*', 'Accept-Language': 'en-US', 'Connection': 'keep-alive', 'Host': 'api.anthropic.com', 'User-Agent': 'ChatWise/26.5.3', 'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144"', 'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"' };
-        const text = await invoke<string>('anthropic_request', { method: 'GET', url: modelsUrl, headers: subHeaders, body: null });
-        data = JSON.parse(text);
+        if (isTauri) {
+          const text = await invoke<string>('anthropic_request', { method: 'GET', url: modelsUrl, headers: subHeaders, body: null });
+          data = JSON.parse(text);
+        } else {
+          // Web: route through the Vercel proxy (server-side fetch, no Origin header)
+          const response = await fetchWithProxyFallback(modelsUrl, { method: 'GET', headers: subHeaders }, true, undefined, 'on');
+          if (!response.ok) throw new Error('Failed to fetch models');
+          data = await response.json();
+        }
       } else {
         const response = await fetchWithProxyFallback(
           modelsUrl,

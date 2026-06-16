@@ -25,7 +25,12 @@ function formatToolLabel(name?: string, path?: string, status?: string): string 
     case 'create_directory': return file ? (loading ? `Creating ${file}/…` : `Created ${file}/`) : (loading ? 'Creating directory…' : 'Created directory');
     case 'list_directory':   return file ? (loading ? `Listing ${file}/…` : `Listed ${file}/`) : (loading ? 'Listing…' : 'Listed directory');
     case 'execute_command':  return path ? (loading ? `Running: ${path}` : `Ran: ${path}`) : (loading ? 'Running command…' : 'Ran command');
-    default:                 return name || 'Tool';
+    default:
+      if (name?.startsWith('mcp:')) {
+        const [, server, tool] = name.split(':');
+        return loading ? `Using ${server}/${tool}…` : `Used ${server}/${tool}`;
+      }
+      return name || 'Tool';
   }
 }
 

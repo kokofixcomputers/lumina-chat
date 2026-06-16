@@ -1,4 +1,4 @@
-import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain, Share2, Puzzle, Palette } from 'lucide-react';
+import { X, Database, Settings as SettingsIcon, Settings2, Zap, FileDown, Menu, Info, Cloud, Brain, Share2, Puzzle, Palette, Server } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import type { ModelProvider } from '../../types';
 import { setSyncStatus } from '../../utils/syncStatus';
@@ -17,6 +17,7 @@ import IntegrationsTab from './IntegrationsTab';
 import MemoriesTab from './MemoriesTab';
 import AboutTab from './AboutTab';
 import AppearanceTab from './AppearanceTab';
+import MCPTab from './MCPTab';
 
 export default function SettingsPanel({
   settings,
@@ -85,6 +86,7 @@ export default function SettingsPanel({
     workflows: 'Workflows',
     tools: 'Tools',
     extensions: 'Extensions',
+    mcp: 'MCP Servers',
     shares: 'Shared Conversations',
     memories: 'Memories',
     integrations: 'Integrations',
@@ -124,6 +126,7 @@ export default function SettingsPanel({
               {navBtn('workflows', 'Workflows', <SettingsIcon size={16} />)}
               {navBtn('tools', 'Tools', <SettingsIcon size={16} />)}
               {navBtn('extensions', 'Extensions', <SettingsIcon size={16} />)}
+              {navBtn('mcp', 'MCP Servers', <Server size={16} />)}
               {navBtn('shares', 'Shares', <Share2 size={16} />)}
               {navBtn('memories', 'Memories', <Brain size={16} />)}
               {navBtn('integrations', 'Integrations', <Puzzle size={16} />)}
@@ -232,6 +235,13 @@ export default function SettingsPanel({
 
             {activeTab === 'workflows' && (
               <WorkflowsTab
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
+              />
+            )}
+
+            {activeTab === 'mcp' && (
+              <MCPTab
                 settings={settings}
                 onUpdateSettings={onUpdateSettings}
               />

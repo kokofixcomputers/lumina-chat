@@ -203,6 +203,16 @@ export interface AppSettings {
     };
     [key: string]: any; // Allow extensions to add their own integrations
   };
+  mcpServers?: McpServerConfig[];
+}
+
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  transport: 'sse' | 'streamable-http';
+  url: string;
+  headers?: Record<string, string>;
+  enabled: boolean;
 }
 
 export type Panel = 'chat' | 'settings' | 'share' | 'providers' | 'fine-tuning';

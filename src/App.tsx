@@ -7,6 +7,7 @@ import CodeMode from './components/CodeMode';
 import CoworkMode from './components/CoworkMode';
 import ImageMode from './components/ImageMode';
 import SplitViewChat from './components/SplitViewChat';
+import ParallelCompareView from './components/ParallelCompareView';
 import SettingsPanel from './components/SettingsPanel';
 import OnboardingScreen from './components/OnboardingScreen';
 import TourOverlay, { isTourDone } from './components/TourOverlay';
@@ -38,6 +39,7 @@ import { registerDeepLinkHandler, checkForDeepLinkOnStartup } from './utils/taur
 import { isVersionUpdated, setStoredVersion, getCurrentVersion, fetchLatestRelease } from './utils/versionCheck';
 import './utils/storageMigration'; // Load migration utilities
 import './utils/syncIndexedDB'; // Load IndexedDB sync utilities
+import { mcpRegistry } from './utils/mcpRegistry';
 import type { Panel, Message } from './types';
 import type { CodeSession } from './utils/codeSessionDB';
 import { codeSessionDB } from './utils/codeSessionDB';
@@ -66,6 +68,9 @@ export default function App() {
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [splitViewEnabled, setSplitViewEnabled] = useState(false);
   const [secondConvId, setSecondConvId] = useState<string | null>(null);
+  // Per-route comparison state: key = conversationId or 'home'
+  const [parallelStateMap, setParallelStateMap] = useState<Record<string, { modelIds: string[]; convIds: string[] }>>({});
+  const [parallelGeneratingKey, setParallelGeneratingKey] = useState<string | null>(null);
   const [dividerPosition, setDividerPosition] = useState(50);
   const [appMode, setAppMode] = useState<'chat' | 'code' | 'image' | 'cowork'>('chat');
   const [coworkSessions, setCoworkSessions] = useState<CoworkSession[]>([]);
@@ -78,6 +83,13 @@ export default function App() {
 
   // Extract conversationId from pathname
   const conversationId = location.pathname !== '/' ? location.pathname.slice(1) : null;
+
+  // Derived comparison state for the current route
+  const activeRouteKey = conversationId || 'home';
+  const activeParallelState = parallelStateMap[activeRouteKey];
+  const parallelConvIds = activeParallelState?.convIds ?? [];
+  const parallelModelIds = activeParallelState?.modelIds ?? [];
+  const parallelGenerating = parallelGeneratingKey === activeRouteKey;
 
 
   // Sync URL to store when URL changes
@@ -216,6 +228,12 @@ export default function App() {
     coworkSessionDB.getAll().then(setCoworkSessions).catch(console.error);
   }, []);
 
+  // Sync MCP servers whenever settings change
+  useEffect(() => {
+    const servers = store.settings.mcpServers ?? [];
+    if (servers.length > 0) mcpRegistry.syncFromSettings(servers);
+  }, [store.settings.mcpServers]);
+
   const handleCodeSessionUpdate = async (session: CodeSession) => {
     await codeSessionDB.save(session);
     setCodeSessions(prev => {
@@ -341,6 +359,23 @@ export default function App() {
       store.generateImage(content, convId);
     } else {
       store.sendMessage(content, images, convId);
+    }
+  };
+
+  const handleParallelSend = async (content: string, images: string[], modelIds: string[]) => {
+    const routeKey = conversationId || 'home';
+    const convIds: string[] = [];
+    for (const modelId of modelIds) {
+      const convId = store.newConversation('chat');
+      store.setConversationModel(convId, modelId);
+      convIds.push(convId);
+    }
+    setParallelStateMap(prev => ({ ...prev, [routeKey]: { modelIds, convIds } }));
+    setParallelGeneratingKey(routeKey);
+    try {
+      await Promise.all(convIds.map(convId => store.sendMessage(content, images, convId)));
+    } finally {
+      setParallelGeneratingKey(k => k === routeKey ? null : k);
     }
   };
 
@@ -1803,7 +1838,24 @@ export default function App() {
                 )
               ) : (
                 <>
-                  {splitViewEnabled && secondConvId ? (
+                  {parallelConvIds.length > 0 ? (
+                    <ParallelCompareView
+                      conversations={parallelConvIds.map(id => store.conversations.find(c => c.id === id) || null)}
+                      parallelConvIds={parallelConvIds}
+                      allModels={store.allProviderModels}
+                      isGenerating={parallelGenerating}
+                      onParallelSend={handleParallelSend}
+                      onClose={() => setParallelStateMap(prev => { const next = { ...prev }; delete next[activeRouteKey]; return next; })}
+                      onStopGeneration={store.stopGeneration}
+                      onOpenProviders={openProviders}
+                      prettifyModelNames={store.settings.prettifyModelNames}
+                      workflows={store.settings.workflows || []}
+                      onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
+                      parallelModelIds={parallelModelIds}
+                      onParallelModelIdsChange={modelIds => setParallelStateMap(prev => ({ ...prev, [activeRouteKey]: { ...prev[activeRouteKey], modelIds } }))}
+                      defaultModelId={store.settings.defaultProviderModelId}
+                    />
+                  ) : splitViewEnabled && secondConvId ? (
                     <SplitViewChat
                       leftConversation={store.activeConversation}
                       rightConversation={store.conversations.find(c => c.id === secondConvId) || null}
@@ -1882,6 +1934,7 @@ export default function App() {
                       onFineTuningChange={store.selectFineTuning}
                       onEnableSplitView={handleEnableSplitView}
                       allConversations={store.conversations}
+                      onParallelSend={handleParallelSend}
                     />
                   )}
 

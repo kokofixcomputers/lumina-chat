@@ -164,6 +164,94 @@ async fn ms_token_exchange(params: std::collections::HashMap<String, String>) ->
     res.text().await.map_err(|e| e.to_string())
 }
 
+/// POST JSON to the Anthropic OAuth token endpoint from Rust to avoid CORS/Origin restrictions.
+#[tauri::command]
+async fn anthropic_oauth_token(body: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let res = client
+        .post("https://console.anthropic.com/v1/oauth/token")
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    res.text().await.map_err(|e| e.to_string())
+}
+
+/// Make a native Rust HTTP request to the Anthropic API, bypassing CORS entirely.
+#[tauri::command]
+async fn anthropic_request(
+    method: String,
+    url: String,
+    headers: std::collections::HashMap<String, String>,
+    body: Option<String>,
+) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let mut req = match method.to_uppercase().as_str() {
+        "GET" => client.get(&url),
+        "POST" => client.post(&url),
+        _ => return Err(format!("Unsupported method: {method}")),
+    };
+    for (k, v) in &headers {
+        req = req.header(k.as_str(), v.as_str());
+    }
+    if let Some(b) = body {
+        req = req.body(b);
+    }
+    let res = req.send().await.map_err(|e| e.to_string())?;
+    let status = res.status().as_u16();
+    let text = res.text().await.map_err(|e| e.to_string())?;
+    if status >= 400 {
+        return Err(format!("HTTP {status}: {text}"));
+    }
+    Ok(text)
+}
+
+/// Stream a POST request to the Anthropic API, emitting SSE chunks as Tauri events.
+/// Emits "anthropic-stream-chunk" with each raw SSE line, and "anthropic-stream-done" or "anthropic-stream-error" when finished.
+#[tauri::command]
+async fn anthropic_stream_request(
+    app: tauri::AppHandle,
+    url: String,
+    headers: std::collections::HashMap<String, String>,
+    body: String,
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+
+    let client = reqwest::Client::new();
+    let mut req = client.post(&url);
+    for (k, v) in &headers {
+        req = req.header(k.as_str(), v.as_str());
+    }
+    let res = req.body(body).send().await.map_err(|e| e.to_string())?;
+    let status = res.status().as_u16();
+    if status >= 400 {
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        return Err(format!("HTTP {status}: {text}"));
+    }
+
+    let mut stream = res.bytes_stream();
+    let mut buffer = String::new();
+
+    use tauri::Emitter;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        // Emit complete lines
+        while let Some(newline_pos) = buffer.find('\n') {
+            let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
+            buffer = buffer[newline_pos + 1..].to_string();
+            if !line.is_empty() {
+                let _ = app.emit("anthropic-stream-chunk", line);
+            }
+        }
+    }
+
+    let _ = app.emit("anthropic-stream-done", ());
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -183,6 +271,9 @@ pub fn run() {
             check_accessibility,
             open_accessibility_settings,
             ms_token_exchange,
+            anthropic_oauth_token,
+            anthropic_request,
+            anthropic_stream_request,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

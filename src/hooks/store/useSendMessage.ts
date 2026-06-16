@@ -8,6 +8,7 @@ import { createPresentation } from '../../tools/presentationGenerator';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
 import { universalFetch, universalStreamingFetch, processSSEStream } from '../../utils/tauriFetch';
 import { isTauri } from '../../utils/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { resolveFormat, applyVars, getByPath } from '../../components/ProvidersPanel';
 import { generateUniqueTimestamp } from '../../utils/timestamp';
 
@@ -105,8 +106,28 @@ export function useSendMessage({
       conv = newConv;
     }
 
-    const { provider, model } = getProviderAndModel(conv.modelId || settings.defaultProviderModelId);
+    let { provider, model } = getProviderAndModel(conv.modelId || settings.defaultProviderModelId);
     if (!provider) return;
+
+    // Refresh OAuth token for anthropic-subscription before making requests
+    if (provider.apiFormatId === 'anthropic-subscription') {
+      try {
+        const { getAuthHandler } = await import('../../integrations/auth');
+        const handler = getAuthHandler('anthropic-subscription');
+        if (handler) {
+          const storedConfig = handler.getAuthConfig();
+          if (storedConfig) {
+            const freshToken = await handler.getApiKey(storedConfig);
+            if (freshToken !== provider.apiKey) {
+              updateProvider(provider.id, { apiKey: freshToken });
+              provider = { ...provider, apiKey: freshToken };
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[ANTHROPIC-OAUTH] Token refresh skipped:', e);
+      }
+    }
 
     const userMsg: Message = { id: uuidv4(), role: 'user', content, images: images.length ? images : undefined, timestamp: generateUniqueTimestamp() };
     addMessage(convId, userMsg);
@@ -121,7 +142,7 @@ export function useSendMessage({
 
     // ── resolve format ─────────────────────────────────────────────────────────
     const activeApiFormat = resolveFormat(settings.apiFormats || [], provider.apiFormatId);
-    const isAnthropicFormat = activeApiFormat?.id === 'anthropic';
+    const isAnthropicFormat = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
 
     // Download a file from Anthropic Files API and return as data URL
     const downloadAnthropicFile = async (fileId: string): Promise<{ dataUrl: string; filename: string } | null> => {
@@ -319,7 +340,7 @@ export function useSendMessage({
       tools: getToolDefinitions(settings.allowImageGeneration),
     };
 
-    const useResponsesApi = settings.modelSettings.useResponsesApi;
+    const useResponsesApi = settings.modelSettings.useResponsesApi && activeApiFormat?.id !== 'anthropic-subscription';
     const responsesApiBody = useResponsesApi ? {
       model: model?.id || 'gpt-4o',
       input: responsesApiMessages,
@@ -541,7 +562,7 @@ export function useSendMessage({
 
     // ── tool message builder ───────────────────────────────────────────────────
     const makeToolMsg = (toolCallId: string, output: string, useResponsesApi: boolean) => {
-      const isAnthropic = activeApiFormat?.id === 'anthropic';
+      const isAnthropic = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
       if (useResponsesApi) return { type: 'function_call_output', call_id: toolCallId, output };
       if (isAnthropic) return { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolCallId, content: output }] };
       return { role: 'tool', tool_call_id: toolCallId, content: output };
@@ -553,7 +574,7 @@ export function useSendMessage({
       previousMessages: any[], useResponsesApi: boolean,
     ) => {
       const toolMessages: any[] = [];
-      const isAnthropic = activeApiFormat?.id === 'anthropic';
+      const isAnthropic = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
 
       for (const toolCall of toolCalls) {
         const tool = getToolByName(toolCall.function.name);
@@ -817,7 +838,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       if (toolMessages.length === 0) return;
 
       // Build follow-up body
-      const isAnthropic2 = activeApiFormat?.id === 'anthropic';
+      const isAnthropic2 = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
       const followUpBody = useResponsesApi ? {
         model: model?.id || 'gpt-4o',
         input: [...previousMessages.filter((m: any) => m.type !== 'reasoning'), ...toolMessages],
@@ -835,7 +856,22 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       })() : { ...requestBody, messages: [...previousMessages, ...toolMessages], stream: settings.modelSettings.stream, tools: getToolDefinitions(settings.allowImageGeneration) };
 
       try {
-        const followUpResponse = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(followUpBody) });
+        let followUpResponse: Response;
+        if (activeApiFormat?.id === 'anthropic-subscription') {
+          const subFollowHeaders: Record<string, string> = { ...headers, 'Accept': '*/*', 'Accept-Language': 'en-US', 'Connection': 'keep-alive', 'Host': 'api.anthropic.com', 'User-Agent': 'ChatWise/26.5.3', 'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144"', 'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"' };
+          const normalizeSubMsg = (m: any) => {
+            if (m.role === 'system') return null;
+            // already has array content (tool_use, tool_result, or already converted)
+            if (Array.isArray(m.content)) return m;
+            return { role: m.role, content: [{ type: 'text', text: String(m.content || ''), cache_control: { type: 'ephemeral' } }] };
+          };
+          const subFollowMessages = [...previousMessages, ...toolMessages].map(normalizeSubMsg).filter(Boolean);
+          const subFollowBody = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 128000, thinking: { type: 'adaptive', display: 'summarized' }, output_config: { effort: 'medium' }, tools: anthropicTools.length ? anthropicTools : undefined, messages: subFollowMessages, stream: false, system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }] });
+          const rawText = await invoke<string>('anthropic_request', { method: 'POST', url: chatUrl, headers: subFollowHeaders, body: subFollowBody });
+          followUpResponse = new Response(rawText, { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } else {
+          followUpResponse = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(followUpBody) });
+        }
         if (followUpResponse.ok) {
           await handleResponse(followUpResponse, chatUrl, headers, useResponsesApi ? [...previousMessages.filter((m: any) => m.type !== 'reasoning'), ...toolMessages] : [...previousMessages, ...toolMessages], useResponsesApi);
         }
@@ -869,7 +905,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           if (!assistantContent && data.output_text) assistantContent = data.output_text;
           tokenCount = data.usage?.output_tokens || assistantContent.split(/\s+/).length;
         }
-      } else if (settings.modelSettings.stream) {
+      } else if (settings.modelSettings.stream && activeApiFormat?.id !== 'anthropic-subscription') {
         // Response already has stream from universal fetch
         const reader = response.body?.getReader();
         if (!reader) throw new Error('No response body');
@@ -878,10 +914,24 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         toolCalls = result.toolCalls;
       } else {
         const data = await response.json();
-        assistantContent = activeApiFormat.responseTextPath ? getByPath(data, activeApiFormat.responseTextPath) : (data.choices?.[0]?.message?.content || '');
-        toolCalls = data.choices?.[0]?.message?.tool_calls || [];
-        finishReason = data.choices?.[0]?.finish_reason || 'stop';
-        tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
+        if (activeApiFormat?.id === 'anthropic-subscription' && Array.isArray(data.content)) {
+          const textBlock = data.content.find((b: any) => b.type === 'text');
+          assistantContent = textBlock?.text || '';
+          // Map tool_use blocks to the standard tool_calls format
+          toolCalls = (data.tool_calls || []).length
+            ? data.tool_calls
+            : data.content.filter((b: any) => b.type === 'tool_use').map((b: any) => ({
+                id: b.id, type: 'function',
+                function: { name: b.name, arguments: JSON.stringify(b.input || {}) },
+              }));
+          finishReason = data.stop_reason === 'end_turn' ? 'stop' : data.stop_reason;
+          tokenCount = data.usage?.output_tokens || assistantContent.split(/\s+/).length;
+        } else {
+          assistantContent = activeApiFormat.responseTextPath ? getByPath(data, activeApiFormat.responseTextPath) : (data.choices?.[0]?.message?.content || '');
+          toolCalls = data.choices?.[0]?.message?.tool_calls || [];
+          finishReason = data.choices?.[0]?.finish_reason || 'stop';
+          tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
+        }
 
         // Handle Anthropic code execution results
       }
@@ -936,7 +986,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       if (toolCalls.length > 0) {
         clearStreaming();
         setStreamingContent('');
-        const isAnthropic = activeApiFormat?.id === 'anthropic';
+        const isAnthropic = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
         const assistantMsgContent: any[] = [];
         if (assistantContent) {
           assistantMsgContent.push({ type: 'input_text', text: assistantContent });
@@ -986,10 +1036,10 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       try { Object.assign(headers, JSON.parse(activeApiFormat.extraHeaders)); } catch { /* ignore */ }
       if ((settings as any).serpApiKey) headers['x-serpapi-key'] = (settings as any).serpApiKey;
 
-      const isAnthropic = activeApiFormat?.id === 'anthropic';
+      const isAnthropic = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
 
-      // Add Anthropic dangerous direct browser access header for CORS
-      if (isAnthropic) {
+      // Add Anthropic dangerous direct browser access header for CORS (not for subscription/OAuth)
+      if (activeApiFormat?.id === 'anthropic') {
         headers['anthropic-dangerous-direct-browser-access'] = 'true';
       }
 
@@ -998,7 +1048,117 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
 
       const bodyToSend = useResponsesApi ? responsesApiBody : customBodyStr !== null ? JSON.parse(customBodyStr) : requestBody;
 
-      const response = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(bodyToSend), signal: controller.signal }, 3, true); // Use universal fetch for Tauri
+      let response: Response = new Response(null, { status: 200 });
+      if (activeApiFormat?.id === 'anthropic-subscription') {
+        const { listen } = await import('@tauri-apps/api/event');
+
+        // Build history in Anthropic format, preserving tool_use / tool_result turns
+        const subMessages = nonSystemMessages.map((m: any) => {
+          if (m.role === 'tool') {
+            return { role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id || '', content: m.content }] };
+          }
+          if (m.tool_calls?.length) {
+            return { role: 'assistant', content: m.tool_calls.map((tc: any) => ({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })() })) };
+          }
+          return { role: m.role, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] };
+        });
+
+        const subBody = JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 128000,
+          thinking: { type: 'adaptive', display: 'summarized' },
+          output_config: { effort: 'medium' },
+          tools: anthropicTools.length ? anthropicTools : undefined,
+          messages: subMessages,
+          stream: true,
+          system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+        });
+        const subHeaders: Record<string, string> = {
+          ...headers,
+          'Accept': '*/*',
+          'Accept-Language': 'en-US',
+          'Connection': 'keep-alive',
+          'Host': 'api.anthropic.com',
+          'User-Agent': 'ChatWise/26.5.3',
+          'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"macOS"',
+        };
+
+        // Stream via Tauri events from Rust reqwest
+        await new Promise<void>((resolve, reject) => {
+          let accumulated = '';
+          // tool_use tracking: index → { id, name, inputJson }
+          const toolBlocks: Map<number, { id: string; name: string; inputJson: string }> = new Map();
+          let currentBlockIndex = -1;
+          let currentBlockType = '';
+          const unlisten: (() => void)[] = [];
+
+          const cleanup = () => unlisten.forEach(fn => fn());
+
+          listen<string>('anthropic-stream-chunk', (event) => {
+            const line = event.payload;
+            if (!line.startsWith('data: ')) return;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') return;
+            try {
+              const parsed = JSON.parse(data);
+
+              if (parsed.type === 'content_block_start') {
+                currentBlockIndex = parsed.index;
+                currentBlockType = parsed.content_block?.type;
+                if (currentBlockType === 'tool_use') {
+                  toolBlocks.set(currentBlockIndex, { id: parsed.content_block.id, name: parsed.content_block.name, inputJson: '' });
+                }
+              } else if (parsed.type === 'content_block_delta') {
+                const delta = parsed.delta;
+                if (delta?.type === 'text_delta') {
+                  accumulated += delta.text;
+                  updateStreaming(accumulated);
+                } else if (delta?.type === 'input_json_delta') {
+                  const block = toolBlocks.get(parsed.index);
+                  if (block) block.inputJson += delta.partial_json;
+                }
+              }
+            } catch { /* non-JSON line */ }
+          }).then(fn => unlisten.push(fn));
+
+          listen<void>('anthropic-stream-done', () => {
+            cleanup();
+            // Build tool_calls array from collected tool blocks
+            const streamToolCalls = Array.from(toolBlocks.values()).map(b => ({
+              id: b.id, type: 'function',
+              function: { name: b.name, arguments: b.inputJson },
+            }));
+            const fakeContent: any[] = [];
+            if (accumulated) fakeContent.push({ type: 'text', text: accumulated });
+            streamToolCalls.forEach(tc => fakeContent.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })() }));
+            const fakeBody = JSON.stringify({ content: fakeContent, stop_reason: streamToolCalls.length ? 'tool_use' : 'end_turn', tool_calls: streamToolCalls, usage: { output_tokens: accumulated.split(/\s+/).length } });
+            response = new Response(fakeBody, { status: 200, headers: { 'Content-Type': 'application/json' } });
+            resolve();
+          }).then(fn => unlisten.push(fn));
+
+          listen<string>('anthropic-stream-error', (event) => {
+            cleanup();
+            reject(new Error(event.payload));
+          }).then(fn => unlisten.push(fn));
+
+          // Kick off the stream (errors throw, which rejects via the invoke rejection)
+          invoke('anthropic_stream_request', { url: chatUrl, headers: subHeaders, body: subBody })
+            .catch((e: any) => {
+              cleanup();
+              const raw = typeof e === 'string' ? e : (e?.message || String(e));
+              const match = raw.match(/^HTTP \d+: (.+)$/s);
+              const errBody = match ? match[1] : raw;
+              const parsed = (() => { try { return JSON.parse(errBody); } catch { return null; } })();
+              const errType = parsed?.error?.type;
+              const errMsg = parsed?.error?.message;
+              reject(new Error(errType && errMsg ? `${errType}: ${errMsg}` : errMsg || raw));
+            });
+        });
+      } else {
+        response = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(bodyToSend), signal: controller.signal }, 3, true);
+      }
 
       if (!response.ok) {
         if (useResponsesApi && response.status === 404) {

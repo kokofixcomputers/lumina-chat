@@ -50,7 +50,40 @@ export const ANTHROPIC_FORMAT: ProviderApiFormat = {
   streamingDoneSentinel: 'message_stop',
 };
 
-export const BUILTIN_FORMATS: ProviderApiFormat[] = [OPENAI_FORMAT, ANTHROPIC_FORMAT];
+export const ANTHROPIC_SUBSCRIPTION_FORMAT: ProviderApiFormat = {
+  id: 'anthropic-subscription',
+  name: 'Anthropic Subscription',
+  authHeader: 'Authorization',
+  authPrefix: 'Bearer ',
+  modelIn: 'body',
+  modelKey: 'model',
+  chatPath: '/messages',
+  modelsPath: '/models',
+  extraHeaders: JSON.stringify({
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': 'oauth-2025-04-20',
+  }),
+  extraBody: '{}',
+  requestBodyTemplate: `{
+  "model": {{model}},
+  "system": {{system}},
+  "max_tokens": {{maxTokens}},
+  "messages": {{messages}},
+  "stream": false
+}`,
+  streamingRequestBodyTemplate: `{
+  "model": {{model}},
+  "system": {{system}},
+  "max_tokens": {{maxTokens}},
+  "messages": {{messages}},
+  "stream": true
+}`,
+  responseTextPath: 'content.0.text',
+  streamingChunkPath: 'delta.text',
+  streamingDoneSentinel: 'message_stop',
+};
+
+export const BUILTIN_FORMATS: ProviderApiFormat[] = [OPENAI_FORMAT, ANTHROPIC_FORMAT, ANTHROPIC_SUBSCRIPTION_FORMAT];
 
 export function resolveFormat(formats: ProviderApiFormat[], id?: string): ProviderApiFormat {
   if (!id) return OPENAI_FORMAT;

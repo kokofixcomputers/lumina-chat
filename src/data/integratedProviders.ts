@@ -31,6 +31,20 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
     ],
   },
   {
+    id: 'anthropic-subscription',
+    name: 'Anthropic Subscription',
+    description: 'Use your Claude.ai subscription to access the API via OAuth',
+    baseUrlTemplate: 'https://api.anthropic.com/v1',
+    requireAuth: false,
+    autoAuth: 'anthropic-subscription',
+    defaultApiFormatId: 'anthropic-subscription',
+    defaultModels: [
+      { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', contextLength: 200000, supportsImages: true, supportsStreaming: true },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextLength: 200000, supportsImages: true, supportsStreaming: true },
+      { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', contextLength: 200000, supportsImages: true, supportsStreaming: true },
+    ],
+  },
+  {
     id: 'anthropic',
     name: 'Anthropic',
     description: 'Claude models via native Anthropic API',

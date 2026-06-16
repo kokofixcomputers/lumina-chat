@@ -32,4 +32,5 @@ tauri-plugin-http = "2"
 enigo = "0.2"
 base64 = "0.22"
 screenshots = "0.8"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"

@@ -5,6 +5,7 @@ import { isTauri } from '../../utils/tauri';
 import type { ModelConfig, ModelProvider, ProviderApiFormat } from '../../types';
 import { getModelInfo } from '../../utils/models';
 import { fetchWithProxyFallback } from '../../utils/proxyFetch';
+import { invoke } from '@tauri-apps/api/core';
 import { BUILTIN_FORMATS, resolveFormat } from '../ProvidersPanel';
 import type { IntegratedProviderTemplate } from '../../data/integratedProviders';
 import { getAuthHandler } from '../../integrations/auth';
@@ -158,6 +159,10 @@ export function IntegratedProviderCard({
   const [expanded, setExpanded] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [oauthPending, setOauthPending] = useState<{ verifier: string } | null>(null);
+  const [oauthCode, setOauthCode] = useState('');
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   const activeFormat = resolveFormat(apiFormats, existingProvider?.apiFormatId);
   const allFormats = [...BUILTIN_FORMATS, ...apiFormats];
@@ -185,15 +190,25 @@ export function IntegratedProviderCard({
         headers[activeFormat.authHeader] = `${activeFormat.authPrefix}${existingProvider.apiKey}`;
       }
       try { Object.assign(headers, JSON.parse(activeFormat.extraHeaders)); } catch { /* ignore */ }
-      const response = await fetchWithProxyFallback(
-        modelsUrl,
-        { headers },
-        !!existingProvider.useProxy,
-        () => onUpdate({ useProxy: true }),
-        existingProvider.proxyMode,
-      );
-      if (!response.ok) throw new Error('Failed to fetch models');
-      const data = await response.json();
+      if (activeFormat.id === 'anthropic') {
+        headers['anthropic-dangerous-direct-browser-access'] = 'true';
+      }
+      let data: any;
+      if (activeFormat.id === 'anthropic-subscription') {
+        const subHeaders = { ...headers, 'Accept': '*/*', 'Accept-Language': 'en-US', 'Connection': 'keep-alive', 'Host': 'api.anthropic.com', 'User-Agent': 'ChatWise/26.5.3', 'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144"', 'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"macOS"' };
+        const text = await invoke<string>('anthropic_request', { method: 'GET', url: modelsUrl, headers: subHeaders, body: null });
+        data = JSON.parse(text);
+      } else {
+        const response = await fetchWithProxyFallback(
+          modelsUrl,
+          { headers },
+          !!existingProvider.useProxy,
+          () => onUpdate({ useProxy: true }),
+          existingProvider.proxyMode,
+        );
+        if (!response.ok) throw new Error('Failed to fetch models');
+        data = await response.json();
+      }
       const models: ModelConfig[] = (data.data || []).map((m: any) => {
         // Handle different context length field names from various providers
         const contextLength = m.max_context_length || m.context_length || m.max_tokens || 4096;
@@ -221,36 +236,67 @@ export function IntegratedProviderCard({
   };
 
   const handleOAuthAuth = async () => {
-    
-    if (!template.autoAuth) {
-      return;
-    }
-    
+    if (!template.autoAuth) return;
     const authHandler = getAuthHandler(template.autoAuth);
-    
-    if (!authHandler) {
+    if (!authHandler) return;
+
+    // Two-step flow: open browser, then show inline code input
+    if (authHandler.startAuth) {
+      try {
+        const { verifier } = await authHandler.startAuth();
+        setOauthPending({ verifier });
+        setOauthCode('');
+      } catch (error) {
+        console.error('OAuth start failed:', error);
+      }
       return;
     }
-    
+
+    // Single-step flow (e.g. pollinations device code)
     try {
       const config = await authHandler.configure();
-      
       if (config.type === 'oauth') {
-        // OAuth successful - save config
         authHandler.saveAuthConfig(config);
-        onUpdate({ 
+        onUpdate({
           apiKey: config.credentials.apiKey,
           customFieldValues: {
             ...existingProvider?.customFieldValues,
             [template.autoAuth]: 'configured'
           }
         });
-        
-        // Fetch models after successful OAuth
         setTimeout(() => fetchModels(), 100);
       }
     } catch (error) {
       console.error('OAuth authentication failed:', error);
+    }
+  };
+
+  const handleOAuthComplete = async () => {
+    if (!template.autoAuth || !oauthPending || !oauthCode.trim()) return;
+    const authHandler = getAuthHandler(template.autoAuth);
+    if (!authHandler?.completeAuth) return;
+
+    setOauthLoading(true);
+    setOauthError(null);
+    try {
+      const config = await authHandler.completeAuth(oauthCode.trim(), oauthPending.verifier);
+      if (config.type === 'oauth') {
+        authHandler.saveAuthConfig(config);
+        onUpdate({
+          apiKey: config.credentials.apiKey,
+          customFieldValues: {
+            ...existingProvider?.customFieldValues,
+            [template.autoAuth]: 'configured'
+          }
+        });
+        setOauthPending(null);
+        setOauthCode('');
+        setTimeout(() => fetchModels(), 100);
+      }
+    } catch (error: any) {
+      setOauthError(error?.message || String(error));
+    } finally {
+      setOauthLoading(false);
     }
   };
 
@@ -328,13 +374,36 @@ export function IntegratedProviderCard({
             </div>
           )}
           {template.autoAuth && (
-            <div className="form-group mb-0">
-              <button
-                onClick={handleOAuthAuth}
-                className="btn-secondary py-1 px-3 text-xs w-full"
-              >
-                {existingProvider.customFieldValues?.[template.autoAuth] === 'configured' ? 'Re-authenticate' : 'Authenticate with Pollinations.ai'}
-              </button>
+            <div className="form-group mb-0 flex flex-col gap-2">
+              {!oauthPending ? (
+                <button
+                  onClick={handleOAuthAuth}
+                  className="btn-secondary py-1 px-3 text-xs w-full"
+                >
+                  {existingProvider.customFieldValues?.[template.autoAuth] === 'configured' ? 'Re-authenticate' : `Authenticate with ${template.name}`}
+                </button>
+              ) : (
+                <>
+                  <p className="text-xs text-[rgb(var(--muted))]">Browser opened. After authorizing, paste the code from the redirect URL (the part after <code>?code=</code>) or the page itself.</p>
+                  <input
+                    className="input text-sm font-mono"
+                    placeholder="Paste authorization code..."
+                    value={oauthCode}
+                    onChange={e => { setOauthCode(e.target.value); setOauthError(null); }}
+                    onKeyDown={e => e.key === 'Enter' && handleOAuthComplete()}
+                    autoFocus
+                  />
+                  {oauthError && <p className="text-xs text-red-400">{oauthError}</p>}
+                  <div className="flex gap-2">
+                    <button onClick={handleOAuthComplete} className="btn-primary py-1 px-3 text-xs flex-1" disabled={!oauthCode.trim() || oauthLoading}>
+                      {oauthLoading ? 'Confirming...' : 'Confirm'}
+                    </button>
+                    <button onClick={() => { setOauthPending(null); setOauthCode(''); setOauthError(null); }} className="btn-secondary py-1 px-3 text-xs">
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
           {template.customFields?.map(field => (

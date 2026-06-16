@@ -3,6 +3,8 @@ export interface AuthHandler {
   name: string;
   description: string;
   configure(): Promise<AuthConfig>;
+  startAuth?(): Promise<{ url: string; verifier: string }>;
+  completeAuth?(code: string, verifier: string): Promise<AuthConfig>;
   getApiKey(config: AuthConfig): Promise<string>;
   refreshToken?(config: AuthConfig): Promise<AuthConfig>;
   getAuthConfig(): AuthConfig | null;
@@ -23,9 +25,11 @@ export interface AuthHandlers {
 
 // Import and register all auth handlers
 import { pollinationsAuthHandler } from './pollinations';
+import { anthropicSubscriptionAuthHandler } from './anthropicSubscription';
 
 export const authHandlers: AuthHandlers = {
   pollinations: pollinationsAuthHandler,
+  'anthropic-subscription': anthropicSubscriptionAuthHandler,
 };
 
 export function getAuthHandler(id: string): AuthHandler | undefined {

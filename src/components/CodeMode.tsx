@@ -232,7 +232,7 @@ IMPORTANT — file editing rules:
       };
 
       const activeApiFormat = resolveFormat(store.settings.apiFormats || [], provider.apiFormatId);
-      const isAnthropic = activeApiFormat?.id === 'anthropic';
+      const isAnthropic = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
       const baseUrl = provider.baseUrl.replace(/\/$/, '');
       const apiUrl = isAnthropic
         ? (baseUrl.includes('/messages') ? baseUrl : `${baseUrl}/messages`)

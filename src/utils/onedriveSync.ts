@@ -209,6 +209,11 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
     return openOAuthDeepLinkTauri(authUrl.toString(), state, verifier);
   }
 
+  // Clear any stale result left over from a previous interrupted attempt — otherwise
+  // the poll below can pick it up immediately and reject this fresh attempt with a
+  // bogus "state mismatch" before the new popup has even had a chance to finish.
+  try { localStorage.removeItem(ONEDRIVE_OAUTH_STORAGE_KEY); } catch { /* ignore */ }
+
   return new Promise((resolve, reject) => {
     const popup = window.open(authUrl.toString(), 'onedrive_oauth', 'width=520,height=680,left=200,top=100');
     if (!popup) { reject(new Error('Popup blocked — please allow popups for this site.')); return; }
@@ -224,13 +229,22 @@ export async function startOAuthFlow(): Promise<OneDriveToken> {
 
     const handlePayload = async (payload: { code?: string; state?: string; error?: string; errorDesc?: string }) => {
       if (settled) return;
+
+      // A payload for a different state isn't necessarily an attack — it's most
+      // often a stale leftover from a previous attempt (e.g. one whose opener tab
+      // was closed before it could clean up). Discard it and keep waiting for the
+      // real result instead of failing this attempt.
+      if (payload.state !== state) {
+        try { localStorage.removeItem(ONEDRIVE_OAUTH_STORAGE_KEY); } catch { /* ignore */ }
+        return;
+      }
+
       settled = true;
       cleanup();
       try { popup.close(); } catch { /* ignore */ }
 
-      const { code, state: retState, error, errorDesc } = payload;
+      const { code, error, errorDesc } = payload;
       if (error) { reject(new Error(errorDesc ?? error)); return; }
-      if (retState !== state) { reject(new Error('OAuth state mismatch')); return; }
       if (!code) { reject(new Error('No code returned')); return; }
 
       try {

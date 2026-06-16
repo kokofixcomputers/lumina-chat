@@ -5,7 +5,7 @@ import {
   Type, List, Eraser, MoreHorizontal, ChevronDown,
   Check, Search, Eye, Settings2, RotateCcw, Sparkles, MessageSquarePlus,
   Mic, Volume2, Brain, FlaskConical, Radio, BookOpen, X as ImgOut, Video,
-  Share2, GitFork, Quote, Wand2
+  Share2, GitFork, Quote, Wand2, Layers
 } from 'lucide-react';
 import { checkIsTauri } from '../utils/tauri';
 import { getModelInfo } from '../utils/models';
@@ -59,6 +59,10 @@ interface ChatInputProps {
   placeholder?: string;
   onOptimizePrompt?: (prompt: string) => Promise<string>;
   onBeforeSend?: (originalText: string) => void;
+  parallelMode?: boolean;
+  parallelModelIds?: string[];
+  onParallelModelIdsChange?: (ids: string[]) => void;
+  onParallelSend?: (content: string, images: string[], modelIds: string[]) => void;
 }
 
 // Color per provider
@@ -194,9 +198,18 @@ export default function ChatInput({
   placeholder,
   onOptimizePrompt,
   onBeforeSend,
+  parallelMode: parallelModeProp = false,
+  parallelModelIds: parallelModelIdsProp,
+  onParallelModelIdsChange,
+  onParallelSend,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [parallelModeLocal, setParallelModeLocal] = useState(false);
+  const [parallelModelIdsLocal, setParallelModelIdsLocal] = useState<string[]>([]);
+  const parallelMode = parallelModeProp || parallelModeLocal;
+  const parallelModelIds = parallelModelIdsProp ?? parallelModelIdsLocal;
+  const setParallelModelIds = onParallelModelIdsChange ?? setParallelModelIdsLocal;
 
   // Extension toolbar buttons
   const [, extTick] = useState(0);
@@ -450,12 +463,18 @@ export default function ChatInput({
     }
 
     const allAttachments = [...images, ...attachments];
-    onSend(messageText, allAttachments);
+
+    if (parallelMode && parallelModelIds.length > 0 && onParallelSend) {
+      onParallelSend(messageText, allAttachments, parallelModelIds);
+    } else {
+      onSend(messageText, allAttachments);
+    }
+
     setText('');
     setImages([]);
     if (onAttachmentsChange) onAttachmentsChange([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-  }, [text, images, attachments, quote, isGenerating, isOptimizing, imageGenerateMode, promptOptimize, onOptimizePrompt, onSend, onAttachmentsChange]);
+  }, [text, images, attachments, quote, isGenerating, isOptimizing, imageGenerateMode, promptOptimize, onOptimizePrompt, onSend, onAttachmentsChange, parallelMode, parallelModelIds, onParallelSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1073,10 +1092,27 @@ export default function ChatInput({
           <div className="flex items-center gap-1.5 min-w-0">
             <ContextIndicator usedTokens={usedTokens} maxTokens={maxTokens} />
           </div>
+          {/* Parallel mode toggle */}
+          <button
+            title={parallelMode ? 'Exit parallel mode' : 'Compare models in parallel'}
+            onClick={() => {
+              if (!parallelModeProp) setParallelModeLocal(v => !v);
+              if (parallelMode) setParallelModelIds([]);
+            }}
+            className={`flex items-center gap-1 text-[12px] rounded-md px-2 py-0.5 transition-colors ${
+              parallelMode
+                ? 'bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))]'
+                : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+            }`}
+          >
+            <Layers size={13} />
+          </button>
+
+          {/* Single-model button (hidden in parallel mode) */}
           <button
             ref={modelBtnRef}
             onClick={openModelPicker}
-            className={`${overflowItems.includes('model') ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
+            className={`${overflowItems.includes('model') || parallelMode ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
           >
             {typeof modelInfo.icon === 'string' ? (
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[rgb(var(--border))]">
@@ -1090,6 +1126,52 @@ export default function ChatInput({
             <span className="font-medium truncate">{displayModelName}</span>
             <ChevronDown size={11} />
           </button>
+          {/* Parallel model chips (shown when parallelMode is active) */}
+          {parallelMode && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {parallelModelIds.length === 0 && (
+                <button
+                  ref={modelBtnRef}
+                  onClick={openModelPicker}
+                  className="flex items-center gap-1 text-[11px] text-[rgb(var(--muted))] hover:text-[rgb(var(--accent))] border border-dashed border-[rgb(var(--border))] rounded-md px-2 py-0.5 transition-colors"
+                >
+                  + Add models to compare
+                </button>
+              )}
+              {parallelModelIds.map(mid => {
+                const shortId = mid.slice(mid.indexOf('/') + 1);
+                const mInfo = getModelInfo(shortId);
+                const mName = prettifyModelNames ? mInfo.displayName : shortId;
+                const MIcon = typeof mInfo.icon === 'string' ? null : mInfo.icon;
+                return (
+                  <div key={mid} className="flex items-center gap-1 bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] rounded-md px-1.5 py-0.5 text-[11px] font-medium">
+                    {typeof mInfo.icon === 'string' ? (
+                      <img src={mInfo.icon} alt="" className="w-3.5 h-3.5 rounded-full" />
+                    ) : MIcon ? (
+                      <MIcon size={10} />
+                    ) : null}
+                    <span className="truncate max-w-[6rem]">{mName}</span>
+                    <button
+                      onClick={() => setParallelModelIds(parallelModelIds.filter(id => id !== mid))}
+                      className="ml-0.5 hover:text-red-500 transition-colors"
+                    >
+                      <X size={9} />
+                    </button>
+                  </div>
+                );
+              })}
+              {parallelModelIds.length > 0 && (
+                <button
+                  ref={modelBtnRef}
+                  onClick={openModelPicker}
+                  className="flex items-center gap-1 text-[11px] text-[rgb(var(--muted))] hover:text-[rgb(var(--accent))] transition-colors px-1"
+                >
+                  + Add
+                </button>
+              )}
+            </div>
+          )}
+
           {!imageGenerateMode && <button
             ref={fineTuningBtnRef}
             onClick={openFineTuningPicker}
@@ -1176,6 +1258,19 @@ export default function ChatInput({
             transform: 'translateY(calc(-100% - 8px))',
           }}
         >
+          {/* Parallel mode hint */}
+          {parallelMode && (
+            <div className="mx-2 mb-1 px-2.5 py-1.5 rounded-lg bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] text-[11px] flex items-center gap-1.5">
+              <Layers size={11} />
+              <span>Click to toggle models for comparison</span>
+              <button
+                onClick={() => { setShowModelPicker(false); setModelSearch(''); }}
+                className="ml-auto font-medium hover:opacity-70"
+              >
+                Done
+              </button>
+            </div>
+          )}
           {/* Search */}
           <div className="flex items-center gap-2 mx-2 mb-1 px-2.5 py-1.5 rounded-lg bg-[rgb(var(--bg))] border border-[rgb(var(--border))]">
             <Search size={13} className="text-[rgb(var(--muted))] shrink-0" />
@@ -1216,7 +1311,8 @@ export default function ChatInput({
                   {/* Models */}
                   {!isCollapsed && models.map(m => {
                     const ctx = formatCtx(m.contextLength);
-                    const isSelected = selectedModelId === m.fullId;
+                    const isInParallel = parallelModelIds.includes(m.fullId);
+                    const isSelected = parallelMode ? isInParallel : selectedModelId === m.fullId;
                     const mId = m.fullId.slice(m.fullId.indexOf('/') + 1);
                     const mInfo = getModelInfo(mId);
                     const MIcon = typeof mInfo.icon === 'string' ? null : mInfo.icon;
@@ -1224,7 +1320,20 @@ export default function ChatInput({
                     return (
                       <button
                         key={m.fullId}
-                        onClick={() => { onModelChange(m.fullId); setShowModelPicker(false); setModelSearch(''); }}
+                        onClick={() => {
+                          if (parallelMode) {
+                            setParallelModelIds(
+                              isInParallel
+                                ? parallelModelIds.filter(id => id !== m.fullId)
+                                : [...parallelModelIds, m.fullId]
+                            );
+                            // Don't close picker in parallel mode
+                          } else {
+                            onModelChange(m.fullId);
+                            setShowModelPicker(false);
+                            setModelSearch('');
+                          }
+                        }}
                         className={`model-option w-full text-left ${isSelected ? 'selected' : ''}`}
                       >
                         {typeof mInfo.icon === 'string' ? (

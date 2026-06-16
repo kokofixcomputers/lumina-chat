@@ -94,6 +94,7 @@ interface ChatAreaProps {
   isCode?: boolean;
   codeWorkspace?: string;
   onChangeWorkspace?: () => void;
+  onParallelSend?: (content: string, images: string[], modelIds: string[]) => void;
 }
 
 const QUICK_ACTIONS = [
@@ -141,6 +142,7 @@ export default function ChatArea({
   isCode = false,
   codeWorkspace,
   onChangeWorkspace,
+  onParallelSend,
 }: ChatAreaProps) {
   const [showSplitDropdown, setShowSplitDropdown] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -232,6 +234,7 @@ export default function ChatArea({
               conversation={{ messages: [] }}
               selectedFineTuningId={selectedFineTuningId}
               onFineTuningChange={onFineTuningChange}
+              onParallelSend={onParallelSend}
             />
           </div>
 
@@ -390,6 +393,7 @@ export default function ChatArea({
         conversation={conversation}
         selectedFineTuningId={isCode ? null : selectedFineTuningId}
         onFineTuningChange={isCode ? undefined : onFineTuningChange}
+        onParallelSend={isCode ? undefined : onParallelSend}
       />
       </div>
       <PreviewSidebar />

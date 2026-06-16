@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Upload, Send } from 'lucide-react';
+import { Download, Upload, Send, Trash2, AlertTriangle } from 'lucide-react';
 import type { AppSettings } from '../../types';
 import { importSources, importChatFile } from '../../utils/importers';
 import type { ImportSourceId } from '../../utils/importers';
@@ -13,6 +13,34 @@ interface DataTabProps {
 
 export default function DataTab({ settings, conversations, onImportData }: DataTabProps) {
   const [selectedSource, setSelectedSource] = useState<ImportSourceId>('lumina');
+  const [erasePhase, setErasePhase] = useState<'idle' | 'confirm' | 'erasing'>('idle');
+
+  const eraseEverything = async () => {
+    setErasePhase('erasing');
+    try {
+      // Clear all localStorage keys
+      localStorage.clear();
+
+      // Delete all known IndexedDB databases
+      const dbNames = ['LuminaChatDB', 'LuminaImageDB', 'LuminaCodeDB', 'LuminaCoworkDB'];
+      await Promise.all(
+        dbNames.map(
+          name =>
+            new Promise<void>(resolve => {
+              const req = indexedDB.deleteDatabase(name);
+              req.onsuccess = () => resolve();
+              req.onerror = () => resolve();
+              req.onblocked = () => resolve();
+            })
+        )
+      );
+
+      // Hard reload so all in-memory state is gone
+      window.location.reload();
+    } catch {
+      setErasePhase('idle');
+    }
+  };
 
   const exportToDesktop = () => {
     console.log('Export to desktop clicked');
@@ -196,6 +224,54 @@ export default function DataTab({ settings, conversations, onImportData }: DataT
               <Send size={16} />
               Export to Desktop
             </button>
+          )}
+        </div>
+      </section>
+      <section>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-red-500 mb-4">Danger Zone</h3>
+        <div className="border border-red-200 dark:border-red-900 rounded-xl p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-[rgb(var(--text))]">Erase All Data</p>
+              <p className="text-sm text-[rgb(var(--muted))] mt-0.5">
+                Permanently deletes all conversations, images, code sessions, cowork sessions, providers, settings, and API keys. This cannot be undone.
+              </p>
+            </div>
+          </div>
+
+          {erasePhase === 'idle' && (
+            <button
+              onClick={() => setErasePhase('confirm')}
+              className="btn-secondary text-red-500 border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/30"
+            >
+              <Trash2 size={15} />
+              Erase Everything
+            </button>
+          )}
+
+          {erasePhase === 'confirm' && (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-red-500">Are you absolutely sure? All data will be gone forever.</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={eraseEverything}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+                >
+                  Yes, erase everything
+                </button>
+                <button
+                  onClick={() => setErasePhase('idle')}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {erasePhase === 'erasing' && (
+            <p className="text-sm text-red-500 animate-pulse">Erasing all data…</p>
           )}
         </div>
       </section>

@@ -12,6 +12,7 @@ export type TabType =
   | 'workflows'
   | 'tools'
   | 'extensions'
+  | 'mcp'
   | 'shares'
   | 'memories'
   | 'integrations'

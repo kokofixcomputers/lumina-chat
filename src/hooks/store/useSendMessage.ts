@@ -10,6 +10,7 @@ import { universalFetch, universalStreamingFetch, processSSEStream } from '../..
 import { isTauri } from '../../utils/tauri';
 import { resolveFormat, applyVars, getByPath } from '../../components/ProvidersPanel';
 import { generateUniqueTimestamp } from '../../utils/timestamp';
+import { streamingRegistry } from '../../utils/streamingRegistry';
 
 interface SendMessageOptions {
   conversations: Conversation[];
@@ -41,16 +42,18 @@ export function useSendMessage({
   const streamingActiveRef = useRef(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-  const updateStreaming = (text: string) => {
+  const updateStreaming = (text: string, convId?: string) => {
     streamingContentRef.current = text;
+    if (convId) streamingRegistry.set(convId, text);
     if (!streamingActiveRef.current) {
       streamingActiveRef.current = true;
       setStreamingContent(text); // one setState to show the bubble
     }
   };
-  const clearStreaming = () => {
+  const clearStreaming = (convId?: string) => {
     streamingContentRef.current = '';
     streamingActiveRef.current = false;
+    if (convId) streamingRegistry.clear(convId);
   };
 
   const stopGeneration = useCallback(() => {
@@ -309,6 +312,24 @@ export function useSendMessage({
     const rawTools = getToolDefinitions(settings.allowImageGeneration);
     const anthropicTools = rawTools.map((t: any) => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters }));
 
+    // MCP servers — passed natively to the API rather than executed client-side
+    const enabledMcpServers = (settings.mcpServers ?? []).filter(s => s.enabled);
+    const anthropicMcpServers = enabledMcpServers.map(s => ({
+      type: 'url',
+      name: s.name,
+      url: s.url,
+      ...(s.headers && Object.keys(s.headers).length > 0
+        ? { authorization_token: s.headers['Authorization']?.replace('Bearer ', '') ?? undefined }
+        : {}),
+    }));
+    const openaiMcpTools = enabledMcpServers.map(s => ({
+      type: 'mcp',
+      server_label: s.name.replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]+/, 'mcp_') || 'mcp_server',
+      server_url: s.url,
+      require_approval: 'never',
+      ...(s.headers && Object.keys(s.headers).length > 0 ? { headers: s.headers } : {}),
+    }));
+
     const requestBody = {
       model: model?.id || 'gpt-4o',
       messages: apiMessages,
@@ -328,7 +349,10 @@ export function useSendMessage({
       top_p: settings.modelSettings.topP,
       frequency_penalty: settings.modelSettings.frequencyPenalty,
       presence_penalty: settings.modelSettings.presencePenalty,
-      tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+      tools: [
+        ...getToolDefinitionsForResponsesApi(settings.allowImageGeneration),
+        ...openaiMcpTools,
+      ],
       tool_choice: 'auto',
       ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}),
     } : null;
@@ -351,7 +375,7 @@ export function useSendMessage({
     };
 
     // ── SSE streaming parser helper ────────────────────────────────────────────
-    const parseSseChunk = (data: string, toolCallsMap: Map<number | string, any>): { delta: string; toolCallsMap: Map<number | string, any>; finishReason?: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' } => {
+    const parseSseChunk = (data: string, toolCallsMap: Map<number | string, any>, mcpCallsMap: Map<string, any> = new Map()): { delta: string; toolCallsMap: Map<number | string, any>; finishReason?: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' } => {
       let delta = '';
       let chunkFinishReason: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' | undefined;
       try {
@@ -391,6 +415,14 @@ export function useSendMessage({
         // Anthropic code execution output text
         if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
           delta = parsed.delta.text;
+        }
+        // Anthropic MCP connector: server-executed tool use/result blocks arrive whole, not via deltas
+        if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'mcp_tool_use') {
+          mcpCallsMap.set(parsed.content_block.id, { use: parsed.content_block });
+        }
+        if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'mcp_tool_result') {
+          const entry = mcpCallsMap.get(parsed.content_block.tool_use_id) ?? {};
+          mcpCallsMap.set(parsed.content_block.tool_use_id, { ...entry, result: parsed.content_block });
         }
       } catch (e) {
         if (e instanceof Error && !e.message.includes('JSON')) throw e;
@@ -477,11 +509,12 @@ export function useSendMessage({
     };
 
     // ── stream reader ──────────────────────────────────────────────────────────
-    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[] }> => {
+    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[]; mcpCalls: any[] }> => {
       const decoder = new TextDecoder();
       let buffer = '';
       let assistantContent = '';
       const toolCallsMap = new Map<number | string, any>();
+      const mcpCallsMap = new Map<string, any>();
 
       while (true) {
         const { done, value } = await reader.read();
@@ -494,20 +527,21 @@ export function useSendMessage({
           if (!line.startsWith('data:')) continue;
           const raw = decodeHtml(line.slice(line.indexOf('data:') + 6).trim());
           if (isSentinel(raw)) continue;
-          const { delta, finishReason: chunkFinishReason } = parseSseChunk(raw, toolCallsMap);
-          if (delta) { assistantContent += delta; updateStreaming(assistantContent); tokenCount++; }
+          const { delta, finishReason: chunkFinishReason } = parseSseChunk(raw, toolCallsMap, mcpCallsMap);
+          if (delta) { assistantContent += delta; updateStreaming(assistantContent, convId); tokenCount++; }
           if (chunkFinishReason) { finishReason = chunkFinishReason; }
         }
       }
-      return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()) };
+      return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()), mcpCalls: Array.from(mcpCallsMap.values()) };
     };
 
     // ── responses API stream reader ────────────────────────────────────────────
-    const readResponsesStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[] }> => {
+    const readResponsesStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[]; mcpCalls: any[] }> => {
       const decoder = new TextDecoder();
       let buffer = '';
       let assistantContent = '';
       const functionCallsMap = new Map<string, any>();
+      const mcpCalls: any[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -523,8 +557,8 @@ export function useSendMessage({
             const parsed = JSON.parse(raw);
             if (parsed.type === 'error' && parsed.error) throw new Error(parsed.error.message || JSON.stringify(parsed.error));
             if (parsed.type === 'response.failed' && parsed.response?.error) throw new Error(parsed.response.error.message || JSON.stringify(parsed.response.error));
-            if (parsed.type === 'response.output_text.delta' && parsed.delta) { assistantContent += parsed.delta; updateStreaming(assistantContent); tokenCount++; }
-            if (parsed.type === 'response.output_text.done' && parsed.text) { assistantContent = parsed.text; updateStreaming(assistantContent); }
+            if (parsed.type === 'response.output_text.delta' && parsed.delta) { assistantContent += parsed.delta; updateStreaming(assistantContent, convId); tokenCount++; }
+            if (parsed.type === 'response.output_text.done' && parsed.text) { assistantContent = parsed.text; updateStreaming(assistantContent, convId); }
             if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'function_call') {
               functionCallsMap.set(parsed.item.id, { id: parsed.item.call_id, type: 'function', function: { name: parsed.item.name, arguments: '' }, fc_id: parsed.item.id });
             }
@@ -533,10 +567,16 @@ export function useSendMessage({
               if (call) call.function.arguments += parsed.delta;
             }
             if (parsed.type === 'response.completed' && parsed.response?.usage) tokenCount = parsed.response.usage.output_tokens || tokenCount;
+            if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'mcp_approval_request') {
+              throw new Error(`MCP server "${parsed.item.server_label}" requested approval for tool "${parsed.item.name}", but approvals aren't supported. Set the server to auto-approve (require_approval: never).`);
+            }
+            if (parsed.type === 'response.output_item.done' && parsed.item?.type === 'mcp_call') {
+              mcpCalls.push(parsed.item);
+            }
           } catch (e) { if (e instanceof Error && !e.message.includes('JSON')) throw e; }
         }
       }
-      return { content: assistantContent, toolCalls: Array.from(functionCallsMap.values()) };
+      return { content: assistantContent, toolCalls: Array.from(functionCallsMap.values()), mcpCalls };
     };
 
     // ── tool message builder ───────────────────────────────────────────────────
@@ -849,6 +889,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
     ) => {
       let assistantContent = '';
       let toolCalls: any[] = [];
+      let mcpCalls: any[] = [];
 
       if (useResponsesApi && response.ok) {
         if (settings.modelSettings.stream) {
@@ -858,16 +899,36 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           const result = await readResponsesStream(reader);
           assistantContent = result.content;
           toolCalls = result.toolCalls;
+          mcpCalls = result.mcpCalls;
         } else {
           const data = await response.json();
           if (data.output) {
             for (const item of data.output) {
               if (item.type === 'message' && item.content) for (const ci of item.content) if (ci.type === 'output_text') assistantContent += ci.text || '';
               if (item.type === 'function_call') toolCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments }, fc_id: item.id });
+              if (item.type === 'mcp_call') mcpCalls.push(item);
+              if (item.type === 'mcp_approval_request') {
+                throw new Error(`MCP server "${item.server_label}" requested approval for tool "${item.name}", but approvals aren't supported. Set the server to auto-approve (require_approval: never).`);
+              }
             }
           }
           if (!assistantContent && data.output_text) assistantContent = data.output_text;
           tokenCount = data.usage?.output_tokens || assistantContent.split(/\s+/).length;
+        }
+
+        // Surface MCP tool calls in the UI as completed tool messages
+        for (const call of mcpCalls) {
+          const toolMsgId = uuidv4();
+          const isError = !!call.error;
+          addMessage(convId, {
+            id: toolMsgId,
+            role: 'tool',
+            content: isError ? String(call.error) : (typeof call.output === 'string' ? call.output : JSON.stringify(call.output, null, 2)),
+            timestamp: generateUniqueTimestamp(),
+            tool_call_id: call.id,
+            tool_name: `mcp:${call.server_label}:${call.name}`,
+            tool_status: isError ? 'error' : 'success',
+          });
         }
       } else if (settings.modelSettings.stream) {
         // Response already has stream from universal fetch
@@ -876,6 +937,22 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         const result = await readChatStream(reader as ReadableStreamDefaultReader<Uint8Array>);
         assistantContent = result.content;
         toolCalls = result.toolCalls;
+
+        for (const { use, result: mcpResult } of result.mcpCalls) {
+          if (!mcpResult) continue;
+          const text = Array.isArray(mcpResult.content)
+            ? mcpResult.content.map((c: any) => (c.type === 'text' ? c.text : JSON.stringify(c))).join('\n')
+            : JSON.stringify(mcpResult.content);
+          addMessage(convId, {
+            id: uuidv4(),
+            role: 'tool',
+            content: text,
+            timestamp: generateUniqueTimestamp(),
+            tool_call_id: mcpResult.tool_use_id,
+            tool_name: `mcp:${use?.server_name ?? 'server'}:${use?.name ?? 'tool'}`,
+            tool_status: mcpResult.is_error ? 'error' : 'success',
+          });
+        }
       } else {
         const data = await response.json();
         assistantContent = activeApiFormat.responseTextPath ? getByPath(data, activeApiFormat.responseTextPath) : (data.choices?.[0]?.message?.content || '');
@@ -883,7 +960,32 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         finishReason = data.choices?.[0]?.finish_reason || 'stop';
         tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
 
-        // Handle Anthropic code execution results
+        // Anthropic MCP connector: surface mcp_tool_use/mcp_tool_result blocks as tool messages,
+        // and concatenate all text blocks (not just the first) since MCP blocks may precede the reply.
+        if (isAnthropicFormat && Array.isArray(data.content)) {
+          const textBlocks = data.content.filter((b: any) => b.type === 'text').map((b: any) => b.text);
+          if (textBlocks.length > 0) assistantContent = textBlocks.join('\n\n');
+
+          const mcpUses = new Map<string, any>();
+          for (const block of data.content) {
+            if (block.type === 'mcp_tool_use') mcpUses.set(block.id, block);
+            if (block.type === 'mcp_tool_result') {
+              const use = mcpUses.get(block.tool_use_id);
+              const text = Array.isArray(block.content)
+                ? block.content.map((c: any) => (c.type === 'text' ? c.text : JSON.stringify(c))).join('\n')
+                : JSON.stringify(block.content);
+              addMessage(convId, {
+                id: uuidv4(),
+                role: 'tool',
+                content: text,
+                timestamp: generateUniqueTimestamp(),
+                tool_call_id: block.tool_use_id,
+                tool_name: `mcp:${use?.server_name ?? 'server'}:${use?.name ?? 'tool'}`,
+                tool_status: block.is_error ? 'error' : 'success',
+              });
+            }
+          }
+        }
       }
 
       const endTime = Date.now();
@@ -918,7 +1020,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       if (finalContent || toolCalls.length > 0) addMessage(convId, assistantMsg);
 
       if (toolCalls.length === 0) {
-        clearStreaming();
+        clearStreaming(convId);
         setIsGenerating(false);
         // title + follow-ups
         const shouldTitle = settings.generateTitle !== false;
@@ -934,7 +1036,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       }
 
       if (toolCalls.length > 0) {
-        clearStreaming();
+        clearStreaming(convId);
         setStreamingContent('');
         const isAnthropic = activeApiFormat?.id === 'anthropic';
         const assistantMsgContent: any[] = [];
@@ -963,7 +1065,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
             const contMsgs = useResponsesApi
               ? [...responsesApiMessages, { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: assistantContent }] }, { type: 'message', role: 'user', content: wrapResponsesApiContent(JSON.stringify({ status: 'tool_call_message_given' })) }]
               : [...apiMessages, { role: 'assistant', content: assistantContent }, { role: 'user', content: JSON.stringify({ status: 'tool_call_message_given' }) }];
-            const contBody = useResponsesApi ? { model: model?.id || 'gpt-4o', input: contMsgs, store: false, stream: settings.modelSettings.stream, top_p: settings.modelSettings.topP, frequency_penalty: settings.modelSettings.frequencyPenalty, presence_penalty: settings.modelSettings.presencePenalty, tools: getToolDefinitionsForResponsesApi(settings.allowImageGeneration), tool_choice: 'auto', ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}) } : { ...requestBody, messages: contMsgs, stream: settings.modelSettings.stream };
+            const contBody = useResponsesApi ? { model: model?.id || 'gpt-4o', input: contMsgs, store: false, stream: settings.modelSettings.stream, top_p: settings.modelSettings.topP, frequency_penalty: settings.modelSettings.frequencyPenalty, presence_penalty: settings.modelSettings.presencePenalty, tools: [...getToolDefinitionsForResponsesApi(settings.allowImageGeneration), ...openaiMcpTools], tool_choice: 'auto', ...(settings.modelSettings.reasoningEffort && settings.modelSettings.reasoningEffort !== 'off' ? { reasoning: { effort: settings.modelSettings.reasoningEffort } } : {}) } : { ...requestBody, messages: contMsgs, stream: settings.modelSettings.stream };
             const contRes = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(contBody) });
             if (contRes.ok) await handleResponse(contRes, chatUrl, headers, contMsgs, useResponsesApi);
           } catch (e) { console.error('Continuation failed:', e); }
@@ -991,12 +1093,20 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       // Add Anthropic dangerous direct browser access header for CORS
       if (isAnthropic) {
         headers['anthropic-dangerous-direct-browser-access'] = 'true';
+        if (anthropicMcpServers.length > 0) {
+          headers['anthropic-beta'] = 'mcp-client-2025-04-04';
+        }
       }
 
       const isStreaming = settings.modelSettings.stream;
       let customBodyStr = !useResponsesApi ? buildCustomBody(isStreaming) : null;
 
-      const bodyToSend = useResponsesApi ? responsesApiBody : customBodyStr !== null ? JSON.parse(customBodyStr) : requestBody;
+      let bodyToSend = useResponsesApi ? responsesApiBody : customBodyStr !== null ? JSON.parse(customBodyStr) : requestBody;
+
+      // Inject MCP servers into Anthropic request body
+      if (isAnthropic && anthropicMcpServers.length > 0 && bodyToSend) {
+        bodyToSend = { ...bodyToSend, mcp_servers: anthropicMcpServers };
+      }
 
       const response = await fetchWithRetry(chatUrl, { method: 'POST', headers, body: JSON.stringify(bodyToSend), signal: controller.signal }, 3, true); // Use universal fetch for Tauri
 
@@ -1022,7 +1132,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       addMessage(convId, { id: uuidv4(), role: 'assistant', content: err instanceof Error ? err.message : String(err), timestamp: generateUniqueTimestamp(), isError: true });
     } finally {
       setIsGenerating(false);
-      clearStreaming();
+      clearStreaming(convId);
       setAbortController(null);
     }
   }, [conversations, conversationsRef, settings, getProviderAndModel, addMessage, setConversations, updateProvider, generateConversationTitle, generateFollowUps, setIsGenerating]);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useState } from 'react';
-import { Download, ChevronDown, Trash2, Eye, EyeOff, Plus, ChevronRight } from 'lucide-react';
+import { Download, ChevronDown, Trash2, Eye, EyeOff, Plus, ChevronRight, AlertTriangle } from 'lucide-react';
 import { isTauri } from '../../utils/tauri';
 import type { ModelConfig, ModelProvider, ProviderApiFormat } from '../../types';
 import { getModelInfo } from '../../utils/models';
@@ -321,7 +321,10 @@ export function IntegratedProviderCard({
             <p className="text-sm font-semibold">{template.name}</p>
             {template.description && <p className="text-xs text-[rgb(var(--muted))]">{template.description}</p>}
             {template.warning && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">⚠️ {template.warning}</p>
+              <p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400 mt-1">
+                <AlertTriangle size={13} className="shrink-0 mt-[1px]" />
+                <span>{template.warning}</span>
+              </p>
             )}
           </div>
           <button onClick={onAdd} className="btn-secondary py-1 px-3 text-xs">

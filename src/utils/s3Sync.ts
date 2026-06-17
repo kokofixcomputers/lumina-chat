@@ -1,6 +1,7 @@
 // AWS SigV4 signing + S3 operations.
 // On Tauri: direct fetch via the HTTP plugin (no CORS restrictions).
-// On web:   route through /api/proxy to bypass browser CORS.
+// On web GET: presigned query-string URLs — browser fetches S3 directly (no Vercel proxy bandwidth).
+// On web PUT: still routed through /api/proxy (small JSON writes, not a bandwidth concern).
 
 import { isTauri } from './tauri';
 import { universalFetch } from './tauriFetch';
@@ -88,11 +89,69 @@ async function sigV4(
   return { headers, url };
 }
 
+// ── Presigned URL (query-string SigV4) for browser direct S3 GET ────────────
+
+async function presignedGetUrl(cfg: S3Config, objectKey: string, extraQuery = '', expiresIn = 3600): Promise<string> {
+  const now = new Date();
+  const datestamp = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const amzdate   = datestamp + 'T' + now.toISOString().slice(11, 19).replace(/:/g, '') + 'Z';
+
+  const endpoint = (cfg.endpoint || 'https://s3.amazonaws.com').replace(/\/$/, '');
+  const region   = cfg.region || 'us-east-1';
+  const host     = new URL(endpoint).host;
+
+  const pathSegments = `/${cfg.bucket}/${objectKey}`.split('/').map(s =>
+    encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+  );
+  const canonicalUri = pathSegments.join('/');
+
+  const credScope = `${datestamp}/${region}/s3/aws4_request`;
+  const credential = encodeURIComponent(`${cfg.accessKeyId}/${credScope}`);
+
+  // Auth params must be sorted alphabetically and merged with any extra query params
+  const authParams = [
+    `X-Amz-Algorithm=AWS4-HMAC-SHA256`,
+    `X-Amz-Credential=${credential}`,
+    `X-Amz-Date=${amzdate}`,
+    `X-Amz-Expires=${expiresIn}`,
+    `X-Amz-SignedHeaders=host`,
+  ];
+  const allParams = extraQuery
+    ? [...extraQuery.split('&'), ...authParams].sort()
+    : authParams;
+  const queryString = allParams.join('&');
+
+  const canonicalRequest = [
+    'GET',
+    canonicalUri,
+    queryString,
+    `host:${host}\n`,
+    'host',
+    'UNSIGNED-PAYLOAD',
+  ].join('\n');
+
+  const stringToSign = ['AWS4-HMAC-SHA256', amzdate, credScope, await sha256Hex(canonicalRequest)].join('\n');
+
+  const kDate    = await hmac(strToBuffer(`AWS4${cfg.secretAccessKey}`), datestamp);
+  const kRegion  = await hmac(kDate, region);
+  const kService = await hmac(kRegion, 's3');
+  const kSigning = await hmac(kService, 'aws4_request');
+  const signature = bufToHex(await hmac(kSigning, stringToSign));
+
+  return `${endpoint}${canonicalUri}?${queryString}&X-Amz-Signature=${signature}`;
+}
+
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
-async function s3Fetch(url: string, method: string, headers: Record<string, string>, body?: string): Promise<Response> {
+async function s3Fetch(url: string, method: string, headers: Record<string, string>, body?: string, cfg?: S3Config, objectKey?: string, extraQuery?: string): Promise<Response> {
   if (isTauri) {
     return universalFetch(url, { method, headers, body });
+  }
+  // For GET requests on web: use a presigned URL so the browser fetches S3 directly,
+  // bypassing the Vercel proxy and eliminating proxy bandwidth costs.
+  if (method === 'GET' && cfg && objectKey !== undefined) {
+    const presignedUrl = await presignedGetUrl(cfg, objectKey, extraQuery);
+    return fetch(presignedUrl);
   }
   return fetch(PROXY_URL, {
     method: 'POST',
@@ -121,7 +180,7 @@ export async function s3PutMain(cfg: S3Config, data: object): Promise<void> {
 
 export async function s3GetMain(cfg: S3Config): Promise<object> {
   const { headers, url } = await sigV4(cfg, 'GET', mainKey(cfg), '');
-  const res = await s3Fetch(url, 'GET', headers);
+  const res = await s3Fetch(url, 'GET', headers, undefined, cfg, mainKey(cfg));
   if (!res.ok) throw new Error(`S3 GET failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
@@ -134,8 +193,9 @@ export async function s3PutImage(cfg: S3Config, id: string, data: object): Promi
 }
 
 export async function s3GetImage(cfg: S3Config, id: string): Promise<object> {
-  const { headers, url } = await sigV4(cfg, 'GET', imageKey(cfg, id), '');
-  const res = await s3Fetch(url, 'GET', headers);
+  const key = imageKey(cfg, id);
+  const { headers, url } = await sigV4(cfg, 'GET', key, '');
+  const res = await s3Fetch(url, 'GET', headers, undefined, cfg, key);
   if (!res.ok) throw new Error(`S3 GET image failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
@@ -147,7 +207,8 @@ export async function s3ListImageIds(cfg: S3Config): Promise<string[]> {
   const query = `list-type=2&prefix=${encodeURIComponent(pfx)}`;
   // ListObjectsV2 is a GET on the bucket root (no object key)
   const { headers, url } = await sigV4(cfg, 'GET', '', '', query);
-  const res = await s3Fetch(url, 'GET', headers);
+  // For web: fetch the list URL directly using presigned query-string auth
+  const res = await s3Fetch(url, 'GET', headers, undefined, cfg, '', query);
   if (!res.ok) throw new Error(`S3 ListObjects failed: ${res.status} ${await res.text()}`);
   const xml = await res.text();
   // Parse <Key> elements from the XML response

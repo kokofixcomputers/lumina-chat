@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit2, Download, Upload, Power, PowerOff, Code, AlertCircle, CheckCircle, XCircle, Store, ShieldCheck, ShieldAlert } from 'lucide-react';
 import Editor, { useMonaco } from '@monaco-editor/react';
@@ -30,10 +30,17 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
   });
   const [editType, setEditType] = useState<ExtensionType>('sandboxed');
   const [isLoading, setIsLoading] = useState(false);
+  const editFormRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadExtensions();
   }, []);
+
+  useEffect(() => {
+    if (isEditing && editFormRef.current) {
+      editFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [isEditing]);
 
   const loadExtensions = () => {
     setExtensions(extensionStorage.getAllExtensions());
@@ -366,7 +373,7 @@ api.registerExtension({
         </div>
 
         {isEditing && (
-          <div className="border border-[rgb(var(--border))] rounded-lg p-4 mb-4">
+          <div ref={editFormRef} className="border border-[rgb(var(--border))] rounded-lg p-4 mb-4">
             <h4 className="text-sm font-medium mb-3">
               {editForm.id ? 'Edit Extension' : 'Create Extension'}
             </h4>

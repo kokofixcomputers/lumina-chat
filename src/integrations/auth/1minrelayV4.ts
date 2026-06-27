@@ -1,12 +1,7 @@
 import { AuthHandler, AuthConfig } from './index';
-import { isTauri } from '../../utils/tauri';
-import { openUrl } from '@tauri-apps/plugin-opener';
 
 const RELAY_BASE = 'https://v4.kokodev.cc';
-// Register this OAuth app in the v4.kokodev.cc dashboard → Developer.
-// Set redirect URI to: https://lumina-chat-rho.vercel.app/api/1minrelay-callback
-const CLIENT_ID = import.meta.env.VITE_1MINRELAY_V4_CLIENT_ID ?? '';
-const REDIRECT_URI = 'https://lumina-chat-rho.vercel.app/api/1minrelay-callback';
+export const MINRELAY_V4_OAUTH_STORAGE_KEY = 'lumina_1minrelay_v4_oauth_result';
 
 function randomState(): string {
   const arr = new Uint8Array(16);
@@ -14,12 +9,39 @@ function randomState(): string {
   return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function exchangeCode(code: string, state: string): Promise<{ access_token: string; expires_in: number }> {
-  // Token exchange goes through the Vercel proxy so client_secret stays server-side.
-  const res = await fetch('https://lumina-chat-rho.vercel.app/api/1minrelay-oauth', {
+function waitForCallback(expectedState: string, timeoutMs = 120_000): Promise<{ code: string }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Authorization timed out. Please try again.'));
+    }, timeoutMs);
+
+    function onStorage(e: StorageEvent) {
+      if (e.key !== MINRELAY_V4_OAUTH_STORAGE_KEY || !e.newValue) return;
+      try {
+        const data = JSON.parse(e.newValue);
+        if (data.state !== expectedState) return;
+        cleanup();
+        if (data.error) reject(new Error(data.error));
+        else resolve({ code: data.code });
+      } catch { /* ignore */ }
+    }
+
+    function cleanup() {
+      clearTimeout(timer);
+      window.removeEventListener('storage', onStorage);
+      try { localStorage.removeItem(MINRELAY_V4_OAUTH_STORAGE_KEY); } catch { /* ignore */ }
+    }
+
+    window.addEventListener('storage', onStorage);
+  });
+}
+
+async function exchangeCode(code: string, redirectUri: string): Promise<{ access_token: string; expires_in: number }> {
+  const res = await fetch(`${window.location.origin}/api/1minrelay-oauth`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, state, redirect_uri: REDIRECT_URI }),
+    body: JSON.stringify({ code, redirect_uri: redirectUri }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(text || `Token exchange failed: ${res.status}`);
@@ -41,28 +63,30 @@ export const minrelayV4AuthHandler: AuthHandler = {
   name: '1minRelay v4',
   description: 'Sign in with your 1minRelay v4 account to get your relay key automatically.',
 
-  async startAuth(): Promise<{ url: string; verifier: string }> {
-    if (!CLIENT_ID) throw new Error('1minRelay v4 OAuth app not configured (VITE_1MINRELAY_V4_CLIENT_ID missing)');
+  async configure(): Promise<AuthConfig> {
     const state = randomState();
+    const redirectUri = `${window.location.origin}/oauth/1minrelay/callback`;
+
+    const clientId = (import.meta.env.VITE_1MINRELAY_V4_CLIENT_ID as string) ?? '';
+    if (!clientId) throw new Error('1minRelay v4 OAuth app not configured (VITE_1MINRELAY_V4_CLIENT_ID missing)');
+
     const params = new URLSearchParams({
       response_type: 'code',
-      client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI,
+      client_id: clientId,
+      redirect_uri: redirectUri,
       scope: 'relay_key',
       state,
     });
-    const authUrl = `${RELAY_BASE}/oauth/authorize?${params.toString()}`;
-    if (isTauri) {
-      try { await openUrl(authUrl); } catch (e) { console.error('[1MINRELAY-V4-OAUTH] Failed to open browser:', e); }
-    } else {
-      window.open(authUrl, '_blank');
-    }
-    return { url: authUrl, verifier: state };
-  },
 
-  async completeAuth(code: string, state: string): Promise<AuthConfig> {
-    const token = await exchangeCode(code.trim(), state);
+    const authUrl = `${RELAY_BASE}/oauth/authorize?${params.toString()}`;
+    const popup = window.open(authUrl, 'minrelay_v4_oauth', 'width=520,height=640');
+    if (!popup) throw new Error('Popup blocked — please allow popups for this site.');
+
+    const { code } = await waitForCallback(state);
+
+    const token = await exchangeCode(code, redirectUri);
     const relayKey = await fetchRelayKey(token.access_token);
+
     const config: AuthConfig = {
       type: 'oauth',
       credentials: {
@@ -73,16 +97,6 @@ export const minrelayV4AuthHandler: AuthHandler = {
     };
     this.saveAuthConfig(config);
     return config;
-  },
-
-  async configure(): Promise<AuthConfig> {
-    const { verifier } = await this.startAuth!();
-    const code = prompt(
-      'After signing in, paste the authorization code here.\n\n' +
-      'The code appears after "?code=" in the redirect URL.'
-    );
-    if (!code) throw new Error('Authorization cancelled');
-    return this.completeAuth!(code, verifier);
   },
 
   async getApiKey(config: AuthConfig): Promise<string> {

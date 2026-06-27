@@ -98,6 +98,20 @@ export const integratedProviders: IntegratedProviderTemplate[] = [
     ],
   },
   {
+    id: '1minrelay-v4',
+    name: '1minRelay v4 (Beta)',
+    description: 'Next-gen relay with OAuth sign-in. Sign in automatically or paste your relay key.',
+    warning: 'Beta — v4 is under active development and may change.',
+    baseUrlTemplate: 'https://v4.kokodev.cc/v1',
+    requireAuth: true,
+    autoAuth: '1minrelay-v4',
+    defaultModels: [
+      { id: 'gpt-4o', name: 'GPT-4o', contextLength: 128000, supportsImages: true, supportsStreaming: true },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextLength: 128000, supportsImages: true, supportsStreaming: true },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', contextLength: 200000, supportsImages: true, supportsStreaming: true },
+    ],
+  },
+  {
     id: 'mistral',
     name: 'Mistral',
     description: 'Official Mistral API',

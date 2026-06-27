@@ -26,10 +26,12 @@ export interface AuthHandlers {
 // Import and register all auth handlers
 import { pollinationsAuthHandler } from './pollinations';
 import { anthropicSubscriptionAuthHandler } from './anthropicSubscription';
+import { minrelayV4AuthHandler } from './1minrelayV4';
 
 export const authHandlers: AuthHandlers = {
   pollinations: pollinationsAuthHandler,
   'anthropic-subscription': anthropicSubscriptionAuthHandler,
+  '1minrelay-v4': minrelayV4AuthHandler,
 };
 
 export function getAuthHandler(id: string): AuthHandler | undefined {

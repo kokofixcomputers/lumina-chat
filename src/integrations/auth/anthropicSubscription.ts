@@ -16,7 +16,7 @@ async function requestOAuthToken(body: string): Promise<string> {
   if (isTauri) {
     return invoke<string>('anthropic_oauth_token', { body });
   }
-  const res = await fetch('https://lumina-chat-rho.vercel.app/api/proxy', {
+  const res = await fetch('/api/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

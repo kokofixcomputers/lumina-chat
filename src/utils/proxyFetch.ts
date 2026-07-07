@@ -57,7 +57,7 @@ async function proxyFetch(url: string, options: RequestInit): Promise<Response> 
     }
   }
 
-  return fetch('https://lumina-chat-rho.vercel.app/api/proxy', {
+  return fetch('/api/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

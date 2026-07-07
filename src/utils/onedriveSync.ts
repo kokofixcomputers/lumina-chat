@@ -21,7 +21,7 @@ const BAKED_CLIENT_ID     = (import.meta.env.VITE_ONEDRIVE_CLIENT_ID     as stri
 const BAKED_CLIENT_SECRET = (import.meta.env.VITE_ONEDRIVE_CLIENT_SECRET as string | undefined) ?? '';
 const USE_DIRECT = !!(BAKED_CLIENT_ID && BAKED_CLIENT_SECRET);
 
-const APP_BASE    = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const APP_BASE = window.location.href.replace(/\/$/, '');
 const TOKEN_PROXY = `${APP_BASE}/api/onedrive-token`;
 
 // ── Token storage ─────────────────────────────────────────────────────────────

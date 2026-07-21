@@ -12,6 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { resolveFormat, applyVars, getByPath } from '../../components/ProvidersPanel';
 import { generateUniqueTimestamp } from '../../utils/timestamp';
 import { streamingRegistry } from '../../utils/streamingRegistry';
+import { streamingReasoningRegistry } from '../../utils/streamingReasoningRegistry';
 
 interface SendMessageOptions {
   conversations: Conversation[];
@@ -41,6 +42,9 @@ export function useSendMessage({
   const [streamingContent, setStreamingContent] = useState('');
   const streamingContentRef = useRef('');
   const streamingActiveRef = useRef(false);
+  const [streamingReasoning, setStreamingReasoning] = useState('');
+  const streamingReasoningRef = useRef('');
+  const streamingReasoningActiveRef = useRef(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const updateStreaming = (text: string, convId?: string) => {
@@ -57,13 +61,29 @@ export function useSendMessage({
     if (convId) streamingRegistry.clear(convId);
   };
 
+  const updateReasoningStreaming = (text: string, convId?: string) => {
+    streamingReasoningRef.current = text;
+    if (convId) streamingReasoningRegistry.set(convId, text);
+    if (!streamingReasoningActiveRef.current) {
+      streamingReasoningActiveRef.current = true;
+      setStreamingReasoning(text); // one setState to show the reasoning bubble
+    }
+  };
+  const clearReasoningStreaming = (convId?: string) => {
+    streamingReasoningRef.current = '';
+    streamingReasoningActiveRef.current = false;
+    setStreamingReasoning('');
+    if (convId) streamingReasoningRegistry.clear(convId);
+  };
+
   const stopGeneration = useCallback(() => {
     if (abortController) {
       abortController.abort();
       setAbortController(null);
       setIsGenerating(false);
       clearStreaming();
-      
+      clearReasoningStreaming();
+
       // Update the last assistant message with finishReason 'stopped'
       setConversations(prev => prev.map(c => {
         const messages = c.messages;
@@ -136,6 +156,7 @@ export function useSendMessage({
     addMessage(convId, userMsg);
     setIsGenerating(true);
     clearStreaming();
+    clearReasoningStreaming();
 
     const controller = new AbortController();
     setAbortController(controller);
@@ -396,8 +417,9 @@ export function useSendMessage({
     };
 
     // ── SSE streaming parser helper ────────────────────────────────────────────
-    const parseSseChunk = (data: string, toolCallsMap: Map<number | string, any>, mcpCallsMap: Map<string, any> = new Map()): { delta: string; toolCallsMap: Map<number | string, any>; finishReason?: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' } => {
+    const parseSseChunk = (data: string, toolCallsMap: Map<number | string, any>, mcpCallsMap: Map<string, any> = new Map()): { delta: string; reasoningDelta: string; toolCallsMap: Map<number | string, any>; finishReason?: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' } => {
       let delta = '';
+      let reasoningDelta = '';
       let chunkFinishReason: 'stop' | 'length' | 'max_tokens' | 'error' | 'function_call' | 'tool_calls' | undefined;
       try {
         const parsed = JSON.parse(data);
@@ -437,6 +459,16 @@ export function useSendMessage({
         if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
           delta = parsed.delta.text;
         }
+        // Anthropic extended thinking
+        if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'thinking_delta' && parsed.delta?.thinking) {
+          reasoningDelta = parsed.delta.thinking;
+        }
+        // OpenAI-compatible reasoning models (e.g. DeepSeek-R1, OpenRouter reasoning proxies)
+        if (parsed.choices?.[0]?.delta?.reasoning_content) {
+          reasoningDelta = parsed.choices[0].delta.reasoning_content;
+        } else if (parsed.choices?.[0]?.delta?.reasoning) {
+          reasoningDelta = parsed.choices[0].delta.reasoning;
+        }
         // Anthropic MCP connector: server-executed tool use/result blocks arrive whole, not via deltas
         if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'mcp_tool_use') {
           mcpCallsMap.set(parsed.content_block.id, { use: parsed.content_block });
@@ -448,7 +480,7 @@ export function useSendMessage({
       } catch (e) {
         if (e instanceof Error && !e.message.includes('JSON')) throw e;
       }
-      return { delta, toolCallsMap, finishReason: chunkFinishReason };
+      return { delta, reasoningDelta, toolCallsMap, finishReason: chunkFinishReason };
     };
 
     const decodeHtml = (s: string) => s.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&apos;/g, "'");
@@ -530,10 +562,11 @@ export function useSendMessage({
     };
 
     // ── stream reader ──────────────────────────────────────────────────────────
-    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[]; mcpCalls: any[] }> => {
+    const readChatStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; reasoning: string; toolCalls: any[]; mcpCalls: any[] }> => {
       const decoder = new TextDecoder();
       let buffer = '';
       let assistantContent = '';
+      let assistantReasoning = '';
       const toolCallsMap = new Map<number | string, any>();
       const mcpCallsMap = new Map<string, any>();
 
@@ -548,19 +581,21 @@ export function useSendMessage({
           if (!line.startsWith('data:')) continue;
           const raw = decodeHtml(line.slice(line.indexOf('data:') + 6).trim());
           if (isSentinel(raw)) continue;
-          const { delta, finishReason: chunkFinishReason } = parseSseChunk(raw, toolCallsMap, mcpCallsMap);
+          const { delta, reasoningDelta, finishReason: chunkFinishReason } = parseSseChunk(raw, toolCallsMap, mcpCallsMap);
+          if (reasoningDelta) { assistantReasoning += reasoningDelta; updateReasoningStreaming(assistantReasoning, convId); }
           if (delta) { assistantContent += delta; updateStreaming(assistantContent, convId); tokenCount++; }
           if (chunkFinishReason) { finishReason = chunkFinishReason; }
         }
       }
-      return { content: assistantContent, toolCalls: Array.from(toolCallsMap.values()), mcpCalls: Array.from(mcpCallsMap.values()) };
+      return { content: assistantContent, reasoning: assistantReasoning, toolCalls: Array.from(toolCallsMap.values()), mcpCalls: Array.from(mcpCallsMap.values()) };
     };
 
     // ── responses API stream reader ────────────────────────────────────────────
-    const readResponsesStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; toolCalls: any[]; mcpCalls: any[] }> => {
+    const readResponsesStream = async (reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ content: string; reasoning: string; toolCalls: any[]; mcpCalls: any[] }> => {
       const decoder = new TextDecoder();
       let buffer = '';
       let assistantContent = '';
+      let assistantReasoning = '';
       const functionCallsMap = new Map<string, any>();
       const mcpCalls: any[] = [];
 
@@ -580,6 +615,9 @@ export function useSendMessage({
             if (parsed.type === 'response.failed' && parsed.response?.error) throw new Error(parsed.response.error.message || JSON.stringify(parsed.response.error));
             if (parsed.type === 'response.output_text.delta' && parsed.delta) { assistantContent += parsed.delta; updateStreaming(assistantContent, convId); tokenCount++; }
             if (parsed.type === 'response.output_text.done' && parsed.text) { assistantContent = parsed.text; updateStreaming(assistantContent, convId); }
+            if (parsed.type === 'response.reasoning_summary_text.delta' && parsed.delta) { assistantReasoning += parsed.delta; updateReasoningStreaming(assistantReasoning, convId); }
+            if (parsed.type === 'response.reasoning_summary_text.done' && parsed.text) { assistantReasoning = parsed.text; updateReasoningStreaming(assistantReasoning, convId); }
+            if (parsed.type === 'response.reasoning_summary_part.added' && parsed.part?.text) { assistantReasoning += (assistantReasoning ? '\n\n' : '') + parsed.part.text; updateReasoningStreaming(assistantReasoning, convId); }
             if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'function_call') {
               functionCallsMap.set(parsed.item.id, { id: parsed.item.call_id, type: 'function', function: { name: parsed.item.name, arguments: '' }, fc_id: parsed.item.id });
             }
@@ -597,7 +635,7 @@ export function useSendMessage({
           } catch (e) { if (e instanceof Error && !e.message.includes('JSON')) throw e; }
         }
       }
-      return { content: assistantContent, toolCalls: Array.from(functionCallsMap.values()), mcpCalls };
+      return { content: assistantContent, reasoning: assistantReasoning, toolCalls: Array.from(functionCallsMap.values()), mcpCalls };
     };
 
     // ── tool message builder ───────────────────────────────────────────────────
@@ -929,6 +967,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       previousMessages: any[], useResponsesApi: boolean,
     ) => {
       let assistantContent = '';
+      let assistantReasoning = '';
       let toolCalls: any[] = [];
       let mcpCalls: any[] = [];
 
@@ -939,6 +978,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           if (!reader) throw new Error('No response body');
           const result = await readResponsesStream(reader);
           assistantContent = result.content;
+          assistantReasoning = result.reasoning;
           toolCalls = result.toolCalls;
           mcpCalls = result.mcpCalls;
         } else {
@@ -946,6 +986,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           if (data.output) {
             for (const item of data.output) {
               if (item.type === 'message' && item.content) for (const ci of item.content) if (ci.type === 'output_text') assistantContent += ci.text || '';
+              if (item.type === 'reasoning' && item.summary) for (const s of item.summary) if (s.type === 'summary_text') assistantReasoning += (assistantReasoning ? '\n\n' : '') + (s.text || '');
               if (item.type === 'function_call') toolCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments }, fc_id: item.id });
               if (item.type === 'mcp_call') mcpCalls.push(item);
               if (item.type === 'mcp_approval_request') {
@@ -977,6 +1018,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         if (!reader) throw new Error('No response body');
         const result = await readChatStream(reader as ReadableStreamDefaultReader<Uint8Array>);
         assistantContent = result.content;
+        assistantReasoning = result.reasoning;
         toolCalls = result.toolCalls;
 
         for (const { use, result: mcpResult } of result.mcpCalls) {
@@ -999,6 +1041,8 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         if (activeApiFormat?.id === 'anthropic-subscription' && Array.isArray(data.content)) {
           const textBlock = data.content.find((b: any) => b.type === 'text');
           assistantContent = textBlock?.text || '';
+          const thinkingBlocks = data.content.filter((b: any) => b.type === 'thinking').map((b: any) => b.thinking);
+          if (thinkingBlocks.length > 0) assistantReasoning = thinkingBlocks.join('\n\n');
           // Map tool_use blocks to the standard tool_calls format
           toolCalls = (data.tool_calls || []).length
             ? data.tool_calls
@@ -1010,6 +1054,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
           tokenCount = data.usage?.output_tokens || assistantContent.split(/\s+/).length;
         } else {
           assistantContent = activeApiFormat.responseTextPath ? getByPath(data, activeApiFormat.responseTextPath) : (data.choices?.[0]?.message?.content || '');
+          assistantReasoning = data.choices?.[0]?.message?.reasoning_content || data.choices?.[0]?.message?.reasoning || '';
           toolCalls = data.choices?.[0]?.message?.tool_calls || [];
           finishReason = data.choices?.[0]?.finish_reason || 'stop';
           tokenCount = data.usage?.completion_tokens || assistantContent.split(/\s+/).length;
@@ -1020,6 +1065,8 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         if (isAnthropicFormat && Array.isArray(data.content)) {
           const textBlocks = data.content.filter((b: any) => b.type === 'text').map((b: any) => b.text);
           if (textBlocks.length > 0) assistantContent = textBlocks.join('\n\n');
+          const thinkingBlocks = data.content.filter((b: any) => b.type === 'thinking').map((b: any) => b.thinking);
+          if (thinkingBlocks.length > 0) assistantReasoning = thinkingBlocks.join('\n\n');
 
           const mcpUses = new Map<string, any>();
           for (const block of data.content) {
@@ -1070,12 +1117,13 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
       } else {
       }
 
-      const assistantMsg: Message = { id: uuidv4(), role: 'assistant', content: finalContent, timestamp: generateUniqueTimestamp(), model: model?.id, finishReason, tool_calls: toolCalls.length > 0 ? toolCalls : undefined, tokens: tokenCount > 0 ? tokenCount : undefined, tokensPerSecond, isStep, requestsAnotherTool };
+      const assistantMsg: Message = { id: uuidv4(), role: 'assistant', content: finalContent, reasoning: assistantReasoning || undefined, timestamp: generateUniqueTimestamp(), model: model?.id, finishReason, tool_calls: toolCalls.length > 0 ? toolCalls : undefined, tokens: tokenCount > 0 ? tokenCount : undefined, tokensPerSecond, isStep, requestsAnotherTool };
 
       if (finalContent || toolCalls.length > 0) addMessage(convId, assistantMsg);
 
       if (toolCalls.length === 0) {
         clearStreaming(convId);
+        clearReasoningStreaming(convId);
         setIsGenerating(false);
         // title + follow-ups
         const shouldTitle = settings.generateTitle !== false;
@@ -1092,6 +1140,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
 
       if (toolCalls.length > 0) {
         clearStreaming(convId);
+        clearReasoningStreaming(convId);
         setStreamingContent('');
         const isAnthropic = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
         const assistantMsgContent: any[] = [];
@@ -1227,6 +1276,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
         // Stream via Tauri events from Rust reqwest
         await new Promise<void>((resolve, reject) => {
           let accumulated = '';
+          let accumulatedReasoning = '';
           // tool_use tracking: index → { id, name, inputJson }
           const toolBlocks: Map<number, { id: string; name: string; inputJson: string }> = new Map();
           let currentBlockIndex = -1;
@@ -1254,6 +1304,9 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
                 if (delta?.type === 'text_delta') {
                   accumulated += delta.text;
                   updateStreaming(accumulated);
+                } else if (delta?.type === 'thinking_delta' && delta?.thinking) {
+                  accumulatedReasoning += delta.thinking;
+                  updateReasoningStreaming(accumulatedReasoning);
                 } else if (delta?.type === 'input_json_delta') {
                   const block = toolBlocks.get(parsed.index);
                   if (block) block.inputJson += delta.partial_json;
@@ -1270,6 +1323,7 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
               function: { name: b.name, arguments: b.inputJson },
             }));
             const fakeContent: any[] = [];
+            if (accumulatedReasoning) fakeContent.push({ type: 'thinking', thinking: accumulatedReasoning });
             if (accumulated) fakeContent.push({ type: 'text', text: accumulated });
             streamToolCalls.forEach(tc => fakeContent.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input: (() => { try { return JSON.parse(tc.function.arguments || '{}'); } catch { return {}; } })() }));
             const fakeBody = JSON.stringify({ content: fakeContent, stop_reason: streamToolCalls.length ? 'tool_use' : 'end_turn', tool_calls: streamToolCalls, usage: { output_tokens: accumulated.split(/\s+/).length } });
@@ -1323,9 +1377,10 @@ data:application/vnd.openxmlformats-officedocument.presentationml.presentation;b
     } finally {
       setIsGenerating(false);
       clearStreaming(convId);
+      clearReasoningStreaming(convId);
       setAbortController(null);
     }
   }, [conversations, conversationsRef, settings, getProviderAndModel, addMessage, setConversations, updateProvider, generateConversationTitle, generateFollowUps, setIsGenerating]);
 
-  return { streamingContent, streamingContentRef, setStreamingContent, abortController, stopGeneration, sendMessage };
+  return { streamingContent, streamingContentRef, setStreamingContent, streamingReasoning, streamingReasoningRef, abortController, stopGeneration, sendMessage };
 }

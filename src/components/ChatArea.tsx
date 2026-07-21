@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Settings, Bot, Columns, FolderOpen } from 'lucide-react';
+import { Settings, Bot, Columns, FolderOpen, ChevronDown, ChevronRight, BrainCircuit } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import PreviewSidebar from './PreviewSidebar';
@@ -7,9 +7,54 @@ import PreviewSidebar from './PreviewSidebar';
 // Memoized bubble — only re-renders when its own message object changes
 const MemoMessageBubble = memo(MessageBubble);
 
+// ReasoningStreamingBlock — collapsible "thinking" trace, writes directly to the DOM like StreamingBubble
+function ReasoningStreamingBlock({ streamingReasoningRef }: {
+  streamingReasoningRef: React.MutableRefObject<string>;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const containerRef = useRef<HTMLParagraphElement>(null);
+  const displayedRef = useRef('');
+  const rafRef = useRef<number | null>(null);
+  const CHARS_PER_FRAME = 24;
+
+  useEffect(() => {
+    const trickle = () => {
+      const target = streamingReasoningRef.current;
+      const cur = displayedRef.current;
+      if (cur.length < target.length) {
+        const next = target.slice(0, cur.length + CHARS_PER_FRAME);
+        displayedRef.current = next;
+        if (containerRef.current) containerRef.current.textContent = next;
+      }
+      rafRef.current = requestAnimationFrame(trickle);
+    };
+    rafRef.current = requestAnimationFrame(trickle);
+    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="mb-1.5 border border-[rgb(var(--border))] rounded-lg overflow-hidden bg-black/[0.02] dark:bg-white/[0.03]">
+      <button
+        type="button"
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+      >
+        {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+        <BrainCircuit size={13} />
+        <span className="font-medium">Thinking…</span>
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse ml-0.5" />
+      </button>
+      {!collapsed && (
+        <p ref={containerRef} className="px-2.5 pb-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-[rgb(var(--muted))]" />
+      )}
+    </div>
+  );
+}
+
 // StreamingBubble writes directly to the DOM — zero React re-renders during streaming
-function StreamingBubble({ streamingContentRef, modelDisplayName, modelId }: {
+function StreamingBubble({ streamingContentRef, streamingReasoningRef, modelDisplayName, modelId }: {
   streamingContentRef: React.MutableRefObject<string>;
+  streamingReasoningRef?: React.MutableRefObject<string>;
   modelDisplayName: string;
   modelId: string;
 }) {
@@ -39,6 +84,7 @@ function StreamingBubble({ streamingContentRef, modelDisplayName, modelId }: {
         <Bot size={13} className="text-white dark:text-black" />
       </div>
       <div className="flex-1 min-w-0 pt-1">
+        {streamingReasoningRef && <ReasoningStreamingBlock streamingReasoningRef={streamingReasoningRef} />}
         <p ref={containerRef} className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words" />
         <span className="inline-block w-2 h-2 rounded-full bg-current align-middle ml-0.5 animate-pulse" />
       </div>
@@ -61,6 +107,8 @@ interface ChatAreaProps {
   isGenerating: boolean;
   streamingContent: string;
   streamingContentRef: React.MutableRefObject<string>;
+  streamingReasoning?: string;
+  streamingReasoningRef?: React.MutableRefObject<string>;
   allModels: Model[];
   onSend: (content: string, images: string[]) => void;
   onModelChange: (modelId: string) => void;
@@ -109,6 +157,8 @@ export default function ChatArea({
   isGenerating,
   streamingContent,
   streamingContentRef,
+  streamingReasoning,
+  streamingReasoningRef,
   allModels,
   onSend,
   onModelChange,
@@ -180,10 +230,10 @@ export default function ChatArea({
 
   // Streaming → keep ease loop alive
   useEffect(() => {
-    if (!streamingContent) return;
+    if (!streamingContent && !streamingReasoning) return;
     if (scrollRafRef.current !== null) return;
     scrollRafRef.current = requestAnimationFrame(easeToBottom);
-  }, [streamingContent]);
+  }, [streamingContent, streamingReasoning]);
 
   const selectedModelId = conversation?.modelId || defaultModelId;
   const currentModel = allModels.find(m => m.fullId === selectedModelId);
@@ -342,13 +392,26 @@ export default function ChatArea({
           {isGenerating && streamingContent && (
             <StreamingBubble
               streamingContentRef={streamingContentRef}
+              streamingReasoningRef={streamingReasoning ? streamingReasoningRef : undefined}
               modelDisplayName={modelDisplayName}
               modelId={modelId}
             />
           )}
 
+          {/* Reasoning-only (no reply text yet) */}
+          {isGenerating && !streamingContent && streamingReasoning && streamingReasoningRef && (
+            <div className="flex gap-3 px-4 sm:px-8 py-2 sm:max-w-4xl mx-auto w-full">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0 mt-0.5">
+                <Bot size={13} className="text-white dark:text-black" />
+              </div>
+              <div className="flex-1 min-w-0 pt-1">
+                <ReasoningStreamingBlock streamingReasoningRef={streamingReasoningRef} />
+              </div>
+            </div>
+          )}
+
           {/* Thinking */}
-          {isGenerating && !streamingContent && (
+          {isGenerating && !streamingContent && !streamingReasoning && (
             <div className="flex gap-3 px-4 sm:px-8 py-2 sm:max-w-4xl mx-auto w-full">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0">
                 <Bot size={13} className="text-white dark:text-black" />

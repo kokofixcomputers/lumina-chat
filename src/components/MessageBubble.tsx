@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Copy, Edit2, Trash2, RotateCcw, Check, AlertCircle,
   User, Bot, Wrench, Sparkles, ChevronDown, ChevronUp,
-  Eye, Loader2, CheckCircle, XCircle, ChevronRight, Download, X, ChevronLeft, Quote
+  Eye, Loader2, CheckCircle, XCircle, ChevronRight, Download, X, ChevronLeft, Quote,
+  BrainCircuit
 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { buildSyntaxStyle } from '../utils/syntaxTheme';
@@ -32,6 +33,31 @@ function formatToolLabel(name?: string, path?: string, status?: string): string 
       }
       return name || 'Tool';
   }
+}
+
+function ReasoningBlock({ reasoning, defaultCollapsed }: { reasoning: string; defaultCollapsed: boolean }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  useEffect(() => { setCollapsed(defaultCollapsed); }, [defaultCollapsed]);
+
+  return (
+    <div className="mb-2 border border-[rgb(var(--border))] rounded-lg overflow-hidden bg-black/[0.02] dark:bg-white/[0.03]">
+      <button
+        type="button"
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+      >
+        {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+        <BrainCircuit size={13} />
+        <span className="font-medium">Reasoning</span>
+      </button>
+      {!collapsed && (
+        <p className="px-2.5 pb-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-[rgb(var(--muted))]">
+          {reasoning}
+        </p>
+      )}
+    </div>
+  );
 }
 
 type DiffLine = { kind: 'same' | 'add' | 'remove'; text: string };
@@ -1012,6 +1038,9 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
 
             {!isUser && !displayMessage.isStep && (
               <>
+                {displayMessage.reasoning && (
+                  <ReasoningBlock reasoning={displayMessage.reasoning} defaultCollapsed={!isStreaming} />
+                )}
                 {renderContent(displayMessage.content)}
                 {isStreaming && (
                   <span className="inline-block w-2 h-2 rounded-full bg-current align-middle ml-0.5 animate-pulse" />

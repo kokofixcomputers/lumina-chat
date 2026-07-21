@@ -1906,6 +1906,8 @@ export default function App() {
                       isGenerating={store.isGenerating}
                       streamingContent={store.streamingContent}
                       streamingContentRef={store.streamingContentRef}
+                      streamingReasoning={store.streamingReasoning}
+                      streamingReasoningRef={store.streamingReasoningRef}
                       allModels={store.allProviderModels}
                       onSend={handleSend}
                       onModelChange={handleModelChange}

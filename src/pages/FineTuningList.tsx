@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, BookOpen, Settings, X, Trash2 } from 'lucide-react';
 import { useFineTuningStore } from '../store/fineTuningStore';
 import { FineTuningFormData } from '../types/fineTuning';
+import Modal from '../components/Modal';
 
 interface FineTuningListProps {
   onOpenFineTuningDetail: (id: string) => void;
@@ -32,9 +33,10 @@ const FineTuningList: React.FC<FineTuningListProps> = ({ onOpenFineTuningDetail 
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
+    <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in relative isolate">
+      <div className="ambient-bg" aria-hidden="true" />
       {/* Top bar */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
+      <div className="glass flex items-center justify-between px-5 py-3 shrink-0 relative z-10">
         <div>
           <h1 className="text-lg font-semibold text-[rgb(var(--text))]">Knowledge Bases</h1>
           <p className="text-xs text-[rgb(var(--muted))]">Manage your custom knowledge bases</p>
@@ -74,7 +76,7 @@ const FineTuningList: React.FC<FineTuningListProps> = ({ onOpenFineTuningDetail 
                 <div
                   key={fineTuning.id}
                   onClick={() => onOpenFineTuningDetail(fineTuning.id)}
-                  className="group bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg p-4 hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer hover:shadow-sm"
+                  className="group glass rounded-2xl p-4 hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
@@ -134,13 +136,18 @@ const FineTuningList: React.FC<FineTuningListProps> = ({ onOpenFineTuningDetail 
       </div>
 
       {/* Create Modal */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+      <Modal
+        open={isCreateModalOpen}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setFormData({ name: '', description: '' });
+        }}
+        panelClassName="glass-panel-strong rounded-3xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto"
+      >
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-[rgb(var(--border))]">
               <h2 className="text-lg font-semibold text-[rgb(var(--text))]">Create Knowledge Base</h2>
-              <button 
+              <button
                 onClick={() => {
                   setIsCreateModalOpen(false);
                   setFormData({ name: '', description: '' });
@@ -162,12 +169,12 @@ const FineTuningList: React.FC<FineTuningListProps> = ({ onOpenFineTuningDetail 
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+                    className="input w-full"
                     placeholder="Enter knowledge base name"
                     autoFocus
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-[rgb(var(--text))] mb-2">
                     Description (optional)
@@ -175,7 +182,7 @@ const FineTuningList: React.FC<FineTuningListProps> = ({ onOpenFineTuningDetail 
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] resize-none"
+                    className="input w-full resize-none"
                     placeholder="Describe what this knowledge base is for"
                     rows={3}
                   />
@@ -202,9 +209,7 @@ const FineTuningList: React.FC<FineTuningListProps> = ({ onOpenFineTuningDetail 
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
       </div>
   );
 };

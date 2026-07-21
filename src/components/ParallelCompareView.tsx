@@ -112,7 +112,7 @@ function ConversationColumn({
   return (
     <div className="flex flex-col min-h-0 flex-1 border-r border-[rgb(var(--border))] last:border-r-0 min-w-0">
       {/* Column header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[rgb(var(--panel))] border-b border-[rgb(var(--border))] shrink-0">
+      <div className="glass-inset flex items-center gap-2 px-3 py-2 shrink-0 relative z-10 rounded-none border-x-0 border-t-0">
         {typeof modelInfo.icon === 'string' ? (
           <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[rgb(var(--border))]">
             <img src={modelInfo.icon} alt="" className="w-full h-full object-cover" />
@@ -192,7 +192,7 @@ export default function ParallelCompareView({
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-[rgb(var(--bg))]">
       {/* Top bar */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
+      <div className="glass-inset flex items-center gap-3 px-4 py-2.5 shrink-0 relative z-10 rounded-none border-x-0 border-t-0">
         <span className="text-[13px] font-semibold text-[rgb(var(--text))]">Model Comparison</span>
         <span className="text-[11px] text-[rgb(var(--muted))] bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full font-medium">
           {parallelModelIds.length} models

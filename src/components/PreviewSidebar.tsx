@@ -175,7 +175,7 @@ export default function PreviewSidebar() {
   if (!isOpen) return null;
 
   return (
-    <div className="flex flex-col h-full w-80 bg-[rgb(var(--panel))] border-l border-[rgb(var(--border))] shrink-0 z-50">
+    <div className="glass-inset flex flex-col h-full w-80 shrink-0 z-50 rounded-none border-y-0 border-r-0">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[rgb(var(--border))] shrink-0">
         <div className="flex items-center gap-2">

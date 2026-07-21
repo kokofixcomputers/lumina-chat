@@ -389,7 +389,7 @@ export function ApiFormatEditor({ initial, onSave, onCancel }: {
   ];
 
   return (
-    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl mb-3 overflow-hidden">
+    <div className="glass-inset mb-3 overflow-hidden">
       <div className="px-4 pt-4 pb-0">
         <p className="text-sm font-semibold mb-3">{initial ? 'Edit API Format' : 'New API Format'}</p>
         <div className="flex gap-1 border-b border-[rgb(var(--border))] mb-4">
@@ -567,13 +567,13 @@ export function ApiFormatsTab({ apiFormats, onUpsert, onDelete }: {
         The built-in <span className="font-semibold text-[rgb(var(--text))]">OpenAI</span> format is always available and cannot be edited.
         Create custom formats for APIs that use a different request structure.
       </p>
-      <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl px-4 py-3 mb-3 flex items-center gap-3 opacity-60">
+      <div className="glass-inset px-4 py-3 mb-3 flex items-center gap-3 opacity-60">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">OpenAI <span className="text-xs font-normal text-[rgb(var(--muted))]">(built-in)</span></p>
           <p className="text-xs text-[rgb(var(--muted))] font-mono">Bearer auth · model in body · /chat/completions</p>
         </div>
       </div>
-      <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl px-4 py-3 mb-3 flex items-center gap-3 opacity-60">
+      <div className="glass-inset px-4 py-3 mb-3 flex items-center gap-3 opacity-60">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Anthropic <span className="text-xs font-normal text-[rgb(var(--muted))]">(built-in)</span></p>
           <p className="text-xs text-[rgb(var(--muted))] font-mono">x-api-key auth · anthropic-version: 2023-06-01 · /messages</p>
@@ -583,7 +583,7 @@ export function ApiFormatsTab({ apiFormats, onUpsert, onDelete }: {
         editing && typeof editing === 'object' && editing.id === fmt.id ? (
           <ApiFormatEditor key={fmt.id} initial={fmt} onSave={f => { onUpsert(f); setEditing(null); }} onCancel={() => setEditing(null)} />
         ) : (
-          <div key={fmt.id} className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl px-4 py-3 mb-3 flex items-center gap-3">
+          <div key={fmt.id} className="glass-inset px-4 py-3 mb-3 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold">{fmt.name}</p>
               <p className="text-xs text-[rgb(var(--muted))] font-mono truncate">{fmt.authHeader} · model in {fmt.modelIn} · {fmt.chatPath}</p>
@@ -609,7 +609,7 @@ type Tab = 'providers' | 'formats';
 export default function ProvidersPanel({ providers, apiFormats, onUpdateProvider, onAddProvider, onDeleteProvider, onUpsertFormat, onDeleteFormat, onClose }: ProvidersPanelProps) {
   const [tab, setTab] = useState<Tab>('providers');
   return (
-    <div className="flex flex-col h-full w-full bg-[rgb(var(--panel))] border-l border-[rgb(var(--border))] shrink-0 fixed inset-0 z-50">
+    <div className="side-panel w-full animate-float-in">
       <div className="flex items-center justify-between px-5 py-4 border-b border-[rgb(var(--border))]">
         <h2 className="font-semibold text-base">Model Providers</h2>
         <div className="flex items-center gap-2">

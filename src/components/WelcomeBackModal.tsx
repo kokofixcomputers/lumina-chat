@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, Sparkles, Download, ExternalLink } from 'lucide-react';
+import Modal from './Modal';
 
 interface GitHubRelease {
   tag_name: string;
@@ -17,8 +18,6 @@ interface WelcomeBackModalProps {
 }
 
 export default function WelcomeBackModal({ isOpen, onClose, release, currentVersion }: WelcomeBackModalProps) {
-  if (!isOpen) return null;
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -58,8 +57,11 @@ export default function WelcomeBackModal({ isOpen, onClose, release, currentVers
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      panelClassName="glass-panel-strong rounded-3xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col shadow-2xl"
+    >
         {/* Header */}
         <div className="p-6 border-b border-[rgb(var(--border))] flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -117,7 +119,6 @@ export default function WelcomeBackModal({ isOpen, onClose, release, currentVers
             Continue
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

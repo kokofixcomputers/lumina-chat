@@ -615,6 +615,34 @@ export default function App() {
     setSecondConvId(null);
   };
 
+  // Dragged/right-clicked tab becomes the right pane; current active conversation stays left.
+  const handleSplitRight = (convId: string) => {
+    if (store.activeConvId && convId !== store.activeConvId) {
+      handleEnableSplitView(convId);
+    }
+  };
+
+  // Dragged/right-clicked tab becomes the left (active) pane; previously active conversation moves to the right.
+  const handleSplitLeft = (convId: string) => {
+    if (store.activeConvId && convId !== store.activeConvId) {
+      const previousActive = store.activeConvId;
+      navigate(`/${convId}`);
+      handleEnableSplitView(previousActive);
+    }
+  };
+
+  // Closing either half of a merged split-pair tab exits split view and keeps the other side open as the active tab.
+  const handleCloseSplitSide = (side: 'left' | 'right') => {
+    if (!splitViewEnabled || !secondConvId || !store.activeConvId) return;
+    const leftId = store.activeConvId;
+    const rightId = secondConvId;
+    const closedId = side === 'left' ? leftId : rightId;
+    const keepId = side === 'left' ? rightId : leftId;
+    handleCloseSplitView();
+    setOpenTabIds(prev => prev.filter(id => id !== closedId));
+    navigate(`/${keepId}`);
+  };
+
   const handleImportData = async (data: any) => {
     if (data.settings) {
       store.updateSettings(data.settings);
@@ -1709,7 +1737,8 @@ export default function App() {
         <Route path="/oauth/onedrive/callback" element={<OAuthOneDriveCallback />} />
         <Route path="/oauth/1minrelay/callback" element={<OAuth1minRelayV4Callback />} />
         <Route path="*" element={
-          <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))]">
+          <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))] relative isolate">
+            <div className="ambient-bg" aria-hidden="true" />
             {/* Mobile menu button */}
             <button
               onClick={() => setSidebarOpen(true)}
@@ -1759,23 +1788,16 @@ export default function App() {
             />
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-              {store.settings.browserTabsEnabled && (
+              {store.settings.browserTabsEnabled && appMode === 'chat' && (
                 <TabBar
                   tabs={openTabIds.map(id => store.conversations.find(c => c.id === id)).filter(Boolean) as any[]}
                   activeId={store.activeConvId}
                   onSelect={(id) => navigate(`/${id}`)}
                   onClose={handleCloseTab}
-                  onSplitLeft={(id) => {
-                    if (store.activeConvId && id !== store.activeConvId) {
-                      navigate(`/${id}`);
-                      handleEnableSplitView(store.activeConvId);
-                    }
-                  }}
-                  onSplitRight={(id) => {
-                    if (store.activeConvId && id !== store.activeConvId) {
-                      handleEnableSplitView(id);
-                    }
-                  }}
+                  onSplitLeft={handleSplitLeft}
+                  onSplitRight={handleSplitRight}
+                  splitPair={splitViewEnabled && store.activeConvId && secondConvId ? { leftId: store.activeConvId, rightId: secondConvId } : null}
+                  onCloseSplitSide={handleCloseSplitSide}
                 />
               )}
               <div className="flex-1 flex min-w-0 overflow-hidden relative">
@@ -1906,6 +1928,8 @@ export default function App() {
                       isGenerating={store.isGenerating}
                       streamingContent={store.streamingContent}
                       streamingContentRef={store.streamingContentRef}
+                      streamingReasoning={store.streamingReasoning}
+                      streamingReasoningRef={store.streamingReasoningRef}
                       allModels={store.allProviderModels}
                       onSend={handleSend}
                       onModelChange={handleModelChange}
@@ -1934,8 +1958,7 @@ export default function App() {
                       onForkConversation={handleForkConversation}
                       selectedFineTuningId={store.selectedFineTuningId}
                       onFineTuningChange={store.selectFineTuning}
-                      onEnableSplitView={handleEnableSplitView}
-                      allConversations={store.conversations}
+                      onDropToSplit={(id, side) => (side === 'left' ? handleSplitLeft(id) : handleSplitRight(id))}
                       onParallelSend={handleParallelSend}
                     />
                   )}
@@ -1943,23 +1966,22 @@ export default function App() {
                 </>
               )}
 
-              {panel === 'settings' && (
-                <SettingsPanel
-                  settings={store.settings}
-                  conversations={store.conversations}
-                  onUpdateModelSettings={store.updateModelSettings}
-                  onUpdateSettings={store.updateSettings}
-                  onUpdateProvider={store.updateProvider}
-                  onAddProvider={store.addProvider}
-                  onAddIntegratedProvider={store.addIntegratedProvider}
-                  onDeleteProvider={store.deleteProvider}
-                  onUpsertApiFormat={store.upsertApiFormat}
-                  onDeleteApiFormat={store.deleteApiFormat}
-                  onImportData={handleImportData}
-                  onClose={() => { setPanel('chat'); setSettingsInitialTab(undefined); }}
-                  initialTab={settingsInitialTab as any}
-                />
-              )}
+              <SettingsPanel
+                open={panel === 'settings'}
+                settings={store.settings}
+                conversations={store.conversations}
+                onUpdateModelSettings={store.updateModelSettings}
+                onUpdateSettings={store.updateSettings}
+                onUpdateProvider={store.updateProvider}
+                onAddProvider={store.addProvider}
+                onAddIntegratedProvider={store.addIntegratedProvider}
+                onDeleteProvider={store.deleteProvider}
+                onUpsertApiFormat={store.upsertApiFormat}
+                onDeleteApiFormat={store.deleteApiFormat}
+                onImportData={handleImportData}
+                onClose={() => { setPanel('chat'); setSettingsInitialTab(undefined); }}
+                initialTab={settingsInitialTab as any}
+              />
 
             </div>
             </div>
@@ -1989,22 +2011,18 @@ export default function App() {
     )}
 
     {/* Modals */}
-    {showViewChatModal && (
-      <ViewChatModal
-        isOpen={showViewChatModal}
-        onClose={() => setShowViewChatModal(false)}
-        onLoadConversation={handleLoadSharedConversation}
-      />
-    )}
-    
-    {showWelcomeBack && (
-      <WelcomeBackModal
-        isOpen={showWelcomeBack}
-        onClose={() => setShowWelcomeBack(false)}
-        release={latestRelease}
-        currentVersion={getCurrentVersion()}
-      />
-    )}
+    <ViewChatModal
+      isOpen={showViewChatModal}
+      onClose={() => setShowViewChatModal(false)}
+      onLoadConversation={handleLoadSharedConversation}
+    />
+
+    <WelcomeBackModal
+      isOpen={showWelcomeBack}
+      onClose={() => setShowWelcomeBack(false)}
+      release={latestRelease}
+      currentVersion={getCurrentVersion()}
+    />
     
     <DesktopAppToast />
     </>

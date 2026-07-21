@@ -821,7 +821,7 @@ export default function ChatInput({
       {/* Quote display */}
       {quote && (
         <div className="mb-3 mx-2 sm:mx-4">
-          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl shadow-sm">
+          <div className="glass rounded-2xl">
             <div className="flex items-start gap-3 p-3">
               <div className="w-8 h-8 rounded-full bg-[rgb(var(--accent))]/10 flex items-center justify-center shrink-0 mt-0.5">
                 <Quote size={14} className="text-[rgb(var(--accent))]" />
@@ -942,7 +942,7 @@ export default function ChatInput({
         {/* Code-only notice for non-desktop */}
         {mode === 'code' && !isDesktop && (
           <div className="px-3 sm:px-4 py-3">
-            <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg p-3 flex items-center gap-3">
+            <div className="glass rounded-2xl p-3 flex items-center gap-3">
               <div className="flex-1 text-sm text-[rgb(var(--muted))]">Code sessions are only available in the Lumina desktop app.</div>
               <button
                 onClick={() => { window.location.href = '/download'; }}
@@ -1199,7 +1199,7 @@ export default function ChatInput({
               {showMoreMenu && (
                 <div
                   ref={moreMenuRef}
-                  className="absolute right-0 top-full mt-2 w-56 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl shadow-2xl p-2 z-50"
+                  className="absolute right-0 top-full mt-2 w-56 glass-panel-strong animate-float-in rounded-2xl shadow-2xl p-2 z-50"
                 >
                   {overflowItems.includes('reasoning') && useResponsesApi && onReasoningEffortChange && (
                     <button
@@ -1383,7 +1383,7 @@ export default function ChatInput({
       {showWorkflowMenu && filteredWorkflows.length > 0 && (
         <div
           ref={workflowMenuRef}
-          className="fixed z-50 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl shadow-2xl p-2 min-w-[200px] max-w-[300px]"
+          className="fixed z-50 glass-panel-strong animate-float-in rounded-2xl shadow-2xl p-2 min-w-[200px] max-w-[300px]"
           style={{
             top: workflowMenuPos.top,
             left: workflowMenuPos.left,
@@ -1407,7 +1407,7 @@ export default function ChatInput({
       {showReasoningMenu && onReasoningEffortChange && (
         <div
           ref={reasoningMenuRef}
-          className="fixed z-50 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl shadow-2xl p-2 min-w-[140px]"
+          className="fixed z-50 glass-panel-strong animate-float-in rounded-2xl shadow-2xl p-2 min-w-[140px]"
           style={{
             top: reasoningMenuPos.top,
             left: reasoningMenuPos.left,

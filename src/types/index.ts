@@ -2,6 +2,8 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
+  reasoning?: string;
+  reasoningDurationMs?: number;
   images?: string[]; // base64
   artifacts?: Array<{
     url: string;

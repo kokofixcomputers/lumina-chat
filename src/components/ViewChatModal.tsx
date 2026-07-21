@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Link, Download, Calendar, AlertCircle, Loader2 } from 'lucide-react';
 import type { Conversation } from '../types';
+import Modal from './Modal';
 
 interface ViewChatModalProps {
   isOpen: boolean;
@@ -29,8 +30,6 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
       }
     }
   }, [isOpen, code]);
-
-  if (!isOpen) return null;
 
   const handleLoadChat = async () => {
     if (!code.trim()) {
@@ -89,8 +88,7 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-      <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+    <Modal open={isOpen} onClose={onClose} panelClassName="glass-panel-strong rounded-3xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-[rgb(var(--border))]">
           <div className="flex items-center gap-2">
@@ -241,7 +239,6 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -41,11 +41,11 @@ function DirectModelCard({ provider, onUpdate, onDelete }: {
   };
 
   return (
-    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-4 space-y-3">
+    <div className="glass-inset p-4 space-y-3">
       <div className="flex items-center gap-3">
         <button
           onClick={() => onUpdate({ enabled: !provider.enabled })}
-          className={`toggle w-10 h-5 shrink-0 ${provider.enabled ? 'bg-green-500' : 'bg-black/15 dark:bg-white/15'}`}
+          className={`toggle w-10 h-5 shrink-0 ${provider.enabled ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
         >
           <span className={`toggle-thumb w-3 h-3 ${provider.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
         </button>

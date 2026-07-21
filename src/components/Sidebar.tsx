@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-  Search, Home, Settings, Database, MessageSquare,
+  Search, Settings, Database, MessageSquare,
   Trash2, Star, ChevronDown, X, Edit2, Cloud, RefreshCw, Link, BookOpen, Download,
   Code2, MessageCircle, FolderOpen, Plus, Image, Monitor, PanelLeftClose, PanelLeft
 } from 'lucide-react';
@@ -82,7 +82,6 @@ export default function Sidebar({
 }: SidebarProps) {
   const [hoverDel, setHoverDel] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [, extTick] = useState(0);
   useEffect(() => {
     const h = () => extTick(n => n + 1);
@@ -319,112 +318,135 @@ export default function Sidebar({
     );
   };
 
+  const modeMeta: Record<'chat' | 'code' | 'image' | 'cowork', { label: string; icon: React.ReactNode; desktopOnly: boolean }> = {
+    chat: { label: 'Chat', icon: <MessageCircle size={18} />, desktopOnly: false },
+    code: { label: 'Code', icon: <Code2 size={18} />, desktopOnly: true },
+    image: { label: 'Image', icon: <Image size={18} />, desktopOnly: false },
+    cowork: { label: 'Cowork', icon: <Monitor size={18} />, desktopOnly: true },
+  };
+
+  const handleNew = () => {
+    if (appMode === 'code') onNewCodeSession?.();
+    else if (appMode === 'cowork') onNewCoworkSession?.();
+    else onGoHome();
+    onClose();
+  };
+
+  const panelTitle = appMode === 'code' ? 'Code Sessions' : appMode === 'cowork' ? 'Cowork Sessions' : appMode === 'image' ? 'Images' : 'Chats';
+
   return (
     <>
       {/* Mobile overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
           onClick={onClose}
         />
       )}
 
-      {/* Floating reopen button — desktop only, shown when collapsed */}
-      {collapsed && (
-        <button
-          onClick={toggleCollapse}
-          className="hidden md:flex fixed top-3 left-3 z-50 btn-icon shadow-lg items-center justify-center"
-          title="Expand sidebar"
-        >
-          <PanelLeft size={18} />
-        </button>
-      )}
-
-      <aside data-tour="sidebar" className={`sidebar fixed inset-y-0 left-0 md:relative z-50 transition-transform duration-300 md:translate-x-0 ${
+      <div data-tour="sidebar" className={`fixed inset-y-0 left-0 md:relative z-50 flex h-full transition-transform duration-300 md:translate-x-0 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
-      } ${collapsed ? 'collapsed' : ''}`}>
-      {/* User header */}
-      <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-[rgb(var(--border))]">
-        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center text-white dark:text-black text-[10px] font-bold shrink-0 select-none shadow-sm">
-          {(settings as any).username?.[0]?.toUpperCase() ?? 'k'}
-        </div>
-        <span className="text-[13px] font-medium truncate flex-1 select-none">You</span>
-        <Cloud 
-          size={16} 
-          className={`shrink-0 ${
-            syncStatus === 'synced' ? 'text-green-500' :
-            syncStatus === 'syncing' ? 'text-blue-500 animate-pulse' :
-            syncStatus === 'error' ? 'text-red-500' :
-            'text-gray-400'
-          }`}
-        />
-        <button onClick={toggleCollapse} className="hidden md:flex btn-icon w-6 h-6" title="Collapse sidebar">
-          <PanelLeftClose size={16} />
-        </button>
-        <button onClick={onClose} className="md:hidden btn-icon w-6 h-6">
-          <X size={16} />
+      }`}>
+
+        {/* ── Icon rail — always visible, holds primary nav ── */}
+        <nav className="nav-rail">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center text-white dark:text-black text-[12px] font-bold shrink-0 select-none shadow-sm relative">
+            {(settings as any).username?.[0]?.toUpperCase() ?? 'k'}
+            <Cloud
+              size={11}
+              className={`absolute -bottom-1 -right-1 rounded-full bg-[rgb(var(--panel))] p-[1px] ${
+                syncStatus === 'synced' ? 'text-green-500' :
+                syncStatus === 'syncing' ? 'text-blue-500 animate-pulse' :
+                syncStatus === 'error' ? 'text-red-500' :
+                'text-gray-400'
+              }`}
+            />
+          </div>
+
+          {onModeChange && (
+            <div className="flex flex-col items-center gap-1 mt-3">
+              {(Object.keys(modeMeta) as Array<'chat' | 'code' | 'image' | 'cowork'>).map(id => {
+                const { label, icon, desktopOnly } = modeMeta[id];
+                const unavailable = desktopOnly && !isDesktop;
+                return (
+                  <button
+                    key={id}
+                    className={`rail-btn ${appMode === id ? 'active' : ''}`}
+                    onClick={() => !unavailable && onModeChange(id)}
+                    disabled={unavailable}
+                    title={unavailable ? `${label} is desktop-only` : label}
+                  >
+                    {icon}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="rail-divider" />
+
+          <button className="rail-btn" data-tour="new-chat" onClick={handleNew} title={appMode === 'image' ? 'New chat' : 'New'}>
+            <Plus size={18} />
+          </button>
+
+          <div className="flex-1" />
+
+          {updateAvailable && (
+            <button
+              className="rail-btn text-green-500 hover:text-green-400"
+              title={tauriUtils.isTauri && updateInfo ? `Update available (${updateInfo.version})` : 'Update available'}
+              onClick={() => {
+                if (updateInfo?.url && tauriUtils.isTauri) tauriUtils.openUrl(updateInfo.url);
+                else window.location.reload();
+              }}
+            >
+              {tauriUtils.isTauri && updateInfo ? <Download size={18} /> : <RefreshCw size={18} />}
+            </button>
+          )}
+          <button className="rail-btn" onClick={onOpenProviders} data-tour="providers-btn" title="Providers">
+            <Database size={18} />
+          </button>
+          <button className="rail-btn" onClick={onOpenSettings} data-tour="settings-btn" title="Settings">
+            <Settings size={18} />
+          </button>
+          <button onClick={toggleCollapse} className="rail-btn hidden md:flex" title={collapsed ? 'Expand panel' : 'Collapse panel'}>
+            {collapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+        </nav>
+
+        {/* ── Conversation / session list panel ── */}
+        <aside className={`sidebar-panel ${collapsed ? 'collapsed' : ''}`}>
+      {/* Panel header */}
+      <div className="flex items-center gap-2 px-4 py-3.5 border-b border-[rgb(var(--border)/0.5)] shrink-0">
+        <span className="text-[14px] font-semibold truncate flex-1 select-none">{panelTitle}</span>
+        <button onClick={onClose} className="md:hidden btn-icon w-7 h-7">
+          <X size={15} />
         </button>
       </div>
 
-      {/* Mode toggle — 2×2 grid with Chat always visible; Code/Image/Cowork desktop-only */}
-      {onModeChange && (
-        <div className="px-3 pt-2 pb-1">
-          <div className="grid grid-cols-2 gap-0.5 rounded-xl bg-black/[0.05] dark:bg-white/[0.06] p-0.5">
-            {([
-              { id: 'chat', label: 'Chat', icon: <MessageCircle size={11} />, desktopOnly: false },
-              { id: 'code', label: 'Code', icon: <Code2 size={11} />, desktopOnly: true },
-              { id: 'image', label: 'Image', icon: <Image size={11} />, desktopOnly: false },
-              { id: 'cowork', label: 'Cowork', icon: <Monitor size={11} />, desktopOnly: true },
-            ] as const).map(({ id, label, icon, desktopOnly }) => (
-              <button
-                key={id}
-                className={`flex items-center justify-center gap-1 rounded-[10px] py-1.5 text-[11px] font-medium transition-all ${
-                  appMode === id
-                    ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm'
-                    : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
-                } ${desktopOnly && !isDesktop ? 'opacity-40' : ''}`}
-                onClick={() => onModeChange(id)}
-                title={desktopOnly && !isDesktop ? `${label} is desktop-only` : undefined}
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Search */}
-      <div className="px-1 py-2">
-        {searchOpen ? (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--bg))] shadow-sm">
+      {/* Search — always visible for chat mode */}
+      {appMode === 'chat' && (
+        <div className="px-3 pt-2.5 pb-1 shrink-0">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[rgb(var(--border))] bg-black/[0.03] dark:bg-white/[0.04]">
             <Search size={13} className="text-[rgb(var(--muted))] shrink-0" />
             <input
-              autoFocus
               value={searchQ}
               onChange={e => setSearchQ(e.target.value)}
               placeholder="Search conversations..."
-              className="flex-1 bg-transparent text-[13px] outline-none text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+              className="flex-1 min-w-0 bg-transparent text-[13px] outline-none text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
             />
-            <button onClick={() => { setSearchOpen(false); setSearchQ(''); }} className="text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors">
-              <X size={13} />
-            </button>
+            {searchQ && (
+              <button onClick={() => setSearchQ('')} className="text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors shrink-0">
+                <X size={13} />
+              </button>
+            )}
           </div>
-        ) : (
-          <button className="sidebar-item w-full" onClick={() => setSearchOpen(true)}>
-            <Search size={15} />
-            <span>Search</span>
-          </button>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Nav */}
+      {/* Secondary chat-mode nav */}
       {appMode === 'chat' && (
-        <div className="px-1 space-y-0.5">
-          <button className="sidebar-item w-full" data-tour="new-chat" onClick={() => { onGoHome(); onClose(); }}>
-            <Home size={15} />
-            <span>New Chat</span>
-          </button>
+        <div className="px-1 pt-1.5 space-y-0.5 shrink-0">
           <button className="sidebar-item w-full" onClick={onOpenViewChat}>
             <Link size={15} />
             <span>View Chat</span>
@@ -432,24 +454,6 @@ export default function Sidebar({
           <button className={`sidebar-item w-full ${currentPanel === 'fine-tuning' ? 'active' : ''}`} onClick={() => { onOpenFineTuning(); onClose(); }}>
             <BookOpen size={15} />
             <span>Fine-tuning</span>
-          </button>
-        </div>
-      )}
-
-      {appMode === 'code' && (
-        <div className="px-1 space-y-0.5">
-          <button className="sidebar-item w-full" onClick={() => { onNewCodeSession?.(); onClose(); }}>
-            <Plus size={15} />
-            <span>New Session</span>
-          </button>
-        </div>
-      )}
-
-      {appMode === 'cowork' && (
-        <div className="px-1 space-y-0.5">
-          <button className="sidebar-item w-full" onClick={() => { onNewCoworkSession?.(); onClose(); }}>
-            <Plus size={15} />
-            <span>New Session</span>
           </button>
         </div>
       )}
@@ -560,63 +564,30 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Bottom */}
-      <div className="border-t border-[rgb(var(--border))] px-1 py-2 space-y-0.5">
-        {updateAvailable && (
-          <button
-            className="sidebar-item w-full text-green-500 hover:text-green-400"
-            onClick={() => {
-              if (updateInfo?.url) {
-                // For Tauri updates, open the release page in browser
-                if (tauriUtils.isTauri) {
-                  tauriUtils.openUrl(updateInfo.url);
-                } else {
-                  // For web updates, reload the page
-                  window.location.reload();
-                }
-              } else {
-                // Web update - reload page
-                window.location.reload();
-              }
-            }}
-          >
-            {tauriUtils.isTauri && updateInfo ? <Download size={15} /> : <RefreshCw size={15} />}
-            <span>
-              {tauriUtils.isTauri && updateInfo 
-                ? `Update Available (${updateInfo.version})` 
-                : 'Update Available'
-              }
-            </span>
-          </button>
-        )}
-        {/* Extension sidebar sections */}
-        {extSidebarSections.map(sec => (
-          <div key={sec.id} className="px-1 space-y-0.5 border-t border-[rgb(var(--border))] pt-1 mt-1">
-            {sec.title && <p className="text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--muted))] px-3 py-1">{sec.title}</p>}
-            {sec.items.map(item => (
-              <button key={item.id} className="sidebar-item w-full" onClick={item.onClick}>
-                {item.icon && <span style={{ fontSize: 15 }}>{item.icon}</span>}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-        {extSidebarButtons.map(btn => (
-          <button key={btn.id} className="sidebar-item w-full" title={btn.tooltip} onClick={btn.onClick}>
-            {btn.icon && <span style={{ fontSize: 15 }}>{btn.icon}</span>}
-            <span>{btn.label}</span>
-          </button>
-        ))}
-        <button className="sidebar-item w-full" onClick={onOpenProviders} data-tour="providers-btn">
-          <Database size={15} />
-          <span>Providers</span>
-        </button>
-        <button className="sidebar-item w-full" onClick={onOpenSettings} data-tour="settings-btn">
-          <Settings size={15} />
-          <span>Settings</span>
-        </button>
+      {/* Extension sidebar sections/buttons */}
+      {(extSidebarSections.length > 0 || extSidebarButtons.length > 0) && (
+        <div className="border-t border-[rgb(var(--border)/0.5)] px-1 py-2 space-y-0.5 shrink-0">
+          {extSidebarSections.map(sec => (
+            <div key={sec.id} className="px-1 space-y-0.5 border-t border-[rgb(var(--border))] pt-1 mt-1 first:border-t-0 first:pt-0 first:mt-0">
+              {sec.title && <p className="text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--muted))] px-3 py-1">{sec.title}</p>}
+              {sec.items.map(item => (
+                <button key={item.id} className="sidebar-item w-full" onClick={item.onClick}>
+                  {item.icon && <span style={{ fontSize: 15 }}>{item.icon}</span>}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+          {extSidebarButtons.map(btn => (
+            <button key={btn.id} className="sidebar-item w-full" title={btn.tooltip} onClick={btn.onClick}>
+              {btn.icon && <span style={{ fontSize: 15 }}>{btn.icon}</span>}
+              <span>{btn.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+        </aside>
       </div>
-    </aside>
     </>
   );
 }

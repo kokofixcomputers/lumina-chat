@@ -70,9 +70,10 @@ const FineTuningDetail: React.FC<FineTuningDetailProps> = ({ fineTuningId, onBac
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
+    <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in relative isolate">
+      <div className="ambient-bg" aria-hidden="true" />
       {/* Top bar */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
+      <div className="glass flex items-center justify-between px-5 py-3 shrink-0 relative z-10">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
@@ -144,7 +145,7 @@ const FineTuningDetail: React.FC<FineTuningDetailProps> = ({ fineTuningId, onBac
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))]">
+      <div className="glass relative z-10">
         <div className="max-w-4xl mx-auto px-5">
           <div className="flex gap-6">
             <button
@@ -187,7 +188,7 @@ const FineTuningDetail: React.FC<FineTuningDetailProps> = ({ fineTuningId, onBac
             <KnowledgeEntryList fineTuningId={fineTuning.id} entries={fineTuning.knowledgeEntries} />
           ) : (
             <div className="space-y-4">
-              <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg p-4">
+              <div className="glass rounded-2xl p-4">
                 <h3 className="font-medium text-[rgb(var(--text))] mb-4">Knowledge Base Information</h3>
                 <div className="grid gap-4">
                   <div>
@@ -215,7 +216,7 @@ const FineTuningDetail: React.FC<FineTuningDetailProps> = ({ fineTuningId, onBac
                 </div>
               </div>
               
-              <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg p-4">
+              <div className="glass rounded-2xl p-4">
                 <h3 className="font-medium text-[rgb(var(--text))] mb-3">Danger Zone</h3>
                 <div className="space-y-3">
                   <p className="text-sm text-[rgb(var(--muted))]">

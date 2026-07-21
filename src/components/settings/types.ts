@@ -32,4 +32,5 @@ export interface SettingsPanelProps {
   onImportData: (data: any) => void;
   onClose: () => void;
   initialTab?: TabType;
+  open?: boolean;
 }

@@ -40,7 +40,7 @@ export function useAppStore() {
     addMessage, setConversations, updateProvider,
     generateConversationTitle, generateFollowUps, setIsGenerating,
   });
-  const { streamingContent, streamingContentRef, abortController, stopGeneration, sendMessage: originalSendMessage } = sendSlice;
+  const { streamingContent, streamingContentRef, streamingReasoning, streamingReasoningRef, abortController, stopGeneration, sendMessage: originalSendMessage } = sendSlice;
 
   const fineTuningStore = useFineTuningStore();
   const {
@@ -57,7 +57,7 @@ export function useAppStore() {
   return {
     // state
     conversations, activeConvId, activeConversation,
-    settings, isGenerating, streamingContent, streamingContentRef, allProviderModels,
+    settings, isGenerating, streamingContent, streamingContentRef, streamingReasoning, streamingReasoningRef, allProviderModels,
     storageQuotaExceeded, isLoading, fineTunings, selectedFineTuningId,
     // conversation actions
     setActiveConvId, newConversation, deleteConversation, updateConversationTitle,

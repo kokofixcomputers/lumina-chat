@@ -95,7 +95,7 @@ function Navbar({ view, setView, user, onLogout, navigate }: {
   ];
 
   return (
-    <header className="sticky top-0 z-40 bg-[rgb(var(--bg))]/90 backdrop-blur border-b border-[rgb(var(--border))]">
+    <header className="glass sticky top-0 z-40">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-4">
         {/* Back + brand */}
         <button
@@ -122,11 +122,11 @@ function Navbar({ view, setView, user, onLogout, navigate }: {
             <button
               key={link.id}
               onClick={() => setView(link.id)}
-              className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 view === link.id || (link.id === 'review' && view === 'review-detail')
-                  ? 'bg-[rgb(var(--panel))] text-[rgb(var(--text))]'
-                  : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
-              } ${link.modOnly ? 'text-purple-500 dark:text-purple-400' : ''}`}
+                  ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                  : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] hover:bg-black/[0.05] dark:hover:bg-white/[0.07]'
+              } ${link.modOnly ? '!text-purple-500 dark:!text-purple-400' : ''}`}
             >
               {link.modOnly && <Shield size={12} className="inline mr-1 -mt-0.5" />}
               {link.label}
@@ -286,7 +286,7 @@ function ExtensionCard({ ext, tab, installing, installed, onInstall, reviewNote,
   onUpdate?: () => void;
 }) {
   return (
-    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-5 hover:border-[rgb(var(--accent))]/30 transition-colors">
+    <div className="glass rounded-2xl p-5 hover:!border-[rgb(var(--accent)/0.4)] transition-colors">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           {/* Title row */}
@@ -402,7 +402,7 @@ function ReviewDetail({ ext, token, onDone, onBack }: {
       <div className="grid lg:grid-cols-[1fr_320px] gap-6">
         {/* Main info */}
         <div className="space-y-5">
-          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-6">
+          <div className="glass rounded-2xl p-6">
             <div className="flex items-center gap-2 flex-wrap mb-3">
               <h2 className="text-xl font-bold">{ext.name}</h2>
               <span className="text-sm text-[rgb(var(--muted))] bg-[rgb(var(--bg))] px-2 py-0.5 rounded-full border border-[rgb(var(--border))]">v{ext.version}</span>
@@ -441,7 +441,7 @@ function ReviewDetail({ ext, token, onDone, onBack }: {
           </div>
 
           {/* Code viewer */}
-          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl overflow-hidden">
+          <div className="glass rounded-2xl overflow-hidden">
             <button
               onClick={() => setShowCode(s => !s)}
               className="w-full flex items-center justify-between px-5 py-3.5 text-sm font-medium hover:bg-[rgb(var(--bg))] transition-colors"
@@ -464,7 +464,7 @@ function ReviewDetail({ ext, token, onDone, onBack }: {
 
         {/* Decision panel */}
         <div className="space-y-4">
-          <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl p-5 sticky top-20">
+          <div className="glass rounded-2xl p-5 sticky top-20">
             <h3 className="font-semibold mb-4 flex items-center gap-2">
               <Shield size={16} className="text-purple-400" />
               Moderator Decision
@@ -536,7 +536,7 @@ function SubmitPage({ token, user, setView, prefill }: { token: string; user: Us
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-[rgb(var(--panel))] border border-[rgb(var(--border))] flex items-center justify-center mb-5">
+        <div className="w-14 h-14 rounded-2xl glass flex items-center justify-center mb-5">
           <Upload size={24} className="text-[rgb(var(--muted))]" />
         </div>
         <h2 className="text-xl font-bold mb-2">Sign in to submit</h2>
@@ -790,7 +790,8 @@ export default function MarketplacePage() {
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[rgb(var(--bg))] flex flex-col">
+    <div className="min-h-screen bg-[rgb(var(--bg))] flex flex-col relative isolate">
+      <div className="ambient-bg" aria-hidden="true" />
       <Navbar view={view} setView={setView} user={user} onLogout={handleLogout} navigate={navigate} />
 
       {/* Auth pages */}
@@ -822,7 +823,7 @@ export default function MarketplacePage() {
         <div className="flex-1">
           {/* Page hero — browse only */}
           {view === 'browse' && (
-            <div className="border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40">
+            <div className="glass">
               <div className="max-w-6xl mx-auto px-4 py-10">
                 <div className="flex items-center gap-4 mb-3">
                   <div className="w-12 h-12 rounded-2xl bg-[rgb(var(--text))] flex items-center justify-center shrink-0">
@@ -839,7 +840,7 @@ export default function MarketplacePage() {
 
           {/* Mine hero */}
           {view === 'mine' && (
-            <div className="border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40">
+            <div className="glass">
               <div className="max-w-6xl mx-auto px-4 py-10">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
@@ -893,7 +894,7 @@ export default function MarketplacePage() {
 
             {!listLoading && extensions.length === 0 && (
               <div className="flex flex-col items-center justify-center py-24 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-[rgb(var(--panel))] border border-[rgb(var(--border))] flex items-center justify-center mb-4">
+                <div className="w-14 h-14 rounded-2xl glass flex items-center justify-center mb-4">
                   {view === 'review' ? <Shield size={24} className="text-purple-400" /> : <Package size={24} className="text-[rgb(var(--muted))]" />}
                 </div>
                 <p className="text-[rgb(var(--muted))]">

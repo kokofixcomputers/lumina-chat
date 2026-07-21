@@ -37,7 +37,7 @@ export default function MemoriesTab({ enabled, memories, onToggle, onAdd, onEdit
   return (
     <div className="flex-1 overflow-y-auto p-5 pb-safe max-w-2xl space-y-5">
       {/* Enable toggle */}
-      <div className="flex items-center justify-between bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl px-4 py-3">
+      <div className="flex items-center justify-between glass-inset px-4 py-3">
         <div>
           <p className="text-sm font-semibold">Persistent Memories</p>
           <p className="text-xs text-[rgb(var(--muted))] mt-0.5">
@@ -66,7 +66,7 @@ export default function MemoriesTab({ enabled, memories, onToggle, onAdd, onEdit
               </p>
             )}
             {memories.map((m, i) => (
-              <div key={i} className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl px-3 py-2.5 flex items-start gap-2">
+              <div key={i} className="glass-inset px-3 py-2.5 flex items-start gap-2">
                 {editingIdx === i ? (
                   <>
                     <input

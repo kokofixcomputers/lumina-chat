@@ -1,4 +1,5 @@
-import { useState, useEffect, useId } from 'react';
+import { useState, useEffect, useId, useRef } from 'react';
+import Modal from '../Modal';
 import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, Wifi, WifiOff, Loader, AlertCircle, CheckCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import type { AppSettings, McpServerConfig } from '../../types';
@@ -29,6 +30,9 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
   const servers = settings.mcpServers ?? [];
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<McpServerConfig | null>(null);
+  const lastEditingRef = useRef<McpServerConfig | null>(null);
+  if (editing) lastEditingRef.current = editing;
+  const formConfig = editing ?? lastEditingRef.current;
   const [isNew, setIsNew] = useState(false);
   const [headerKey, setHeaderKey] = useState('');
   const [headerVal, setHeaderVal] = useState('');
@@ -106,8 +110,8 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
         const state = states.get(cfg.id);
         const isExpanded = expanded.has(cfg.id);
         return (
-          <div key={cfg.id} className="border border-[rgb(var(--border))] rounded-xl overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-3 bg-[rgb(var(--panel))]">
+          <div key={cfg.id} className="glass-inset overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3">
               <button onClick={() => toggle(cfg.id)} className="text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]">
                 {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
               </button>
@@ -167,10 +171,9 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
       })}
 
       {/* Edit/Add modal */}
-      {editing && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditing(null)} />
-          <div className="relative bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+      <Modal open={!!editing} onClose={() => setEditing(null)} panelClassName="glass-panel-strong rounded-3xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+        {formConfig && (
+          <>
             <h3 className="font-semibold text-base">{isNew ? 'Add MCP Server' : 'Edit MCP Server'}</h3>
 
             <div className="space-y-3">
@@ -179,8 +182,8 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
                 <input
                   className="input mt-1 w-full"
                   placeholder="My MCP Server"
-                  value={editing.name}
-                  onChange={e => setEditing({ ...editing, name: e.target.value })}
+                  value={formConfig.name}
+                  onChange={e => setEditing({ ...formConfig, name: e.target.value })}
                 />
               </label>
 
@@ -189,8 +192,8 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
                 <input
                   className="input mt-1 w-full font-mono text-sm"
                   placeholder="https://example.com/mcp"
-                  value={editing.url}
-                  onChange={e => setEditing({ ...editing, url: e.target.value })}
+                  value={formConfig.url}
+                  onChange={e => setEditing({ ...formConfig, url: e.target.value })}
                 />
               </label>
 
@@ -198,8 +201,8 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
                 <span className="text-xs text-[rgb(var(--muted))] uppercase tracking-wide">Transport</span>
                 <select
                   className="input mt-1 w-full"
-                  value={editing.transport}
-                  onChange={e => setEditing({ ...editing, transport: e.target.value as McpServerConfig['transport'] })}
+                  value={formConfig.transport}
+                  onChange={e => setEditing({ ...formConfig, transport: e.target.value as McpServerConfig['transport'] })}
                 >
                   <option value="streamable-http">Streamable HTTP</option>
                   <option value="sse">SSE (legacy)</option>
@@ -209,15 +212,15 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
               {/* Headers */}
               <div>
                 <span className="text-xs text-[rgb(var(--muted))] uppercase tracking-wide">Headers</span>
-                {Object.entries(editing.headers ?? {}).map(([k, v]) => (
+                {Object.entries(formConfig.headers ?? {}).map(([k, v]) => (
                   <div key={k} className="flex items-center gap-2 mt-1">
                     <span className="text-sm font-mono flex-1 truncate">{k}: {v}</span>
                     <button
                       className="btn-icon text-red-500"
                       onClick={() => {
-                        const h = { ...editing.headers };
+                        const h = { ...formConfig.headers };
                         delete h[k];
-                        setEditing({ ...editing, headers: h });
+                        setEditing({ ...formConfig, headers: h });
                       }}
                     >
                       <Trash2 size={13} />
@@ -241,7 +244,7 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
                     className="btn-secondary text-sm"
                     onClick={() => {
                       if (!headerKey.trim()) return;
-                      setEditing({ ...editing, headers: { ...editing.headers, [headerKey.trim()]: headerVal } });
+                      setEditing({ ...formConfig, headers: { ...formConfig.headers, [headerKey.trim()]: headerVal } });
                       setHeaderKey(''); setHeaderVal('');
                     }}
                   >
@@ -255,15 +258,15 @@ export default function MCPTab({ settings, onUpdateSettings }: MCPTabProps) {
               <button className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
               <button
                 className="btn-primary"
-                disabled={!editing.name.trim() || !editing.url.trim()}
-                onClick={() => save(editing)}
+                disabled={!formConfig.name.trim() || !formConfig.url.trim()}
+                onClick={() => save(formConfig)}
               >
                 {isNew ? 'Add Server' : 'Save'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

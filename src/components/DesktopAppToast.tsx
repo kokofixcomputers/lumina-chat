@@ -13,6 +13,7 @@ export default function DesktopAppToast() {
   );
 
   const [isVisible, setIsVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [isDismissed, setIsDismissed] = useState(() => {
     return localStorage.getItem('desktop-app-toast-dismissed') === 'true';
   });
@@ -30,9 +31,12 @@ export default function DesktopAppToast() {
   }, [isDismissed, isExcluded]);
 
   const handleDismiss = () => {
-    setIsVisible(false);
-    setIsDismissed(true);
-    localStorage.setItem('desktop-app-toast-dismissed', 'true');
+    setClosing(true);
+    setTimeout(() => {
+      setIsVisible(false);
+      setIsDismissed(true);
+      localStorage.setItem('desktop-app-toast-dismissed', 'true');
+    }, 150);
   };
 
   if (!isVisible || isTauri() || isDismissed || isExcluded) {
@@ -40,9 +44,9 @@ export default function DesktopAppToast() {
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 animate-slide-up">
-      <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl shadow-lg p-4 flex items-start gap-3">
-        <div className="flex-shrink-0 w-8 h-8 bg-[rgb(var(--accent))]/20 rounded-full flex items-center justify-center">
+    <div className={`fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 ${closing ? 'animate-fade-out' : 'animate-slide-up'}`}>
+      <div className="glass-panel-strong rounded-3xl shadow-xl p-4 flex items-start gap-3">
+        <div className="flex-shrink-0 w-9 h-9 bg-[rgb(var(--accent))]/15 rounded-full flex items-center justify-center">
           <Download size={16} className="text-[rgb(var(--accent))]" />
         </div>
 
@@ -66,10 +70,10 @@ export default function DesktopAppToast() {
 
         <button
           onClick={handleDismiss}
-          className="flex-shrink-0 p-1 rounded-lg hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+          className="btn-icon w-7 h-7 shrink-0"
           title="Dismiss"
         >
-          <X size={14} className="text-[rgb(var(--muted))]" />
+          <X size={14} />
         </button>
       </div>
     </div>

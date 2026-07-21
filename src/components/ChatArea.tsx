@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Settings, Bot, Columns, FolderOpen, ChevronDown, ChevronRight, BrainCircuit } from 'lucide-react';
+import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import PreviewSidebar from './PreviewSidebar';
+import { TAB_DRAG_TYPE } from './TabBar';
 
 // Memoized bubble — only re-renders when its own message object changes
 const MemoMessageBubble = memo(MessageBubble);
@@ -33,11 +34,11 @@ function ReasoningStreamingBlock({ streamingReasoningRef }: {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="mb-1.5 border border-[rgb(var(--border))] rounded-lg overflow-hidden bg-black/[0.02] dark:bg-white/[0.03]">
+    <div className="glass animate-glow-pulse mb-1.5 rounded-2xl overflow-hidden">
       <button
         type="button"
         onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+        className="w-full flex items-center gap-1.5 px-3 py-2 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors"
       >
         {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         <BrainCircuit size={13} />
@@ -137,8 +138,7 @@ interface ChatAreaProps {
   onForkConversation?: () => void;
   selectedFineTuningId?: string | null;
   onFineTuningChange?: (fineTuningId: string | null) => void;
-  onEnableSplitView?: (convId: string) => void;
-  allConversations?: Conversation[];
+  onDropToSplit?: (convId: string, side: 'left' | 'right') => void;
   isCode?: boolean;
   codeWorkspace?: string;
   onChangeWorkspace?: () => void;
@@ -187,18 +187,39 @@ export default function ChatArea({
   onTranscribeAudio,
   selectedFineTuningId = null,
   onFineTuningChange,
-  onEnableSplitView,
-  allConversations = [],
+  onDropToSplit,
   isCode = false,
   codeWorkspace,
   onChangeWorkspace,
   onParallelSend,
 }: ChatAreaProps) {
-  const [showSplitDropdown, setShowSplitDropdown] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const prevConvIdRef = useRef<string | null>(null);
+  const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null);
+
+  const handleTabDragOver = (e: React.DragEvent) => {
+    if (!onDropToSplit || !e.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDropSide(e.clientX - rect.left < rect.width / 2 ? 'left' : 'right');
+  };
+
+  const handleTabDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDropSide(null);
+  };
+
+  const handleTabDrop = (e: React.DragEvent) => {
+    const convId = e.dataTransfer.getData(TAB_DRAG_TYPE);
+    setDropSide(null);
+    if (convId && onDropToSplit) {
+      e.preventDefault();
+      onDropToSplit(convId, dropSide ?? 'right');
+    }
+  };
 
   // Eased scroll — 12% of remaining per frame, feels smooth during streaming
   const easeToBottom = () => {
@@ -243,9 +264,9 @@ export default function ChatArea({
   // ── Home / empty state ──────────────────────────────
   if (!conversation) {
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-[rgb(var(--bg))] animate-fade-in">
+      <div className="flex-1 flex flex-col min-h-0 animate-fade-in">
         {/* Top bar */}
-        <div className="flex items-center justify-end px-5 py-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
+        <div className="glass flex items-center justify-end px-5 py-3 shrink-0 relative z-10">
           <button className="btn-icon" onClick={onTogglePanel}><Settings size={16} /></button>
         </div>
 
@@ -309,9 +330,9 @@ export default function ChatArea({
   return (
     <div className="flex-1 flex min-w-0 min-h-0 bg-[rgb(var(--bg))] animate-fade-in w-full">
       <div className="flex-1 flex flex-col min-w-0 min-h-0 w-full">
-      {/* Header */}
-      {isCode ? (
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
+      {/* Header — code workspace bar only; regular chat has no header */}
+      {isCode && (
+        <div className="glass-inset flex items-center gap-2 px-4 py-2.5 shrink-0 relative z-10 rounded-none border-x-0 border-t-0">
           <FolderOpen size={14} className="text-[rgb(var(--muted))] shrink-0" />
           <span className="text-[12px] text-[rgb(var(--muted))] font-mono truncate flex-1" title={codeWorkspace}>
             {codeWorkspace}
@@ -324,54 +345,16 @@ export default function ChatArea({
           )}
           <button className="btn-icon" onClick={onTogglePanel}><Settings size={15} /></button>
         </div>
-      ) : (
-        <div className="flex items-center px-5 py-2.5 border-b border-[rgb(var(--border))] bg-[rgb(var(--panel))] shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-black dark:from-gray-300 dark:to-white flex items-center justify-center shrink-0">
-              <Bot size={13} className="text-white dark:text-black" />
-            </div>
-            <span className="text-[13px] font-medium truncate text-[rgb(var(--text))]">{conversation.title}</span>
-            <span className="text-[rgb(var(--muted))] text-[12px] shrink-0">· {modelDisplayName}</span>
-          </div>
-          <div className="ml-auto flex items-center gap-1 shrink-0">
-            {conversation && onEnableSplitView && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowSplitDropdown(s => !s)}
-                  className="btn-icon"
-                  title="Split view"
-                >
-                  <Columns size={15} />
-                </button>
-                {showSplitDropdown && (
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg shadow-lg z-50 p-2">
-                    <p className="text-xs text-[rgb(var(--muted))] px-2 py-1">Select conversation for split view:</p>
-                    {allConversations.filter(c => c.id !== conversation?.id).slice(0, 5).map(conv => (
-                      <button
-                        key={conv.id}
-                        onClick={() => {
-                          onEnableSplitView?.(conv.id);
-                          setShowSplitDropdown(false);
-                        }}
-                        className="w-full text-left px-2 py-1.5 text-sm hover:bg-black/[0.04] dark:hover:bg-white/[0.06] rounded truncate"
-                      >
-                        {conv.title}
-                      </button>
-                    ))}
-                    {allConversations.filter(c => c.id !== conversation?.id).length === 0 && (
-                      <p className="text-xs text-[rgb(var(--muted))] px-2 py-1">No other conversations</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            <button className="btn-icon" onClick={onTogglePanel}><Settings size={15} /></button>
-          </div>
-        </div>
       )}
 
       {/* Messages */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden py-6">
+      <div
+        className="flex-1 relative min-h-0"
+        onDragOver={handleTabDragOver}
+        onDragLeave={handleTabDragLeave}
+        onDrop={handleTabDrop}
+      >
+      <div ref={scrollContainerRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden py-6">
         <div className="overflow-x-hidden">
           {conversation.messages.map((msg, idx) => (
             <MemoMessageBubble
@@ -427,6 +410,29 @@ export default function ChatArea({
 
           <div ref={bottomRef} />
         </div>
+      </div>
+
+      {/* Drop zone — drag a browser tab here to open it in a split pane */}
+      {dropSide && (
+        <div className="absolute inset-0 z-30 pointer-events-none flex animate-fade-in">
+          <div className={`h-full w-1/2 flex items-center justify-center transition-colors ${dropSide === 'left' ? 'bg-[rgb(var(--accent)/0.12)] border-2 border-[rgb(var(--accent))]' : ''}`}>
+            {dropSide === 'left' && (
+              <div className="glass-panel-strong rounded-2xl px-4 py-2.5 flex items-center gap-2 shadow-xl">
+                <Columns size={15} className="text-[rgb(var(--accent))]" />
+                <span className="text-[13px] font-medium">Split left</span>
+              </div>
+            )}
+          </div>
+          <div className={`h-full w-1/2 flex items-center justify-center transition-colors ${dropSide === 'right' ? 'bg-[rgb(var(--accent)/0.12)] border-2 border-[rgb(var(--accent))]' : ''}`}>
+            {dropSide === 'right' && (
+              <div className="glass-panel-strong rounded-2xl px-4 py-2.5 flex items-center gap-2 shadow-xl">
+                <Columns size={15} className="text-[rgb(var(--accent))] scale-x-[-1]" />
+                <span className="text-[13px] font-medium">Split right</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Input */}

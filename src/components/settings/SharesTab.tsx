@@ -120,9 +120,7 @@ export default function SharesTab({ conversations }: SharesTabProps) {
               return (
                 <div
                   key={conversation.id}
-                  className={`bg-[rgb(var(--panel))] border rounded-xl p-4 ${
-                    isExpired ? 'border-[rgb(var(--border))] opacity-60' : 'border-[rgb(var(--border))]'
-                  }`}
+                  className={`glass-inset p-4 ${isExpired ? 'opacity-60' : ''}`}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1 min-w-0">

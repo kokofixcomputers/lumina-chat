@@ -169,10 +169,8 @@ export default function DataTab({ settings, conversations, onImportData }: DataT
           {importSources.map((source) => (
             <label
               key={source.id}
-              className={`block rounded-2xl border p-4 cursor-pointer transition-all ${
-                selectedSource === source.id
-                  ? 'border-[rgb(var(--accent))] bg-[rgb(var(--panel))] shadow-sm'
-                  : 'border-[rgb(var(--border))] bg-[rgb(var(--panel))] hover:border-[rgb(var(--accent))]'
+              className={`block glass-inset p-4 cursor-pointer transition-colors ${
+                selectedSource === source.id ? '!border-[rgb(var(--accent))]' : 'hover:!border-[rgb(var(--accent)/0.5)]'
               }`}
             >
               <input
@@ -194,7 +192,7 @@ export default function DataTab({ settings, conversations, onImportData }: DataT
                   <div className="text-sm text-[rgb(var(--muted))] mt-1">{source.description}</div>
                 </div>
                 {source.beta ? (
-                  <span className="self-start rounded-full bg-[rgb(var(--panel))] border border-[rgb(var(--border))] px-2 py-1 text-[10px] text-[rgb(var(--muted))]">
+                  <span className="badge-secondary self-start">
                     beta
                   </span>
                 ) : null}

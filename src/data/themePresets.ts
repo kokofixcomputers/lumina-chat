@@ -19,6 +19,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 216 222 233;
   --accent: 94 129 172;
   --accent-contrast: 236 239 244;
+  --glass-alpha: 0.66;
+  --glass-blur: 22px;
+  --glass-border-alpha: 0.5;
+  --ambient-alpha: 0.16;
 }
 
 .dark {
@@ -29,6 +33,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 67 76 94;
   --accent: 136 192 208;
   --accent-contrast: 46 52 64;
+  --glass-alpha: 0.5;
+  --glass-blur: 26px;
+  --glass-border-alpha: 0.7;
+  --ambient-alpha: 0.22;
 }`,
   },
   {
@@ -44,6 +52,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 188 192 204;
   --accent: 136 57 239;
   --accent-contrast: 239 241 245;
+  --glass-alpha: 0.66;
+  --glass-blur: 22px;
+  --glass-border-alpha: 0.5;
+  --ambient-alpha: 0.16;
 }
 
 .dark {
@@ -54,6 +66,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 49 50 68;
   --accent: 203 166 247;
   --accent-contrast: 30 30 46;
+  --glass-alpha: 0.5;
+  --glass-blur: 26px;
+  --glass-border-alpha: 0.7;
+  --ambient-alpha: 0.22;
 }`,
   },
   {
@@ -69,6 +85,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 180 181 189;
   --accent: 46 125 233;
   --accent-contrast: 255 255 255;
+  --glass-alpha: 0.66;
+  --glass-blur: 22px;
+  --glass-border-alpha: 0.5;
+  --ambient-alpha: 0.16;
 }
 
 .dark {
@@ -79,6 +99,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 41 46 66;
   --accent: 122 162 247;
   --accent-contrast: 26 27 38;
+  --glass-alpha: 0.5;
+  --glass-blur: 26px;
+  --glass-border-alpha: 0.7;
+  --ambient-alpha: 0.22;
 }`,
   },
   {
@@ -94,6 +118,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 223 217 206;
   --accent: 180 99 122;
   --accent-contrast: 250 244 237;
+  --glass-alpha: 0.66;
+  --glass-blur: 22px;
+  --glass-border-alpha: 0.5;
+  --ambient-alpha: 0.16;
 }
 
 .dark {
@@ -104,6 +132,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 38 35 58;
   --accent: 235 188 186;
   --accent-contrast: 25 23 36;
+  --glass-alpha: 0.5;
+  --glass-blur: 26px;
+  --glass-border-alpha: 0.7;
+  --ambient-alpha: 0.22;
 }`,
   },
   {
@@ -119,6 +151,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 206 214 230;
   --accent: 70 108 201;
   --accent-contrast: 255 255 255;
+  --glass-alpha: 0.66;
+  --glass-blur: 22px;
+  --glass-border-alpha: 0.5;
+  --ambient-alpha: 0.16;
 }
 
 .dark {
@@ -129,6 +165,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 24 32 56;
   --accent: 128 166 255;
   --accent-contrast: 5 8 18;
+  --glass-alpha: 0.5;
+  --glass-blur: 26px;
+  --glass-border-alpha: 0.7;
+  --ambient-alpha: 0.22;
 }`,},
   {
     id: 'gruvbox',
@@ -143,6 +183,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 213 196 161;
   --accent: 215 153 33;
   --accent-contrast: 60 56 54;
+  --glass-alpha: 0.66;
+  --glass-blur: 22px;
+  --glass-border-alpha: 0.5;
+  --ambient-alpha: 0.16;
 }
 
 .dark {
@@ -153,6 +197,10 @@ export const THEME_PRESETS: ThemePreset[] = [
   --border: 60 56 54;
   --accent: 250 189 47;
   --accent-contrast: 40 40 40;
+  --glass-alpha: 0.5;
+  --glass-blur: 26px;
+  --glass-border-alpha: 0.7;
+  --ambient-alpha: 0.22;
 }`,
   },
 ];

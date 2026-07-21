@@ -3,6 +3,7 @@ import { Plus, Search, Edit, Trash2, Tag, Calendar, X, Link, Loader2 } from 'luc
 import { KnowledgeEntry, KnowledgeEntryFormData } from '../../types/fineTuning';
 import { useFineTuningStore } from '../../store/fineTuningStore';
 import { urlToMarkdown } from '../../utils/urlToMarkdown';
+import Modal from '../Modal';
 
 interface KnowledgeEntryListProps {
   fineTuningId: string;
@@ -118,7 +119,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
               placeholder="Search entries..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+              className="input w-full pl-10 pr-4"
             />
           </div>
         </div>
@@ -151,7 +152,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
           {filteredEntries.map((entry) => (
             <div
               key={entry.id}
-              className="p-4 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-lg hover:bg-[rgb(var(--accent))]/20 transition-colors"
+              className="p-4 glass rounded-2xl hover:bg-[rgb(var(--accent))]/10 transition-colors"
             >
               <div className="flex items-start justify-between mb-2">
                 <h3 className="font-medium text-[rgb(var(--text))]">{entry.title}</h3>
@@ -195,9 +196,16 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
       )}
 
       {/* Create/Edit Modal */}
-      {(isCreateModalOpen || isEditModalOpen) && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <Modal
+        open={isCreateModalOpen || isEditModalOpen}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setIsEditModalOpen(false);
+          setEditingEntry(null);
+          resetForm();
+        }}
+        panelClassName="glass-panel-strong rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      >
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-[rgb(var(--border))]">
               <h2 className="text-lg font-semibold text-[rgb(var(--text))]">
@@ -227,7 +235,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                     type="text"
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+                    className="input w-full"
                     placeholder="Enter entry title"
                     autoFocus
                   />
@@ -267,7 +275,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                     <textarea
                       value={formData.content}
                       onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                      className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] resize-none"
+                      className="input w-full resize-none"
                       placeholder="Enter knowledge content"
                       rows={6}
                     />
@@ -278,7 +286,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                           type="url"
                           value={urlInput}
                           onChange={(e) => setUrlInput(e.target.value)}
-                          className="flex-1 px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+                          className="input flex-1"
                           placeholder="https://example.com/article"
                           onKeyPress={(e) => {
                             if (e.key === 'Enter' && !isFetchingUrl) {
@@ -314,7 +322,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                           <textarea
                             value={formData.content}
                             onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                            className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))] resize-none"
+                            className="input w-full resize-none"
                             placeholder="Content will appear here after fetching..."
                             rows={6}
                           />
@@ -332,7 +340,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
                   type="text"
                   value={formData.tags?.join(', ') || ''}
                   onChange={(e) => handleTagsChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-[rgb(var(--text))] placeholder:text-[rgb(var(--muted))]"
+                  className="input w-full"
                   placeholder="tag1, tag2, tag3"
                 />
               </div>
@@ -363,9 +371,7 @@ const KnowledgeEntryList: React.FC<KnowledgeEntryListProps> = ({ fineTuningId, e
               </button>
             </div>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 };

@@ -254,10 +254,8 @@ function ListView({
                   onDragEnter={() => onDragEnter(i)}
                   onDragOver={e => e.preventDefault()}
                   onDragEnd={onDragEnd}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all cursor-grab active:cursor-grabbing ${
-                    dragOver === i
-                      ? 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/[0.06] scale-[1.01]'
-                      : 'border-[rgb(var(--border))] bg-[rgb(var(--panel))]'
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-2xl glass transition-all cursor-grab active:cursor-grabbing ${
+                    dragOver === i ? '!border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/[0.06] scale-[1.01]' : ''
                   } ${!file.enabled ? 'opacity-40' : ''}`}
                 >
                   <span className="text-[10px] font-mono text-[rgb(var(--muted))] w-4 text-center select-none shrink-0">{i + 1}</span>
@@ -287,8 +285,8 @@ function ListView({
       {/* CSS variable reference */}
       <section>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-3">CSS Variable Reference</h3>
-        <div className="rounded-xl border border-[rgb(var(--border))] overflow-hidden">
-          <div className="px-4 py-2.5 bg-[rgb(var(--panel))] border-b border-[rgb(var(--border))] text-[11px] text-[rgb(var(--muted))] uppercase tracking-wider font-semibold">
+        <div className="glass-inset overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-[rgb(var(--border)/0.5)] text-[11px] text-[rgb(var(--muted))] uppercase tracking-wider font-semibold">
             All values are space-separated RGB triplets
           </div>
           <pre className="px-4 py-3 text-[rgb(var(--text))] overflow-x-auto leading-relaxed bg-[rgb(var(--bg))] text-[12px] font-mono">{`:root {
@@ -299,6 +297,13 @@ function ListView({
   --border: 232 232 236;    /* dividers, input borders */
   --accent: 45 45 48;       /* buttons, active states */
   --accent-contrast: 255 255 255; /* text on accent bg */
+
+  /* v2 glass tokens — tune the frosted-glass look (all optional) */
+  --glass-alpha: 0.66;         /* panel/sidebar/composer translucency, 0–1 */
+  --glass-alpha-strong: 0.85;  /* modal panel translucency, 0–1 */
+  --glass-blur: 22px;          /* backdrop-filter blur radius */
+  --glass-border-alpha: 0.5;   /* border opacity on glass edges */
+  --ambient-alpha: 0.16;       /* strength of the background glow blobs */
 }
 
 .dark {

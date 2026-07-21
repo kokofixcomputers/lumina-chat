@@ -41,18 +41,18 @@ function ReasoningBlock({ reasoning, defaultCollapsed }: { reasoning: string; de
   useEffect(() => { setCollapsed(defaultCollapsed); }, [defaultCollapsed]);
 
   return (
-    <div className="mb-2 border border-[rgb(var(--border))] rounded-lg overflow-hidden bg-black/[0.02] dark:bg-white/[0.03]">
+    <div className="glass mb-2 rounded-2xl overflow-hidden">
       <button
         type="button"
         onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]"
+        className="w-full flex items-center gap-1.5 px-3 py-2 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors"
       >
         {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
         <BrainCircuit size={13} />
         <span className="font-medium">Reasoning</span>
       </button>
       {!collapsed && (
-        <p className="px-2.5 pb-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-[rgb(var(--muted))]">
+        <p className="animate-slide-in-up px-3 pb-2.5 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-[rgb(var(--muted))]">
           {reasoning}
         </p>
       )}
@@ -1010,7 +1010,7 @@ export default function MessageBubble({ message, modelName, modelId, isStreaming
               </div>
             </div>
           ) : (
-            <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[18px_18px_4px_18px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_1px_4px_rgba(0,0,0,0.15)] group max-w-full break-words">
+            <div className="bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] rounded-[22px_22px_6px_22px] px-4 py-2.5 text-[13.5px] leading-relaxed shadow-[0_2px_12px_rgb(var(--accent)/0.28)] group max-w-full break-words">
               <p className="message-text whitespace-pre-wrap break-words">{insertSoftBreaks(message.content, getWrapLength())}</p>
             </div>
           )

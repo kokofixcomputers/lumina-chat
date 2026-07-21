@@ -104,7 +104,7 @@ function ProviderDropdown({ value, onChange }: { value: Provider; onChange: (v: 
       </button>
 
       {open && (
-        <div className="absolute top-full mt-1 left-0 right-0 z-50 bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl shadow-xl overflow-hidden">
+        <div className="absolute top-full mt-1 left-0 right-0 z-50 bg-[rgb(var(--bg))] border border-[rgb(var(--border))] animate-float-in rounded-2xl shadow-xl overflow-hidden">
           {PROVIDERS.map(p => (
             <button
               key={`${p.id}-${p.comingSoon}`}
@@ -153,7 +153,7 @@ function FileSyncStatusBadge() {
   const { icon: Icon, label, color } = statusMap[status];
 
   return (
-    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl p-4 flex items-center justify-between">
+    <div className="glass-inset p-4 flex items-center justify-between">
       <div className="flex items-center gap-2">
         <Icon size={16} className={`${color} ${status === 'syncing' || status === 'connecting' ? 'animate-spin' : ''}`} />
         <span className={`text-sm font-medium ${color}`}>{label}</span>
@@ -428,7 +428,7 @@ function LuminaSection({
 
   return (
     <>
-      <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl p-4">
+      <div className="glass-inset p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {isConnected ? <Wifi size={16} className="text-[rgb(var(--success))]" /> : <WifiOff size={16} className="text-[rgb(var(--danger))]" />}

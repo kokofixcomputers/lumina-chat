@@ -344,7 +344,7 @@ export function IntegratedProviderCard({
   }
 
   return (
-    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-xl overflow-hidden shadow-sm">
+    <div className="glass-inset overflow-hidden">
       <div
         className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
         onClick={() => setExpanded(p => !p)}
@@ -576,7 +576,7 @@ export function ProviderCard({
   };
 
   return (
-    <div className="bg-[rgb(var(--panel))] border border-[rgb(var(--border))] rounded-2xl overflow-hidden mb-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)] max-w-full">
+    <div className="glass-inset overflow-hidden mb-3 max-w-full">
       <div
         className="flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-black/[0.06] dark:hover:bg-white/[0.06] transition-colors"
         onClick={() => setExpanded(p => !p)}

@@ -79,8 +79,8 @@ export default function ShareModal({ isOpen, onClose, conversation, onShare, exi
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-      <div className="bg-[rgb(var(--panel))] rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+    <div className="modal-overlay">
+      <div className="glass-panel-strong rounded-3xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto animate-float-in">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-[rgb(var(--border))]">
           <div className="flex items-center gap-2">

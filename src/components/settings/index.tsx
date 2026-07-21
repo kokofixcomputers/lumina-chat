@@ -33,11 +33,26 @@ export default function SettingsPanel({
   onImportData,
   onClose,
   initialTab,
+  open = true,
 }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'general');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taglineIndex, setTaglineIndex] = useState(0);
   const [fade, setFade] = useState(true);
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      setClosing(false);
+      setActiveTab(initialTab ?? 'general');
+    } else if (mounted) {
+      setClosing(true);
+      const t = setTimeout(() => setMounted(false), 150);
+      return () => clearTimeout(t);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   useEffect(() => {
@@ -64,15 +79,23 @@ export default function SettingsPanel({
   const navBtn = (tab: TabType, label: string, icon: React.ReactNode) => (
     <button
       onClick={() => { setActiveTab(tab); setSidebarOpen(false); }}
-      className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all mt-1 ${
+      className={`w-full flex items-center gap-2 px-3 py-2 rounded-full text-sm mt-0.5 ${
         activeTab === tab
           ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))] shadow-sm'
           : 'text-[rgb(var(--muted))] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] hover:text-[rgb(var(--text))]'
       }`}
+      style={{ transition: 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1), background-color 0.15s ease, color 0.15s ease' }}
     >
       {icon}
       {label}
     </button>
+  );
+
+  const navSection = (label: string, tabs: Array<[TabType, string, React.ReactNode]>) => (
+    <div className="mb-3">
+      {label && <p className="px-3 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">{label}</p>}
+      {tabs.map(([tab, tabLabel, icon]) => navBtn(tab, tabLabel, icon))}
+    </div>
   );
 
   const headerTitle: Record<TabType, string> = {
@@ -93,20 +116,22 @@ export default function SettingsPanel({
     about: 'About',
   };
 
+  if (!mounted) return null;
+
   return (
     <>
       {/* Backdrop with blur */}
       <div
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 hidden md:block animate-fade-in"
+        className={`fixed inset-0 bg-black/40 backdrop-blur-md z-50 hidden md:block ${closing ? 'animate-fade-out' : 'animate-fade-in'}`}
         onClick={onClose}
       />
 
       {/* Settings panel */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 animate-fade-in">
-        <div className="side-panel flex-row w-full h-full md:max-w-[80vw] md:h-[80vh] md:rounded-2xl shadow-2xl relative overflow-hidden animate-scale-in">
+      <div className={`fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 ${closing ? 'animate-fade-out' : 'animate-fade-in'}`}>
+        <div className={`side-panel flex-row w-full h-full md:max-w-[80vw] md:h-[80vh] md:rounded-3xl shadow-2xl relative overflow-hidden ${closing ? 'animate-float-out' : 'animate-float-in'}`}>
 
           {/* Sidebar */}
-          <div className={`w-56 border-r border-[rgb(var(--border))] flex flex-col shrink-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:bg-[rgb(var(--panel))] max-md:shadow-2xl max-md:transition-transform max-h-[80vh] md:max-h-full ${
+          <div className={`w-56 border-r border-[rgb(var(--border)/0.5)] flex flex-col shrink-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:bg-[rgb(var(--panel)/var(--glass-alpha-strong))] max-md:backdrop-blur-2xl max-md:shadow-2xl max-md:transition-transform max-h-[80vh] md:max-h-full ${
             sidebarOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
           }`}>
             <div className="px-4 py-4 border-b border-[rgb(var(--border))] flex items-center justify-between shrink-0">
@@ -116,28 +141,40 @@ export default function SettingsPanel({
               </button>
             </div>
             <div className="flex-1 p-2 overflow-y-auto">
-              {navBtn('general', 'General', <SettingsIcon size={16} />)}
-              {navBtn('appearance', 'Appearance', <Palette size={16} />)}
-              {navBtn('providers', 'Model Providers', <Database size={16} />)}
-              {navBtn('apiformats', 'API Formats', <Settings2 size={16} />)}
-              {navBtn('directmodels', 'Direct Models', <Zap size={16} />)}
-              {navBtn('data', 'Import/Export Data', <FileDown size={16} />)}
-              {navBtn('cloudsync', 'Cloud Sync', <Cloud size={16} />)}
-              {navBtn('workflows', 'Workflows', <SettingsIcon size={16} />)}
-              {navBtn('tools', 'Tools', <SettingsIcon size={16} />)}
-              {navBtn('extensions', 'Extensions', <SettingsIcon size={16} />)}
-              {navBtn('mcp', 'MCP Servers', <Server size={16} />)}
-              {navBtn('shares', 'Shares', <Share2 size={16} />)}
-              {navBtn('memories', 'Memories', <Brain size={16} />)}
-              {navBtn('integrations', 'Integrations', <Puzzle size={16} />)}
-              {navBtn('about', 'About', <Info size={16} />)}
+              {navSection('Preferences', [
+                ['general', 'General', <SettingsIcon size={16} />],
+                ['appearance', 'Appearance', <Palette size={16} />],
+              ])}
+              {navSection('Models', [
+                ['providers', 'Model Providers', <Database size={16} />],
+                ['apiformats', 'API Formats', <Settings2 size={16} />],
+                ['directmodels', 'Direct Models', <Zap size={16} />],
+              ])}
+              {navSection('Data', [
+                ['data', 'Import/Export Data', <FileDown size={16} />],
+                ['cloudsync', 'Cloud Sync', <Cloud size={16} />],
+              ])}
+              {navSection('Automation', [
+                ['workflows', 'Workflows', <SettingsIcon size={16} />],
+                ['tools', 'Tools', <SettingsIcon size={16} />],
+                ['extensions', 'Extensions', <SettingsIcon size={16} />],
+                ['mcp', 'MCP Servers', <Server size={16} />],
+              ])}
+              {navSection('Sharing', [
+                ['shares', 'Shares', <Share2 size={16} />],
+                ['memories', 'Memories', <Brain size={16} />],
+                ['integrations', 'Integrations', <Puzzle size={16} />],
+              ])}
+              {navSection('', [
+                ['about', 'About', <Info size={16} />],
+              ])}
             </div>
           </div>
 
           {/* Mobile sidebar backdrop */}
           {sidebarOpen && (
             <div
-              className="fixed inset-0 bg-black/50 z-40 md:hidden"
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
               onClick={() => setSidebarOpen(false)}
             />
           )}

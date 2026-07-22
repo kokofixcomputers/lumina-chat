@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { AlertTriangle, Check, X, Code2, FolderOpen, GitCommit, FileText, Loader2, Sparkles, Github, ListChecks, Play, Trash2, Copy, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, Check, X, Code2, FolderOpen, FolderPlus, GitCommit, FileText, Loader2, Sparkles, Github, ListChecks, Play, Trash2, Copy, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import type { CodeSession, PlanItem } from '../utils/codeSessionDB';
 import type { Message } from '../types';
@@ -106,14 +106,15 @@ async function executeShellCommand(command: string, cwd: string) {
 }
 
 // Tool definitions sent to the LLM
+const WORKSPACE_PARAM = { type: 'string', description: 'Absolute path of which workspace to use — must be one of the workspace paths listed in your instructions. Omit to use the primary workspace.' };
 const CODE_TOOLS = [
-  { name: 'read_file', description: 'Read the content of a file in the workspace.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' } }, required: ['path'] } },
-  { name: 'write_file', description: 'Create or overwrite a file in the workspace.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' }, content: { type: 'string', description: 'Content to write' } }, required: ['path', 'content'] } },
-  { name: 'edit_file', description: 'Edit a file by replacing a specific string. Prefer this over write_file for existing files — use targeted replacements instead of rewriting the whole file. Fails if old_string is not found or not unique.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' }, old_string: { type: 'string', description: 'Exact string to find and replace. Keep it short but unique within the file.' }, new_string: { type: 'string', description: 'Replacement string' } }, required: ['path', 'old_string', 'new_string'] } },
-  { name: 'delete_file', description: 'Delete a file or directory.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' } }, required: ['path'] } },
-  { name: 'create_directory', description: 'Create a directory (and any missing parents).', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to workspace root' } }, required: ['path'] } },
-  { name: 'list_directory', description: 'List files and directories at a path.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to workspace root (use "." for root)' } }, required: ['path'] } },
-  { name: 'execute_command', description: 'Execute a shell command. Requires user approval before running.', input_schema: { type: 'object', properties: { command: { type: 'string', description: 'Shell command to execute' }, working_dir: { type: 'string', description: 'Working directory relative to workspace root' } }, required: ['command'] } },
+  { name: 'read_file', description: 'Read the content of a file in the workspace.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' }, workspace: WORKSPACE_PARAM }, required: ['path'] } },
+  { name: 'write_file', description: 'Create or overwrite a file in the workspace.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' }, content: { type: 'string', description: 'Content to write' }, workspace: WORKSPACE_PARAM }, required: ['path', 'content'] } },
+  { name: 'edit_file', description: 'Edit a file by replacing a specific string. Prefer this over write_file for existing files — use targeted replacements instead of rewriting the whole file. Fails if old_string is not found or not unique.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' }, old_string: { type: 'string', description: 'Exact string to find and replace. Keep it short but unique within the file.' }, new_string: { type: 'string', description: 'Replacement string' }, workspace: WORKSPACE_PARAM }, required: ['path', 'old_string', 'new_string'] } },
+  { name: 'delete_file', description: 'Delete a file or directory.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'File path relative to workspace root' }, workspace: WORKSPACE_PARAM }, required: ['path'] } },
+  { name: 'create_directory', description: 'Create a directory (and any missing parents).', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to workspace root' }, workspace: WORKSPACE_PARAM }, required: ['path'] } },
+  { name: 'list_directory', description: 'List files and directories at a path.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to workspace root (use "." for root)' }, workspace: WORKSPACE_PARAM }, required: ['path'] } },
+  { name: 'execute_command', description: 'Execute a shell command. Requires user approval before running.', input_schema: { type: 'object', properties: { command: { type: 'string', description: 'Shell command to execute' }, working_dir: { type: 'string', description: 'Working directory relative to workspace root' }, workspace: WORKSPACE_PARAM }, required: ['command'] } },
   { name: 'create_workflow', description: 'Save a reusable workflow — a named sequence of shell commands — that appears in the Workflows menu so the user can run it later with one click, without going through you again. Use this when the user asks you to set up a repeatable task, e.g. "create a workflow to build my app".', input_schema: { type: 'object', properties: { name: { type: 'string', description: 'Short name, e.g. "Build App"' }, description: { type: 'string', description: 'Optional one-line description of what this workflow does' }, commands: { type: 'array', items: { type: 'string' }, description: 'Shell commands to run in order, each from the workspace root. Stops at the first command that fails.' } }, required: ['name', 'commands'] } },
   { name: 'create_plan', description: 'Create or replace the task plan shown to the user as a checklist just above the input box. Calling this again replaces the whole plan, so include every item (not just new ones) if you want to add more steps later.', input_schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'string' }, description: 'Ordered list of plan step descriptions' } }, required: ['items'] } },
   { name: 'check_plan_item', description: 'Mark a plan checklist item done or not done, by its 0-based index in the current plan.', input_schema: { type: 'object', properties: { index: { type: 'number', description: '0-based index of the plan item' }, completed: { type: 'boolean', description: 'true to mark done, false to mark not done (defaults to true)' } }, required: ['index'] } },
@@ -223,6 +224,7 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const [createRepoError, setCreateRepoError] = useState('');
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [showWorkflowsMenu, setShowWorkflowsMenu] = useState(false);
+  const [showWorkspacesMenu, setShowWorkspacesMenu] = useState(false);
   const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
   const [expandedWorkflowIds, setExpandedWorkflowIds] = useState<string[]>([]);
   const toggleExpand = (id: string) => { setExpandedWorkflowIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); };
@@ -613,14 +615,22 @@ ${diffText}`,
   ): Promise<{ result: string; diff?: Message['toolDiff'] }> => {
     const fs = await getFs();
 
+    // Multi-workspace support: an optional `workspace` argument on the tool call selects a
+    // different registered workspace (primary or a reference one) as the base for that one
+    // call — e.g. read from a reference project while writing into the primary one.
+    const allWorkspaces = [workspace, ...(session?.additionalWorkspaces || [])];
+    const base = typeof input.workspace === 'string' && allWorkspaces.includes(input.workspace)
+      ? input.workspace
+      : workspace;
+
     if (name === 'read_file') {
       try {
-        const content = await fs.readTextFile(resolvePath(workspace, input.path as string));
+        const content = await fs.readTextFile(resolvePath(base, input.path as string));
         return { result: content, diff: { type: 'output', path: input.path as string, output: content } };
       } catch (e: any) { return { result: `Error: ${e?.message || e}` }; }
     }
     if (name === 'write_file') {
-      const fullPath = resolvePath(workspace, input.path as string);
+      const fullPath = resolvePath(base, input.path as string);
       try {
         const parts = fullPath.split('/'); parts.pop();
         await fs.mkdir(parts.join('/'), { recursive: true });
@@ -634,7 +644,7 @@ ${diffText}`,
       } catch (e: any) { return { result: `Error: ${e?.message || e}` }; }
     }
     if (name === 'edit_file') {
-      const fullPath = resolvePath(workspace, input.path as string);
+      const fullPath = resolvePath(base, input.path as string);
       try {
         const before = await fs.readTextFile(fullPath);
         const old = input.old_string as string;
@@ -649,7 +659,7 @@ ${diffText}`,
     }
     if (name === 'delete_file') {
       try {
-        const fullPath = resolvePath(workspace, input.path as string);
+        const fullPath = resolvePath(base, input.path as string);
         let before: string | undefined;
         try { before = await fs.readTextFile(fullPath); } catch {}
         await fs.remove(fullPath);
@@ -661,13 +671,13 @@ ${diffText}`,
     }
     if (name === 'create_directory') {
       try {
-        await fs.mkdir(resolvePath(workspace, input.path as string), { recursive: true });
+        await fs.mkdir(resolvePath(base, input.path as string), { recursive: true });
         return { result: `Created: ${input.path}` };
       } catch (e: any) { return { result: `Error: ${e?.message || e}` }; }
     }
     if (name === 'list_directory') {
       try {
-        const entries = await fs.readDir(resolvePath(workspace, input.path as string));
+        const entries = await fs.readDir(resolvePath(base, input.path as string));
         const listing = entries
           .sort((a: any, b: any) => (b.isDirectory ? 1 : 0) - (a.isDirectory ? 1 : 0) || a.name.localeCompare(b.name))
           .map((e: any) => `${e.isDirectory ? '📁' : '📄'} ${e.name}`)
@@ -677,7 +687,7 @@ ${diffText}`,
     }
     if (name === 'execute_command') {
       const command = input.command as string;
-      const workDir = resolvePath(workspace, (input.working_dir as string) || '.');
+      const workDir = resolvePath(base, (input.working_dir as string) || '.');
       const approved = await requestApproval(command, workDir);
       if (!approved) return { result: 'Command denied by user.' };
       try {
@@ -735,9 +745,14 @@ ${diffText}`,
         ? `execute_command runs on Windows through PowerShell (not cmd.exe). Write commands using PowerShell syntax — cmdlets (Get-ChildItem, Remove-Item, Copy-Item, ...) or their built-in Unix-style aliases (ls, rm, cp, cat, pwd, ...) both work. Never wrap commands in "bash -c", "/bin/bash", "sh -c", or a "#!/bin/bash" shebang — bash is not available.`
         : `execute_command runs on ${osLabel} through the user's login shell (${shellName}). Write commands in plain ${shellName}/POSIX syntax — pass just the command itself (e.g. "pnpm build", "ls -la"), never wrap it in "bash -c", "/bin/bash", "sh -c", or a "#!/bin/bash" shebang; the user's environment may not have bash available at all, so any command that explicitly invokes bash will fail.`;
 
+      const refWorkspaces = startingSession.additionalWorkspaces || [];
+      const workspacesNote = refWorkspaces.length > 0
+        ? `\n\nWorkspaces available (pass the exact absolute path as the "workspace" argument on read_file/write_file/edit_file/delete_file/create_directory/list_directory/execute_command to target one; omit it to use the primary workspace):\n- PRIMARY (default): ${startingSession.workspace}\n${refWorkspaces.map(w => `- REFERENCE: ${w}`).join('\n')}\n\nUse this to work across workspaces in one turn — e.g. read_file from a REFERENCE workspace to see how something is implemented there, then write_file/edit_file into the PRIMARY workspace to port or adapt it, or to scaffold a new project using another as a reference.`
+        : '';
+
       const systemPrompt = `You are an expert software engineer. The user's workspace is at: ${startingSession.workspace}
 
-All paths are relative to the workspace root. Run shell commands only when needed.
+All paths are relative to the workspace root. Run shell commands only when needed.${workspacesNote}
 
 Do not ask the user in chat whether you should run a command, or wait for them to say yes/no — just call execute_command directly. The application itself already shows the user an Allow/Deny approval popup for every command before it actually runs, so asking for confirmation yourself is redundant and just slows things down.
 
@@ -748,6 +763,8 @@ IMPORTANT — file editing rules:
 - Only use write_file when creating a new file or when the changes are so extensive that multiple edits would be less clear.
 - When using edit_file, make the old_string as short as possible while still being unique in the file.
 - Read a file before editing it if you are unsure of its current contents.
+
+You may freely read and edit .env/.env.local files and other files that look like they hold secrets or config, exactly like any other file in the workspace, whenever the user's request calls for it (e.g. filling in a template, adding a new key, updating a value) — this is the user's own local workspace, already gated behind the app's own approval flow for shell commands, so don't refuse, hedge, or ask for extra confirmation before reading or editing them.
 
 Planning (encouraged, not required): judge by complexity, not file count. A repetitive change touching many files (e.g. the same one-line fix across 10 files) is still simple — skip planning. But if the work has several distinct, non-repetitive pieces (e.g. add a backend endpoint, wire up a new UI panel, and update config — each different in kind), consider calling create_plan first with a short checklist of those steps, then check_plan_item as you complete each one. This gives the user a visible, collapsible progress checklist above the input box. When in doubt, or for anything small and straightforward, skip planning and just make the change.`;
 
@@ -1118,6 +1135,21 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
     if (selected && typeof selected === 'string') onNewSession(selected);
   };
 
+  const addReferenceWorkspace = async () => {
+    if (!isTauri || !session) return;
+    const dialog = await getDialog();
+    const selected = await dialog.open({ directory: true, multiple: false, title: 'Add Reference Workspace' });
+    if (!selected || typeof selected !== 'string' || selected === session.workspace) return;
+    const existing = session.additionalWorkspaces || [];
+    if (existing.includes(selected)) return;
+    onUpdate({ ...session, additionalWorkspaces: [...existing, selected], updatedAt: Date.now() });
+  };
+
+  const removeReferenceWorkspace = (path: string) => {
+    if (!session) return;
+    onUpdate({ ...session, additionalWorkspaces: (session.additionalWorkspaces || []).filter(w => w !== path), updatedAt: Date.now() });
+  };
+
   // Map CodeSession → Conversation shape ChatArea expects
   const fakeConversation = session ? {
     id: session.id,
@@ -1176,6 +1208,40 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
         onOpenRepo={gitStatus?.remoteUrl ? handleOpenRepo : undefined}
         plan={session.plan}
       />
+
+      {/* Reference workspaces — lets the AI read from other projects alongside the primary one */}
+      <div className="absolute top-14 left-3 z-20">
+        <button
+          className="btn-secondary text-xs py-1.5 px-3 gap-1.5 shadow-lg"
+          onClick={() => setShowWorkspacesMenu(v => !v)}
+        >
+          <FolderOpen size={13} /> Workspaces {session.additionalWorkspaces?.length ? `(${1 + session.additionalWorkspaces.length})` : ''}
+        </button>
+        {showWorkspacesMenu && (
+          <div className="mt-2 w-80 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm shadow-xl overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-[rgb(var(--border))]">
+              <FolderOpen size={13} className="text-[rgb(var(--accent))] shrink-0" />
+              <span className="text-[12px] font-mono truncate flex-1" title={session.workspace}>{session.workspace}</span>
+              <span className="text-[10px] text-[rgb(var(--muted))] shrink-0">primary</span>
+            </div>
+            {(session.additionalWorkspaces || []).map(w => (
+              <div key={w} className="flex items-center gap-2 px-3 py-2 border-b border-[rgb(var(--border))] last:border-b-0">
+                <FolderOpen size={13} className="text-[rgb(var(--muted))] shrink-0" />
+                <span className="text-[12px] font-mono truncate flex-1" title={w}>{w}</span>
+                <button className="btn-icon w-6 h-6 shrink-0" title="Remove" onClick={() => removeReferenceWorkspace(w)}>
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] text-[rgb(var(--accent))] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors"
+              onClick={addReferenceWorkspace}
+            >
+              <FolderPlus size={13} /> Add reference workspace...
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Workflows menu */}
       {workflows.length > 0 && (

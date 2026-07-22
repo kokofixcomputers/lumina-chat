@@ -620,6 +620,42 @@ ${diffText}`,
     setExcludedFromCommit(prev => prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path]);
   };
 
+  // When the user clicks the trash icon in the commit file list, they expect the file
+  // to be ignored and untracked from git. This function adds the path to .gitignore
+  // if it's not already there, stages the updated .gitignore, and attempts to remove
+  // the file from git's index (untrack) while keeping it on disk. It also unstages any
+  // staged changes for the path as a fallback, then refreshes git status and marks the
+  // path excluded from the in-UI commit list.
+  const handleAddToGitignoreAndUntrack = async (path: string) => {
+    if (!session) return;
+    try {
+      const fs = await getFs();
+      const gitignoreFull = resolvePath(session.workspace, '.gitignore');
+      let giText = '';
+      try { giText = await fs.readTextFile(gitignoreFull); } catch { giText = ''; }
+      const norm = path.replace(/^\/+/, '');
+      const lines = giText.split('\n').map(l => l.trim());
+      if (!lines.includes(norm)) {
+        const prefix = giText && !giText.endsWith('\n') ? '\n' : '';
+        await fs.writeTextFile(gitignoreFull, giText + prefix + norm + '\n');
+        // Stage the updated .gitignore so this change is tracked
+        await executeShellCommand(`git add -- .gitignore ${SUPPRESS_STDERR}`, session.workspace);
+      }
+
+      // If the file was previously tracked, remove it from the index but keep it on disk.
+      // Using --cached ensures the file content isn't deleted from the working tree.
+      await executeShellCommand(`git rm --cached -- ${quote(path)} ${SUPPRESS_STDERR}`, session.workspace);
+      // Unstage as a fallback (in case it was staged rather than tracked), doesn't touch disk
+      await executeShellCommand(`git reset HEAD -- ${quote(path)} ${SUPPRESS_STDERR}`, session.workspace);
+
+      setExcludedFromCommit(prev => prev.includes(path) ? prev : [...prev, path]);
+      await checkGitStatus(session.workspace);
+    } catch (e: any) {
+      console.warn('[ignore/untrack] failed:', e);
+      try { alert(`Failed to add ${path} to .gitignore / untrack: ${e?.message || e}`); } catch {}
+    }
+  };
+
   const openFileDiff = async (file: GitFileChange) => {
     if (!session) return;
     setDiffView({ path: file.path, lines: [], loading: true });
@@ -1436,9 +1472,9 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
                         {f.deletions > 0 && <span className="text-[11px] font-mono text-red-500 shrink-0">-{f.deletions}</span>}
                       </button>
                       <button
-                        onClick={() => toggleExcludeFromCommit(f.path)}
+                        onClick={() => excluded ? toggleExcludeFromCommit(f.path) : handleAddToGitignoreAndUntrack(f.path)}
                         className="btn-icon w-6 h-6 shrink-0 mr-1"
-                        title={excluded ? 'Restore to commit' : 'Untrack from this commit (keeps changes on disk)'}
+                        title={excluded ? 'Restore to commit' : 'Add to .gitignore and untrack from git (keeps the file on disk)'}
                       >
                         {excluded ? <RotateCcw size={12} /> : <Trash2 size={12} />}
                       </button>

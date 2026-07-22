@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns, GitBranch, GitCommit, ExternalLink, ListChecks, CheckSquare, Square } from 'lucide-react';
+import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns, GitBranch, GitCommit, ExternalLink, ListChecks, CheckSquare, Square, Loader2, Check } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import PreviewSidebar from './PreviewSidebar';
@@ -147,6 +147,10 @@ interface ChatAreaProps {
   onOpenRepo?: () => void;
   onParallelSend?: (content: string, images: string[], modelIds: string[]) => void;
   plan?: { text: string; completed: boolean }[];
+  branches?: string[];
+  onSwitchBranch?: (branch: string) => void;
+  onCreateBranch?: (name: string) => void;
+  switchingBranch?: boolean;
 }
 
 const QUICK_ACTIONS = [
@@ -200,6 +204,10 @@ export default function ChatArea({
   onOpenRepo,
   onParallelSend,
   plan,
+  branches,
+  onSwitchBranch,
+  onCreateBranch,
+  switchingBranch,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -207,6 +215,8 @@ export default function ChatArea({
   const prevConvIdRef = useRef<string | null>(null);
   const [planCollapsed, setPlanCollapsed] = useState(false);
   const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null);
+  const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
 
   const handleTabDragOver = (e: React.DragEvent) => {
     if (!onDropToSplit || !e.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
@@ -354,10 +364,63 @@ export default function ChatArea({
           )}
           {gitStatus && (
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[11px] text-[rgb(var(--muted))] font-mono flex items-center gap-1" title={`Branch: ${gitStatus.branch}`}>
-                <GitBranch size={11} />
-                {gitStatus.branch}
-              </span>
+              <div className="relative">
+                <button
+                  className="text-[11px] text-[rgb(var(--muted))] font-mono flex items-center gap-1 hover:text-[rgb(var(--text))] transition-colors disabled:opacity-50"
+                  title={`Branch: ${gitStatus.branch} — click to switch`}
+                  disabled={!onSwitchBranch || switchingBranch}
+                  onClick={() => setShowBranchMenu(v => !v)}
+                >
+                  {switchingBranch ? <Loader2 size={11} className="animate-spin" /> : <GitBranch size={11} />}
+                  {gitStatus.branch}
+                  {onSwitchBranch && <ChevronDown size={10} className={`transition-transform ${showBranchMenu ? 'rotate-180' : ''}`} />}
+                </button>
+                {showBranchMenu && onSwitchBranch && (
+                  <div className="absolute top-full left-0 mt-1.5 w-56 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm shadow-xl overflow-hidden z-30">
+                    <div className="max-h-48 overflow-y-auto">
+                      {(branches || []).map(b => (
+                        <button
+                          key={b}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] font-mono truncate hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors"
+                          onClick={() => { onSwitchBranch(b); setShowBranchMenu(false); }}
+                        >
+                          {b === gitStatus.branch ? <Check size={12} className="text-[rgb(var(--accent))] shrink-0" /> : <span className="w-3 shrink-0" />}
+                          <span className="truncate">{b}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {onCreateBranch && (
+                      <div className="flex items-center gap-1.5 p-2 border-t border-[rgb(var(--border))]">
+                        <input
+                          autoFocus
+                          className="input text-[12px] py-1 px-2 flex-1 min-w-0"
+                          placeholder="new-branch-name"
+                          value={newBranchName}
+                          onChange={e => setNewBranchName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && newBranchName.trim()) {
+                              onCreateBranch(newBranchName.trim());
+                              setNewBranchName('');
+                              setShowBranchMenu(false);
+                            }
+                          }}
+                        />
+                        <button
+                          className="btn-primary text-[11px] py-1 px-2 shrink-0 disabled:opacity-50"
+                          disabled={!newBranchName.trim()}
+                          onClick={() => {
+                            onCreateBranch(newBranchName.trim());
+                            setNewBranchName('');
+                            setShowBranchMenu(false);
+                          }}
+                        >
+                          New
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               {onOpenRepo && (
                 <button className="btn-icon w-6 h-6" onClick={onOpenRepo} title="Open repo in browser">
                   <ExternalLink size={12} />

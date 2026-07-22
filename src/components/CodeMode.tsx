@@ -211,6 +211,8 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   // undefined = not checked yet, null = checked and confirmed no repo, GitStatus = repo found
   const [gitStatus, setGitStatus] = useState<GitStatus | null | undefined>(undefined);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [switchingBranch, setSwitchingBranch] = useState(false);
   const [showCommitBox, setShowCommitBox] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitDescription, setCommitDescription] = useState('');
@@ -241,7 +243,7 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   }, [session?.workspace]);
 
   const checkGitStatus = useCallback(async (workspace: string) => {
-    if (!isTauri) { setGitStatus(null); return; }
+    if (!isTauri) { setGitStatus(null); setBranches([]); return; }
     try {
       const check = await executeShellCommand('git rev-parse --is-inside-work-tree', workspace);
       if (check.code !== 0 || check.stdout.trim() !== 'true') {
@@ -249,11 +251,15 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
           console.warn('[git status] git rev-parse failed:', check.stderr || check.stdout);
         }
         setGitStatus(null);
+        setBranches([]);
         return;
       }
 
       const branchRes = await executeShellCommand('git rev-parse --abbrev-ref HEAD', workspace);
       const branch = branchRes.stdout.trim() || 'HEAD';
+
+      const branchListRes = await executeShellCommand("git branch --format='%(refname:short)'", workspace);
+      setBranches(branchListRes.stdout.split('\n').map(b => b.trim()).filter(Boolean));
 
       const remoteRes = await executeShellCommand('git remote get-url origin', workspace);
       const remoteUrl = remoteRes.code === 0 ? remoteToWebUrl(remoteRes.stdout) : null;
@@ -401,6 +407,36 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
 
   const handleOpenRepo = () => {
     if (gitStatus?.remoteUrl) openUrl(gitStatus.remoteUrl);
+  };
+
+  const handleSwitchBranch = async (branch: string) => {
+    if (!session || switchingBranch || branch === gitStatus?.branch) return;
+    setSwitchingBranch(true);
+    try {
+      const res = await executeShellCommand(`git checkout "${branch}"`, session.workspace);
+      if (res.code !== 0) {
+        alert(`Couldn't switch to "${branch}": ${res.stderr || res.stdout}`);
+        return;
+      }
+      await checkGitStatus(session.workspace);
+    } finally {
+      setSwitchingBranch(false);
+    }
+  };
+
+  const handleCreateBranch = async (name: string) => {
+    if (!session || switchingBranch) return;
+    setSwitchingBranch(true);
+    try {
+      const res = await executeShellCommand(`git checkout -b "${name}"`, session.workspace);
+      if (res.code !== 0) {
+        alert(`Couldn't create branch "${name}": ${res.stderr || res.stdout}`);
+        return;
+      }
+      await checkGitStatus(session.workspace);
+    } finally {
+      setSwitchingBranch(false);
+    }
   };
 
   const openCreateRepoBox = () => {
@@ -1207,6 +1243,10 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
         onOpenCommit={() => setShowCommitBox(true)}
         onOpenRepo={gitStatus?.remoteUrl ? handleOpenRepo : undefined}
         plan={session.plan}
+        branches={branches}
+        onSwitchBranch={handleSwitchBranch}
+        onCreateBranch={handleCreateBranch}
+        switchingBranch={switchingBranch}
       />
 
       {/* Reference workspaces — lets the AI read from other projects alongside the primary one */}

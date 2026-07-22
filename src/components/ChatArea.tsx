@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns, GitBranch, GitCommit, ExternalLink } from 'lucide-react';
+import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns, GitBranch, GitCommit, ExternalLink, ListChecks, CheckSquare, Square } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import PreviewSidebar from './PreviewSidebar';
@@ -146,6 +146,7 @@ interface ChatAreaProps {
   onOpenCommit?: () => void;
   onOpenRepo?: () => void;
   onParallelSend?: (content: string, images: string[], modelIds: string[]) => void;
+  plan?: { text: string; completed: boolean }[];
 }
 
 const QUICK_ACTIONS = [
@@ -198,11 +199,13 @@ export default function ChatArea({
   onOpenCommit,
   onOpenRepo,
   onParallelSend,
+  plan,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const prevConvIdRef = useRef<string | null>(null);
+  const [planCollapsed, setPlanCollapsed] = useState(false);
   const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null);
 
   const handleTabDragOver = (e: React.DragEvent) => {
@@ -463,6 +466,36 @@ export default function ChatArea({
         </div>
       )}
       </div>
+
+      {/* Plan checklist — collapsible, sits just above the input */}
+      {isCode && !!plan?.length && (
+        <div className="px-4 pt-2 shrink-0">
+          <div className="glass-inset rounded-2xl border border-[rgb(var(--border))] overflow-hidden">
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-left"
+              onClick={() => setPlanCollapsed(v => !v)}
+            >
+              <ListChecks size={13} className="text-[rgb(var(--muted))] shrink-0" />
+              <span className="text-[12px] font-medium text-[rgb(var(--text))] flex-1">
+                Plan — {plan.filter(p => p.completed).length}/{plan.length} done
+              </span>
+              <ChevronDown size={13} className={`text-[rgb(var(--muted))] shrink-0 transition-transform ${planCollapsed ? '-rotate-90' : ''}`} />
+            </button>
+            {!planCollapsed && (
+              <div className="px-3 pb-2.5 space-y-1 max-h-40 overflow-y-auto">
+                {plan.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[12.5px]">
+                    {item.completed
+                      ? <CheckSquare size={13} className="text-green-500 mt-0.5 shrink-0" />
+                      : <Square size={13} className="text-[rgb(var(--muted))] mt-0.5 shrink-0" />}
+                    <span className={item.completed ? 'line-through text-[rgb(var(--muted))]' : 'text-[rgb(var(--text))]'}>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Input */}
       <ChatInput

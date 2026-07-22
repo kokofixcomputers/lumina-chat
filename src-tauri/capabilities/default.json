@@ -33,12 +33,19 @@
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        { "name": "sh", "cmd": "sh", "args": true }
+        { "name": "sh", "cmd": "sh", "args": true },
+        { "name": "powershell", "cmd": "powershell", "args": true }
       ]
     },
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "/**" }, { "path": "*" }]
+      "allow": [
+        { "path": "/**" },
+        { "path": "*" },
+        { "path": "/**/.*" },
+        { "path": "/**/.*/**" },
+        { "path": ".*" }
+      ]
     },
     "core:webview:allow-create-webview-window",
     "http:default",

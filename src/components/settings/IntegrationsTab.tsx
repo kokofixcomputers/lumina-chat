@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Key, Shield, ExternalLink, Check, X } from 'lucide-react';
+import { Key, Shield, ExternalLink, Check, X, Github, Loader2 } from 'lucide-react';
 import type { AppSettings } from '../../types';
+import { authorizeGitHub } from '../../integrations/githubOAuth';
 
 interface IntegrationsTabProps {
   settings: AppSettings;
@@ -32,6 +33,8 @@ export default function IntegrationsTab({ settings, onUpdateSettings }: Integrat
   const [patTokenInput, setPatTokenInput] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [validationError, setValidationError] = useState('');
+  const [isOAuthSigningIn, setIsOAuthSigningIn] = useState(false);
+  const [oauthError, setOauthError] = useState('');
 
   // Get GitHub integration state from settings
   const githubConfig = settings.integrations?.github || { configured: false, patToken: '', username: '' };
@@ -97,6 +100,28 @@ export default function IntegrationsTab({ settings, onUpdateSettings }: Integrat
     }
 
     setIsValidating(false);
+  };
+
+  const handleSignInWithGitHub = async () => {
+    setOauthError('');
+    setIsOAuthSigningIn(true);
+    try {
+      const { token, username } = await authorizeGitHub();
+      onUpdateSettings({
+        integrations: {
+          ...settings.integrations,
+          github: {
+            configured: true,
+            patToken: token,
+            username,
+          }
+        }
+      });
+    } catch (error: any) {
+      setOauthError(error?.message || 'GitHub sign-in failed');
+    } finally {
+      setIsOAuthSigningIn(false);
+    }
   };
 
   const handleDisconnect = () => {
@@ -197,23 +222,42 @@ export default function IntegrationsTab({ settings, onUpdateSettings }: Integrat
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {integration.configured ? (
-                  <button
-                    onClick={handleDisconnect}
-                    className="btn-secondary text-xs py-1.5 px-3"
-                  >
-                    <X size={12} className="mr-1" />
-                    Disconnect
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleConfigure}
-                    className="btn-primary text-xs py-1.5 px-3"
-                  >
-                    <Key size={12} className="mr-1" />
-                    Configure
-                  </button>
+              <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  {integration.configured ? (
+                    <button
+                      onClick={handleDisconnect}
+                      className="btn-secondary text-xs py-1.5 px-3"
+                    >
+                      <X size={12} className="mr-1" />
+                      Disconnect
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleSignInWithGitHub}
+                        disabled={isOAuthSigningIn}
+                        className="btn-primary text-xs py-1.5 px-3 disabled:opacity-50"
+                      >
+                        {isOAuthSigningIn ? (
+                          <Loader2 size={12} className="mr-1 animate-spin" />
+                        ) : (
+                          <Github size={12} className="mr-1" />
+                        )}
+                        Sign in with GitHub
+                      </button>
+                      <button
+                        onClick={handleConfigure}
+                        className="btn-secondary text-xs py-1.5 px-3"
+                      >
+                        <Key size={12} className="mr-1" />
+                        Use PAT
+                      </button>
+                    </>
+                  )}
+                </div>
+                {oauthError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{oauthError}</p>
                 )}
               </div>
             )}

@@ -60,9 +60,9 @@ function ReasoningBlock({ reasoning, defaultCollapsed }: { reasoning: string; de
   );
 }
 
-type DiffLine = { kind: 'same' | 'add' | 'remove'; text: string };
+export type DiffLine = { kind: 'same' | 'add' | 'remove'; text: string };
 
-function computeDiff(before: string, after: string): DiffLine[] {
+export function computeDiff(before: string, after: string): DiffLine[] {
   const a = before.split('\n');
   const b = after.split('\n');
   const m = a.length, n = b.length;
@@ -112,7 +112,7 @@ function renderNode(node: any, key: number, stylesheet?: any): React.ReactNode {
   );
 }
 
-function DiffLines({ lines, path, isDark }: { lines: DiffLine[]; path?: string; isDark: boolean }) {
+export function DiffLines({ lines, path, isDark }: { lines: DiffLine[]; path?: string; isDark: boolean }) {
   const lang = getLang(path);
   const content = lines.map(l => l.text).join('\n');
 

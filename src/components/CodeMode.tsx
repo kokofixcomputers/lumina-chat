@@ -1,14 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { AlertTriangle, Check, X, Code2, FolderOpen, GitCommit, FileText, Loader2, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, X, Code2, FolderOpen, GitCommit, FileText, Loader2, Sparkles, Github, ListChecks, Play, Trash2, Copy, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import type { CodeSession } from '../utils/codeSessionDB';
+import type { CodeSession, PlanItem } from '../utils/codeSessionDB';
 import type { Message } from '../types';
 import { useAppStore } from '../hooks/useAppStore';
 import { universalFetch } from '../utils/tauriFetch';
 import { isTauri, openUrl } from '../utils/tauri';
+import { authorizeGitHub } from '../integrations/githubOAuth';
 import { resolveFormat, getByPath } from './ProvidersPanel';
 import ChatArea from './ChatArea';
 import Modal from './Modal';
+import { DiffLines, computeDiff, type DiffLine } from './MessageBubble';
 
 // Tauri plugins — lazy-loaded, desktop only
 let tauriFs: any = null;
@@ -23,17 +25,82 @@ async function getDialog() {
   return tauriDialog;
 }
 
-// macOS GUI apps (launched from Finder/Dock, not a terminal) inherit a minimal PATH
-// (/usr/bin:/bin:/usr/sbin:/sbin) that omits Homebrew and other common install locations.
-// Without this, `git`, `node`, `npm`, etc. installed via Homebrew silently fail as
-// "command not found" and callers just see an empty/failed result with no clear cause.
-const PATH_FIX = 'export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$HOME/.local/bin:$HOME/bin:$PATH";';
+// GUI apps launched from a dock/launcher (not a terminal) inherit a minimal PATH that omits
+// Homebrew/Linuxbrew and other common install locations. Without this, `git`, `node`, `pnpm`,
+// etc. silently fail as "command not found" and callers just see an empty/failed result with
+// no clear cause. Unix-only — Windows child processes already inherit the full user PATH from
+// the registry regardless of how the app was launched, so this never applies there.
+const PATH_FIX = 'export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$HOME/bin:$PATH";';
+
+function detectPlatform(): 'windows' | 'macos' | 'linux' {
+  const ua = navigator.userAgent;
+  if (ua.includes('Windows')) return 'windows';
+  if (ua.includes('Mac OS') || ua.includes('Macintosh')) return 'macos';
+  return 'linux';
+}
+const PLATFORM = detectPlatform();
+
+// Discard-stderr-and-don't-fail-the-pipeline suffix, in the target shell's own syntax
+// (sh/bash on Unix, PowerShell on Windows) — used for commands that are allowed to fail.
+const SUPPRESS_STDERR = PLATFORM === 'windows' ? '2>$null' : '2>/dev/null; true';
+
+// The hardcoded fallback above only covers common install locations — it misses anything the
+// user only set up in their shell rc file (nvm, pnpm's own bin dir, volta, custom PATH exports,
+// etc.). To pick those up too (macOS/Linux only), resolve the user's *actual* PATH once by
+// asking their login shell ($SHELL — bash/zsh/fish/whatever) to source its rc file (`-i` =
+// interactive) and report $PATH, then cache it and prepend it ahead of PATH_FIX for every
+// command afterward. Runs nested inside the already-permitted `sh -c` call, so no extra Tauri
+// shell capability is needed for spawning the user's shell directly.
+// The same call also reports the shell's own name (bash/zsh/fish/…), cached alongside the PATH,
+// so the AI can be told which shell syntax to write commands in.
+let cachedUserPath: string | null = null;
+let cachedShellName: string | null = null;
+const PATH_MARKER = '__LUMINA_PATH__';
+const SHELL_MARKER = '__LUMINA_SHELL__';
+
+async function resolvePlatformInfo(): Promise<{ path: string; shellName: string }> {
+  if (PLATFORM === 'windows') return { path: '', shellName: 'powershell' };
+  if (cachedUserPath !== null && cachedShellName !== null) return { path: cachedUserPath, shellName: cachedShellName };
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const res = await invoke<{ stdout: string; stderr: string; code: number }>('plugin:shell|execute', {
+      program: 'sh',
+      // ${PATH} must be braced — a bare $PATH immediately followed by the marker text gets
+      // parsed by the shell as one long variable name ("PATH__LUMINA_PATH__"), which doesn't
+      // exist and silently expands to nothing, making PATH resolution appear to return empty.
+      args: ['-c', `SH="\${SHELL:-/bin/bash}"; echo ${SHELL_MARKER}$(basename "$SH")${SHELL_MARKER}; "$SH" -ilc 'echo ${PATH_MARKER}\${PATH}${PATH_MARKER}' 2>/dev/null`],
+      options: {},
+    });
+    const pathMatch = res.stdout.match(new RegExp(`${PATH_MARKER}(.*?)${PATH_MARKER}`));
+    const shellMatch = res.stdout.match(new RegExp(`${SHELL_MARKER}(.*?)${SHELL_MARKER}`));
+    cachedUserPath = pathMatch ? pathMatch[1].trim() : '';
+    cachedShellName = shellMatch?.[1]?.trim() || 'bash';
+  } catch {
+    cachedUserPath = '';
+    cachedShellName = 'bash';
+  }
+  return { path: cachedUserPath, shellName: cachedShellName };
+}
 
 async function executeShellCommand(command: string, cwd: string) {
   const { invoke } = await import('@tauri-apps/api/core');
+
+  if (PLATFORM === 'windows') {
+    // PowerShell (not cmd.exe) — it has built-in aliases for the Unix-style commands
+    // (ls, cp, mv, rm, cat, pwd, …) that AI-generated commands tend to assume.
+    const safeCwd = cwd.replace(/'/g, "''");
+    return invoke<{ stdout: string; stderr: string; code: number }>('plugin:shell|execute', {
+      program: 'powershell',
+      args: ['-NoProfile', '-Command', `Set-Location -LiteralPath '${safeCwd}'; ${command}`],
+      options: {},
+    });
+  }
+
+  const { path: userPath } = await resolvePlatformInfo();
+  const pathExport = userPath ? `export PATH="${userPath}:$PATH"; ${PATH_FIX}` : PATH_FIX;
   return invoke<{ stdout: string; stderr: string; code: number }>('plugin:shell|execute', {
     program: 'sh',
-    args: ['-c', `${PATH_FIX} cd "${cwd}" && ${command}`],
+    args: ['-c', `${pathExport} cd "${cwd}" && ${command}`],
     options: {},
   });
 }
@@ -47,12 +114,52 @@ const CODE_TOOLS = [
   { name: 'create_directory', description: 'Create a directory (and any missing parents).', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to workspace root' } }, required: ['path'] } },
   { name: 'list_directory', description: 'List files and directories at a path.', input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Directory path relative to workspace root (use "." for root)' } }, required: ['path'] } },
   { name: 'execute_command', description: 'Execute a shell command. Requires user approval before running.', input_schema: { type: 'object', properties: { command: { type: 'string', description: 'Shell command to execute' }, working_dir: { type: 'string', description: 'Working directory relative to workspace root' } }, required: ['command'] } },
+  { name: 'create_workflow', description: 'Save a reusable workflow — a named sequence of shell commands — that appears in the Workflows menu so the user can run it later with one click, without going through you again. Use this when the user asks you to set up a repeatable task, e.g. "create a workflow to build my app".', input_schema: { type: 'object', properties: { name: { type: 'string', description: 'Short name, e.g. "Build App"' }, description: { type: 'string', description: 'Optional one-line description of what this workflow does' }, commands: { type: 'array', items: { type: 'string' }, description: 'Shell commands to run in order, each from the workspace root. Stops at the first command that fails.' } }, required: ['name', 'commands'] } },
+  { name: 'create_plan', description: 'Create or replace the task plan shown to the user as a checklist just above the input box. Calling this again replaces the whole plan, so include every item (not just new ones) if you want to add more steps later.', input_schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'string' }, description: 'Ordered list of plan step descriptions' } }, required: ['items'] } },
+  { name: 'check_plan_item', description: 'Mark a plan checklist item done or not done, by its 0-based index in the current plan.', input_schema: { type: 'object', properties: { index: { type: 'number', description: '0-based index of the plan item' }, completed: { type: 'boolean', description: 'true to mark done, false to mark not done (defaults to true)' } }, required: ['index'] } },
 ];
 
 interface PendingApproval {
   command: string;
   workingDir: string;
   resolve: (approved: boolean) => void;
+}
+
+// Commands the user chose "Always Allow" for — persisted across sessions and restarts.
+const ALWAYS_ALLOW_KEY = 'lumina_code_always_allowed_commands';
+function getAlwaysAllowedCommands(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(ALWAYS_ALLOW_KEY) || '[]')); } catch { return new Set(); }
+}
+function addAlwaysAllowedCommand(cmd: string) {
+  const set = getAlwaysAllowedCommands();
+  set.add(cmd);
+  try { localStorage.setItem(ALWAYS_ALLOW_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+}
+
+// AI-defined workflows — a named sequence of shell commands the user can re-run with one
+// click. Scoped per-workspace (not per chat session) so they stick around across sessions
+// on the same project.
+interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  commands: string[];
+  createdAt: number;
+}
+function workflowsKey(workspace: string): string {
+  return `lumina_code_workflows_${workspace}`;
+}
+function getWorkflows(workspace: string): Workflow[] {
+  try { return JSON.parse(localStorage.getItem(workflowsKey(workspace)) || '[]'); } catch { return []; }
+}
+function saveWorkflow(workspace: string, workflow: Workflow) {
+  const list = getWorkflows(workspace);
+  list.push(workflow);
+  try { localStorage.setItem(workflowsKey(workspace), JSON.stringify(list)); } catch { /* ignore */ }
+}
+function deleteWorkflowById(workspace: string, id: string) {
+  const list = getWorkflows(workspace).filter(w => w.id !== id);
+  try { localStorage.setItem(workflowsKey(workspace), JSON.stringify(list)); } catch { /* ignore */ }
 }
 
 interface GitFileChange {
@@ -70,6 +177,11 @@ interface GitStatus {
   deletions: number;
   files: GitFileChange[];
   remoteUrl: string | null;
+}
+
+// Single-quote a shell argument so it's treated as a literal string — no $()/`` expansion.
+function quote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 // Normalize a git remote URL (SSH or HTTPS) into a browsable https:// web URL.
@@ -96,15 +208,35 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const store = useAppStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
-  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  // undefined = not checked yet, null = checked and confirmed no repo, GitStatus = repo found
+  const [gitStatus, setGitStatus] = useState<GitStatus | null | undefined>(undefined);
   const [showCommitBox, setShowCommitBox] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitDescription, setCommitDescription] = useState('');
   const [committing, setCommitting] = useState(false);
-  const [diffView, setDiffView] = useState<{ path: string; content: string; loading: boolean } | null>(null);
+  const [diffView, setDiffView] = useState<{ path: string; lines: DiffLine[]; loading: boolean; error?: string } | null>(null);
   const [generatingMsg, setGeneratingMsg] = useState(false);
+  const [showCreateRepoBox, setShowCreateRepoBox] = useState(false);
+  const [newRepoName, setNewRepoName] = useState('');
+  const [newRepoPrivate, setNewRepoPrivate] = useState(true);
+  const [creatingRepo, setCreatingRepo] = useState(false);
+  const [createRepoError, setCreateRepoError] = useState('');
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [showWorkflowsMenu, setShowWorkflowsMenu] = useState(false);
+  const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
+  const [expandedWorkflowIds, setExpandedWorkflowIds] = useState<string[]>([]);
+  const toggleExpand = (id: string) => { setExpandedWorkflowIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); };
+  const [workflowResult, setWorkflowResult] = useState<{ name: string; steps: { command: string; code: number; output: string }[] } | null>(null);
   const streamingContentRef = useRef('');
+  const [liveText, setLiveText] = useState('');
   const abortRef = useRef<AbortController | null>(null);
+  // "Allow all for this session" — in-memory only, resets when switching to a different code session.
+  const allowAllSessionRef = useRef(false);
+  useEffect(() => { allowAllSessionRef.current = false; }, [session?.id]);
+
+  useEffect(() => {
+    setWorkflows(session?.workspace ? getWorkflows(session.workspace) : []);
+  }, [session?.workspace]);
 
   const checkGitStatus = useCallback(async (workspace: string) => {
     if (!isTauri) { setGitStatus(null); return; }
@@ -155,8 +287,15 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
           const untracked = statusCode === '??';
 
           if (untracked) {
-            const wc = await executeShellCommand(`wc -l < "${path}" 2>/dev/null || echo 0`, workspace);
-            files.push({ path, status: statusCode, additions: parseInt(wc.stdout.trim(), 10) || 0, deletions: 0, untracked: true });
+            // Count lines in JS (via the fs plugin) instead of shelling out to `wc -l` —
+            // that's a Unix-only tool and this needs to work on Windows too.
+            let lineCount = 0;
+            try {
+              const fs = await getFs();
+              const content = await fs.readTextFile(`${workspace}/${path}`);
+              lineCount = content ? content.split('\n').length : 0;
+            } catch { /* binary or unreadable — leave at 0 */ }
+            files.push({ path, status: statusCode, additions: lineCount, deletions: 0, untracked: true });
           } else {
             const u = unstagedMap.get(path);
             const s = stagedMap.get(path);
@@ -171,10 +310,21 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
         }
       }
 
-      const additions = files.reduce((sum, f) => sum + f.additions, 0);
-      const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
+      // .gitignore only hides untracked files from `git status` — a file that was tracked
+      // before it was added to .gitignore (e.g. a stray .env) still shows up as modified.
+      // Filter those out here too, so they never appear in the commit list or get staged.
+      let visibleFiles = files;
+      if (files.length > 0) {
+        const quotedPaths = files.map(f => `"${f.path.replace(/"/g, '\\"')}"`).join(' ');
+        const ignoreCheck = await executeShellCommand(`git check-ignore ${quotedPaths} ${SUPPRESS_STDERR}`, workspace);
+        const ignoredSet = new Set(ignoreCheck.stdout.split('\n').map(l => l.trim()).filter(Boolean));
+        if (ignoredSet.size > 0) visibleFiles = files.filter(f => !ignoredSet.has(f.path));
+      }
 
-      setGitStatus({ branch, filesChanged: files.length, additions, deletions, files, remoteUrl });
+      const additions = visibleFiles.reduce((sum, f) => sum + f.additions, 0);
+      const deletions = visibleFiles.reduce((sum, f) => sum + f.deletions, 0);
+
+      setGitStatus({ branch, filesChanged: visibleFiles.length, additions, deletions, files: visibleFiles, remoteUrl });
     } catch (e) {
       console.warn('[git status] check failed:', e);
       setGitStatus(null);
@@ -190,13 +340,16 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
     if (!session || !commitMessage.trim() || committing) return;
     setCommitting(true);
     try {
-      await executeShellCommand('git add -A', session.workspace);
-      // Single-quote each message part so the shell treats it as a literal string — no $()/`` expansion.
+      // Stage exactly the files shown in the commit box — never `git add -A`, which would also
+      // re-stage any already-tracked-but-gitignored file (e.g. a stray .env) that checkGitStatus
+      // deliberately filtered out of view.
+      const stagePaths = (gitStatus?.files || []).map(f => quote(f.path)).join(' ');
+      if (stagePaths) await executeShellCommand(`git add -- ${stagePaths}`, session.workspace);
       // Separate -m flags for summary and description matches `git commit`'s own convention
       // for a short subject line followed by a body paragraph.
-      const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
       const msgArgs = [`-m ${quote(commitMessage.trim())}`];
       if (commitDescription.trim()) msgArgs.push(`-m ${quote(commitDescription.trim())}`);
+      msgArgs.push(`-m ${quote('Co-authored-by: Lumina Code by kokodev <lumina-code-by-kokodev@users.noreply.github.com>')}`);
       const commitRes = await executeShellCommand(`git commit ${msgArgs.join(' ')}`, session.workspace);
       if (commitRes.code !== 0) {
         alert(`Commit failed: ${commitRes.stderr || commitRes.stdout}`);
@@ -204,10 +357,31 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
       }
 
       // Push — fall back to setting the upstream if this branch has never been pushed before.
-      let pushRes = await executeShellCommand('git push', session.workspace);
-      if (pushRes.code !== 0 && /set-upstream|no upstream branch|has no upstream/i.test(pushRes.stderr)) {
-        pushRes = await executeShellCommand('git push -u origin HEAD', session.workspace);
+      const pushWithUpstreamFallback = async () => {
+        let res = await executeShellCommand('git push', session.workspace);
+        if (res.code !== 0 && /set-upstream|no upstream branch|has no upstream/i.test(res.stderr)) {
+          res = await executeShellCommand('git push -u origin HEAD', session.workspace);
+        }
+        return res;
+      };
+
+      let pushRes = await pushWithUpstreamFallback();
+
+      // If push failed for lack of local git credentials (no SSH key / credential helper
+      // configured), fall back to the saved GitHub PAT/OAuth token — same technique the
+      // "Create GitHub Repo" flow uses — by embedding it into the remote URL and retrying.
+      const isAuthFailure = /authentication failed|could not read username|could not read password|terminal prompts disabled|invalid username or (password|token)|permission denied \(publickey\)|fatal: unable to access/i.test(pushRes.stderr);
+      if (pushRes.code !== 0 && isAuthFailure) {
+        const token = store.settings.integrations?.github?.patToken;
+        const remoteRes = await executeShellCommand('git remote get-url origin', session.workspace);
+        const remote = remoteRes.stdout.trim();
+        if (token && remoteRes.code === 0 && /^https:\/\/github\.com\//.test(remote)) {
+          const authedUrl = remote.replace('https://', `https://${token}@`);
+          await executeShellCommand(`git remote set-url origin "${authedUrl}"`, session.workspace);
+          pushRes = await pushWithUpstreamFallback();
+        }
       }
+
       if (pushRes.code !== 0) {
         alert(`Committed, but push failed: ${pushRes.stderr || pushRes.stdout}`);
       }
@@ -227,6 +401,89 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
     if (gitStatus?.remoteUrl) openUrl(gitStatus.remoteUrl);
   };
 
+  const openCreateRepoBox = () => {
+    if (!session) return;
+    const base = session.workspace.replace(/\/+$/, '').split('/').pop() || 'my-repo';
+    setNewRepoName(base.replace(/[^a-zA-Z0-9._-]/g, '-'));
+    setNewRepoPrivate(true);
+    setCreateRepoError('');
+    setShowCreateRepoBox(true);
+  };
+
+  const handleCreateGitHubRepo = async () => {
+    if (!session || creatingRepo) return;
+    const name = newRepoName.trim();
+    if (!name) { setCreateRepoError('Enter a repository name'); return; }
+
+    setCreatingRepo(true);
+    setCreateRepoError('');
+    try {
+      let token = store.settings.integrations?.github?.patToken;
+      let username = store.settings.integrations?.github?.username;
+
+      if (!token) {
+        const auth = await authorizeGitHub();
+        token = auth.token;
+        username = auth.username;
+        store.updateSettings({
+          integrations: {
+            ...store.settings.integrations,
+            github: { configured: true, patToken: token, username },
+          },
+        });
+      }
+
+      const createRes = await fetch('https://api.github.com/user/repos', {
+        method: 'POST',
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, private: newRepoPrivate }),
+      });
+      const repoData = await createRes.json();
+      if (!createRes.ok) throw new Error(repoData?.message || `Failed to create repo (${createRes.status})`);
+
+      const cloneUrl: string = repoData.clone_url;
+      // Embed the token in the remote URL so `git push` keeps working even without
+      // any local git credential helper configured.
+      const authedUrl = cloneUrl.replace('https://', `https://${token}@`);
+
+      const isRepo = await executeShellCommand('git rev-parse --is-inside-work-tree', session.workspace);
+      if (isRepo.code !== 0 || isRepo.stdout.trim() !== 'true') {
+        const initRes = await executeShellCommand('git init', session.workspace);
+        if (initRes.code !== 0) throw new Error(`git init failed: ${initRes.stderr || initRes.stdout}`);
+      }
+
+      const branchRes = await executeShellCommand('git checkout -B main', session.workspace);
+      if (branchRes.code !== 0) throw new Error(`git checkout -B main failed: ${branchRes.stderr || branchRes.stdout}`);
+
+      await executeShellCommand('git add -A', session.workspace);
+      const statusRes = await executeShellCommand('git status --porcelain', session.workspace);
+      const coAuthorTrailer = `-m 'Co-authored-by: Lumina Code by kokodev <lumina-code-by-kokodev@users.noreply.github.com>'`;
+      const commitRes = statusRes.stdout.trim()
+        ? await executeShellCommand(`git commit -m 'Initial commit' ${coAuthorTrailer}`, session.workspace)
+        : await executeShellCommand(`git commit --allow-empty -m 'Initial commit' ${coAuthorTrailer}`, session.workspace);
+      if (commitRes.code !== 0) throw new Error(`git commit failed: ${commitRes.stderr || commitRes.stdout}`);
+
+      const existingRemote = await executeShellCommand('git remote get-url origin', session.workspace);
+      const remoteCmd = existingRemote.code === 0 ? 'set-url' : 'add';
+      const remoteRes = await executeShellCommand(`git remote ${remoteCmd} origin "${authedUrl}"`, session.workspace);
+      if (remoteRes.code !== 0) throw new Error(`git remote ${remoteCmd} failed: ${remoteRes.stderr || remoteRes.stdout}`);
+
+      const pushRes = await executeShellCommand('git push -u origin main', session.workspace);
+      if (pushRes.code !== 0) throw new Error(`Push failed: ${pushRes.stderr || pushRes.stdout}`);
+
+      setShowCreateRepoBox(false);
+      await checkGitStatus(session.workspace);
+    } catch (e: any) {
+      setCreateRepoError(e?.message || String(e));
+    } finally {
+      setCreatingRepo(false);
+    }
+  };
+
   const generateCommitMessage = async () => {
     if (!session || generatingMsg) return;
     const { provider, model } = store.getProviderAndModel(session.modelId || store.settings.defaultProviderModelId);
@@ -234,8 +491,10 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
 
     setGeneratingMsg(true);
     try {
-      // Stage everything first so the diff reflects exactly what "Commit & Push" will commit.
-      await executeShellCommand('git add -A', session.workspace);
+      // Stage exactly what "Commit & Push" will commit (never gitignored-but-tracked files —
+      // see checkGitStatus — so their contents never get sent to the LLM provider either).
+      const stagePaths = (gitStatus?.files || []).map(f => quote(f.path)).join(' ');
+      if (stagePaths) await executeShellCommand(`git add -- ${stagePaths}`, session.workspace);
       const diffRes = await executeShellCommand('git diff --cached', session.workspace);
       let diffText = diffRes.stdout.trim();
       if (!diffText) { alert('No changes to describe.'); return; }
@@ -285,19 +544,57 @@ ${diffText}`,
     }
   };
 
+  const handleRunWorkflow = async (workflow: Workflow) => {
+    if (!session || runningWorkflowId) return;
+    setRunningWorkflowId(workflow.id);
+    const steps: { command: string; code: number; output: string }[] = [];
+    try {
+      for (const cmd of workflow.commands) {
+        const res = await executeShellCommand(cmd, session.workspace);
+        const output = ((res.stdout || '').trim() + (res.stderr ? `\n${res.stderr.trim()}` : '')).trim();
+        steps.push({ command: cmd, code: res.code ?? 0, output });
+        if (res.code !== 0) break;
+      }
+    } catch (e: any) {
+      steps.push({ command: '(error)', code: 1, output: e?.message || String(e) });
+    } finally {
+      setWorkflowResult({ name: workflow.name, steps });
+      setRunningWorkflowId(null);
+      await checkGitStatus(session.workspace);
+    }
+  };
+
+  const handleDeleteWorkflow = (id: string) => {
+    if (!session) return;
+    deleteWorkflowById(session.workspace, id);
+    setWorkflows(getWorkflows(session.workspace));
+  };
+
   const openFileDiff = async (file: GitFileChange) => {
     if (!session) return;
-    setDiffView({ path: file.path, content: '', loading: true });
+    setDiffView({ path: file.path, lines: [], loading: true });
     try {
-      // `git diff` doesn't cover untracked files — diff against /dev/null to show the
-      // whole file as additions instead.
-      const cmd = file.untracked
-        ? `git diff --no-index -- /dev/null "${file.path}" 2>/dev/null; true`
-        : `git diff HEAD -- "${file.path}"`;
-      const res = await executeShellCommand(cmd, session.workspace);
-      setDiffView({ path: file.path, content: res.stdout || '(no textual diff — binary file?)', loading: false });
+      // Committed/staged content at HEAD — empty for untracked or not-yet-committed new files,
+      // which naturally renders them as an all-green "created" diff below.
+      const beforeRes = await executeShellCommand(`git show HEAD:"${file.path}" ${SUPPRESS_STDERR}`, session.workspace);
+      const before = beforeRes.stdout;
+
+      // Current working-tree content — empty (via catch) if the file was deleted.
+      let after = '';
+      try {
+        const fs = await getFs();
+        after = await fs.readTextFile(resolvePath(session.workspace, file.path));
+      } catch { /* deleted or unreadable — treat as removed */ }
+
+      const NUL = String.fromCharCode(0);
+      if (before.includes(NUL) || after.includes(NUL)) {
+        setDiffView({ path: file.path, lines: [], loading: false, error: 'Binary file — no text diff available.' });
+        return;
+      }
+
+      setDiffView({ path: file.path, lines: computeDiff(before, after), loading: false });
     } catch (e: any) {
-      setDiffView({ path: file.path, content: `Error loading diff: ${e?.message || e}`, loading: false });
+      setDiffView({ path: file.path, lines: [], loading: false, error: e?.message || String(e) });
     }
   };
 
@@ -393,6 +690,16 @@ ${diffText}`,
         return { result: output, diff: { type: 'output', output, path: command } };
       } catch (e: any) { return { result: `Error: ${e?.message || e}` }; }
     }
+    if (name === 'create_workflow') {
+      const wfName = ((input.name as string) || '').trim();
+      const commands = ((input.commands as string[]) || []).map(c => (c || '').trim()).filter(Boolean);
+      if (!wfName) return { result: 'Error: name is required' };
+      if (commands.length === 0) return { result: 'Error: at least one command is required' };
+      const workflow: Workflow = { id: uuidv4(), name: wfName, description: (input.description as string) || '', commands, createdAt: Date.now() };
+      saveWorkflow(workspace, workflow);
+      setWorkflows(getWorkflows(workspace));
+      return { result: `Workflow "${wfName}" created with ${commands.length} command(s): ${commands.join(' && ')}. It now appears in the Workflows menu.` };
+    }
     return { result: `Unknown tool: ${name}` };
   };
 
@@ -422,15 +729,27 @@ ${diffText}`,
     abortRef.current = controller;
 
     try {
+      const { shellName } = await resolvePlatformInfo();
+      const osLabel = PLATFORM === 'windows' ? 'Windows' : PLATFORM === 'macos' ? 'macOS' : 'Linux';
+      const shellNote = PLATFORM === 'windows'
+        ? `execute_command runs on Windows through PowerShell (not cmd.exe). Write commands using PowerShell syntax — cmdlets (Get-ChildItem, Remove-Item, Copy-Item, ...) or their built-in Unix-style aliases (ls, rm, cp, cat, pwd, ...) both work. Never wrap commands in "bash -c", "/bin/bash", "sh -c", or a "#!/bin/bash" shebang — bash is not available.`
+        : `execute_command runs on ${osLabel} through the user's login shell (${shellName}). Write commands in plain ${shellName}/POSIX syntax — pass just the command itself (e.g. "pnpm build", "ls -la"), never wrap it in "bash -c", "/bin/bash", "sh -c", or a "#!/bin/bash" shebang; the user's environment may not have bash available at all, so any command that explicitly invokes bash will fail.`;
+
       const systemPrompt = `You are an expert software engineer. The user's workspace is at: ${startingSession.workspace}
 
-All paths are relative to the workspace root. Run shell commands only when needed and they require user approval.
+All paths are relative to the workspace root. Run shell commands only when needed.
+
+Do not ask the user in chat whether you should run a command, or wait for them to say yes/no — just call execute_command directly. The application itself already shows the user an Allow/Deny approval popup for every command before it actually runs, so asking for confirmation yourself is redundant and just slows things down.
+
+${shellNote}
 
 IMPORTANT — file editing rules:
 - Always prefer edit_file over write_file when modifying existing files. Use edit_file for targeted replacements instead of rewriting entire files.
 - Only use write_file when creating a new file or when the changes are so extensive that multiple edits would be less clear.
 - When using edit_file, make the old_string as short as possible while still being unique in the file.
-- Read a file before editing it if you are unsure of its current contents.`;
+- Read a file before editing it if you are unsure of its current contents.
+
+Planning (encouraged, not required): judge by complexity, not file count. A repetitive change touching many files (e.g. the same one-line fix across 10 files) is still simple — skip planning. But if the work has several distinct, non-repetitive pieces (e.g. add a backend endpoint, wire up a new UI panel, and update config — each different in kind), consider calling create_plan first with a short checklist of those steps, then check_plan_item as you complete each one. This gives the user a visible, collapsible progress checklist above the input box. When in doubt, or for anything small and straightforward, skip planning and just make the change.`;
 
       const buildApiMessages = (messages: Message[], anthropic: boolean) => {
         const out: any[] = [];
@@ -469,12 +788,38 @@ IMPORTANT — file editing rules:
         return out;
       };
 
+      // Responses API input items (OpenAI-only, different shape from Chat Completions' `messages`):
+      // tool calls are separate `function_call` items rather than nested in the assistant message,
+      // and tool results are `function_call_output` items rather than role:"tool" messages.
+      const buildResponsesInput = (messages: Message[]) => {
+        const out: any[] = [];
+        for (const m of messages) {
+          if (m.role === 'user') {
+            out.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: m.content }] });
+          } else if (m.role === 'assistant') {
+            if (m.content) out.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: m.content }] });
+            for (const tc of (m.tool_calls || [])) {
+              // No `id` field here — the Responses API validates it as the item's own "fc_..."
+              // id, which we never separately track (only the "call_..." id that links this
+              // call to its function_call_output). Omitting it avoids that mismatch.
+              out.push({ type: 'function_call', call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments, status: 'completed' });
+            }
+          } else if (m.role === 'tool') {
+            out.push({ type: 'function_call_output', call_id: m.tool_call_id || '', output: m.content });
+          }
+        }
+        return out;
+      };
+
       const activeApiFormat = resolveFormat(store.settings.apiFormats || [], provider.apiFormatId);
       const isAnthropic = activeApiFormat?.id === 'anthropic' || activeApiFormat?.id === 'anthropic-subscription';
+      const useResponsesApi = !isAnthropic && !!store.settings.modelSettings?.useResponsesApi;
       const baseUrl = provider.baseUrl.replace(/\/$/, '');
       const apiUrl = isAnthropic
         ? (baseUrl.includes('/messages') ? baseUrl : `${baseUrl}/messages`)
-        : (baseUrl.includes('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`);
+        : useResponsesApi
+          ? (baseUrl.includes('/responses') ? baseUrl : `${baseUrl}/responses`)
+          : (baseUrl.includes('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`);
       const apiHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
       if (isAnthropic) {
         apiHeaders['x-api-key'] = provider.apiKey;
@@ -486,19 +831,49 @@ IMPORTANT — file editing rules:
       let continueLoop = true;
       while (continueLoop && !controller.signal.aborted) {
         const modelId = model?.id || 'claude-opus-4-8';
-        const isOSeries = !isAnthropic && /^(o\d|gpt-5)/.test(modelId);
-        const body: Record<string, unknown> = {
-          model: modelId,
-          messages: buildApiMessages(currentSession.messages, isAnthropic),
-          [isAnthropic || !isOSeries ? 'max_tokens' : 'max_completion_tokens']: 8096,
-        };
+        // gpt-5 and up (gpt-5, gpt-5.1, gpt-6, …), plus o-series (o1/o3/o4/…) — all reason
+        // internally before answering by default, at a fairly heavy effort level unless told
+        // otherwise. That hidden reasoning is invisible to the user but can easily be the
+        // majority of a turn's wall-clock time.
+        const isReasoningModel = !isAnthropic && /^(o\d|gpt-[5-9])/.test(modelId);
+        const reasoningEffort = (() => {
+          // Reuse the user's global reasoning-effort setting if they've set one; otherwise
+          // default to the cheapest/fastest level, since Code Mode benefits from snappy
+          // turnaround more than deep reasoning for routine file edits and shell commands.
+          const globalEffort = store.settings.modelSettings?.reasoningEffort;
+          return globalEffort && globalEffort !== 'off' ? globalEffort : 'minimal';
+        })();
+
+        const body: Record<string, unknown> = { model: modelId, stream: true };
+
         if (isAnthropic) {
+          body.messages = buildApiMessages(currentSession.messages, true);
           body.system = systemPrompt;
           body.tools = CODE_TOOLS;
+          body.max_tokens = 8096;
+        } else if (useResponsesApi) {
+          body.input = [
+            { type: 'message', role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
+            ...buildResponsesInput(currentSession.messages),
+          ];
+          body.store = false;
+          body.tools = CODE_TOOLS.map(t => ({ type: 'function', name: t.name, description: t.description, parameters: t.input_schema }));
+          body.tool_choice = 'auto';
+          body.max_output_tokens = 8096;
+          if (isReasoningModel) body.reasoning = { effort: reasoningEffort };
         } else {
           body.messages = [{ role: 'system', content: systemPrompt }, ...buildApiMessages(currentSession.messages, false)];
           body.tools = CODE_TOOLS.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
+          body[isReasoningModel ? 'max_completion_tokens' : 'max_tokens'] = 8096;
+          if (isReasoningModel) body.reasoning_effort = reasoningEffort;
         }
+
+        // Plain universalFetch, not universalStreamingFetch — the latter forwards Tauri's raw
+        // HTTP-plugin response body as-is, which isn't always a real async-iterable (can be a
+        // plain string), causing a cryptic "undefined is not a function" crash when iterated.
+        // universalFetch always wraps the body in a real `new Response(...)`, whose `.body` is a
+        // spec-compliant ReadableStream regardless of the underlying shape — this is the same
+        // pattern the app's regular (non-Code-Mode) chat streaming already relies on.
         const response = await universalFetch(apiUrl, {
           method: 'POST',
           headers: apiHeaders,
@@ -507,33 +882,100 @@ IMPORTANT — file editing rules:
         });
 
         if (!response.ok) {
-          const errText = await response.text();
+          const errText = await response.text().catch(() => '');
           let clean = `Request failed (${response.status})`;
           try { const p = JSON.parse(errText); clean = p?.error?.message || p?.message || clean; } catch {}
           throw new Error(clean);
         }
 
-        const data = await response.json();
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No response body');
 
         let textContent = '';
-        const toolCallRequests: Message['tool_calls'] = [];
+        let stopReason: string | undefined;
+        const toolCallsMap = new Map<number | string, { id: string; type: 'function'; function: { name: string; arguments: string } }>();
 
-        if (isAnthropic) {
-          for (const b of (data.content || [])) {
-            if (b.type === 'text') textContent += b.text;
-            if (b.type === 'tool_use') {
-              toolCallRequests!.push({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input) } });
+        streamingContentRef.current = '';
+        setLiveText(' '); // any non-empty value — this just tells ChatArea to show the streaming bubble; the actual live text lives in streamingContentRef and is read on a rAF loop
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const dataStr = line.slice(5).trim();
+            if (!dataStr || dataStr === '[DONE]') continue;
+            let parsed: any;
+            try { parsed = JSON.parse(dataStr); } catch { continue; }
+            if (parsed.error) throw new Error(parsed.error?.message || parsed.error);
+
+            if (isAnthropic) {
+            if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+              toolCallsMap.set(parsed.index, { id: parsed.content_block.id, type: 'function', function: { name: parsed.content_block.name, arguments: '' } });
+            } else if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta') {
+              const call = toolCallsMap.get(parsed.index);
+              if (call) call.function.arguments += parsed.delta.partial_json || '';
+            } else if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
+              textContent += parsed.delta.text;
+              streamingContentRef.current = textContent;
+            } else if (parsed.type === 'message_delta' && parsed.delta?.stop_reason) {
+              stopReason = parsed.delta.stop_reason;
             }
-          }
-        } else {
-          const msg = data.choices?.[0]?.message;
-          textContent = msg?.content || '';
-          for (const tc of (msg?.tool_calls || [])) {
-            toolCallRequests!.push({ id: tc.id, type: 'function', function: { name: tc.function.name, arguments: tc.function.arguments } });
+          } else if (useResponsesApi) {
+            if (parsed.type === 'response.failed' && parsed.response?.error) {
+              throw new Error(parsed.response.error.message || JSON.stringify(parsed.response.error));
+            }
+            if (parsed.type === 'response.output_text.delta' && parsed.delta) {
+              textContent += parsed.delta;
+              streamingContentRef.current = textContent;
+            } else if (parsed.type === 'response.output_text.done' && parsed.text) {
+              textContent = parsed.text;
+              streamingContentRef.current = textContent;
+            }
+            if (parsed.type === 'response.output_item.added' && parsed.item?.type === 'function_call') {
+              // Keyed by the item's own id (fc_...); .id below is the call_id used to link the
+              // eventual function_call_output back to this call.
+              toolCallsMap.set(parsed.item.id, { id: parsed.item.call_id, type: 'function', function: { name: parsed.item.name, arguments: '' } });
+            }
+            if (parsed.type === 'response.function_call_arguments.delta' && parsed.delta) {
+              const call = toolCallsMap.get(parsed.item_id);
+              if (call) call.function.arguments += parsed.delta;
+            }
+            if (parsed.type === 'response.completed') {
+              stopReason = toolCallsMap.size > 0 ? 'tool_calls' : 'stop';
+            }
+          } else {
+            const choice = parsed.choices?.[0];
+            if (choice?.delta?.content) {
+              textContent += choice.delta.content;
+              streamingContentRef.current = textContent;
+            }
+            if (choice?.delta?.tool_calls) {
+              for (const tc of choice.delta.tool_calls) {
+                const existing = toolCallsMap.get(tc.index);
+                if (!existing) toolCallsMap.set(tc.index, { id: tc.id || '', type: 'function', function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '' } });
+                else {
+                  if (tc.id) existing.id = tc.id;
+                  if (tc.function?.name) existing.function.name = tc.function.name;
+                  if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+                }
+              }
+            }
+            if (choice?.finish_reason) stopReason = choice.finish_reason;
+            }
           }
         }
 
-        const stopReason = isAnthropic ? data.stop_reason : data.choices?.[0]?.finish_reason;
+        streamingContentRef.current = '';
+        setLiveText('');
+
+        const toolCallRequests: Message['tool_calls'] = Array.from(toolCallsMap.values());
 
         if (!toolCallRequests?.length) {
           // Final response — add assistant message
@@ -551,12 +993,42 @@ IMPORTANT — file editing rules:
           onUpdate(currentSession);
 
           // Execute each tool call, ask approval for shell commands
-          const requestApproval = (cmd: string, dir: string): Promise<boolean> =>
-            new Promise(resolve => setPendingApproval({ command: cmd, workingDir: dir, resolve }));
+          const requestApproval = (cmd: string, dir: string): Promise<boolean> => {
+            if (allowAllSessionRef.current || getAlwaysAllowedCommands().has(cmd)) return Promise.resolve(true);
+            return new Promise(resolve => setPendingApproval({ command: cmd, workingDir: dir, resolve }));
+          };
 
           for (const tc of toolCallRequests!) {
             const toolInput = JSON.parse(tc.function.arguments);
-            const { result, diff } = await executeTool(tc.function.name, toolInput, startingSession.workspace, requestApproval);
+            let result: string;
+            let diff: Message['toolDiff'] | undefined;
+
+            if (tc.function.name === 'create_plan') {
+              const items: PlanItem[] = ((toolInput.items as string[]) || [])
+                .map((text: string) => ({ text: (text || '').trim(), completed: false }))
+                .filter(i => i.text);
+              if (items.length === 0) {
+                result = 'Error: items is required';
+              } else {
+                currentSession = { ...currentSession, plan: items, updatedAt: Date.now() };
+                result = `Plan created with ${items.length} item(s).`;
+              }
+            } else if (tc.function.name === 'check_plan_item') {
+              const idx = toolInput.index as number;
+              const completed = toolInput.completed !== false;
+              const plan = currentSession.plan || [];
+              if (idx < 0 || idx >= plan.length) {
+                result = `Error: no plan item at index ${idx}`;
+              } else {
+                const updated = plan.map((p, i) => i === idx ? { ...p, completed } : p);
+                currentSession = { ...currentSession, plan: updated, updatedAt: Date.now() };
+                result = `Marked "${updated[idx].text}" as ${completed ? 'done' : 'not done'}.`;
+              }
+            } else {
+              const toolRes = await executeTool(tc.function.name, toolInput, startingSession.workspace, requestApproval);
+              result = toolRes.result;
+              diff = toolRes.diff;
+            }
             setPendingApproval(null);
 
             const toolMsg: Message = {
@@ -580,6 +1052,8 @@ IMPORTANT — file editing rules:
       }
     } finally {
       setIsGenerating(false);
+      streamingContentRef.current = '';
+      setLiveText('');
       abortRef.current = null;
       checkGitStatus(startingSession.workspace);
     }
@@ -680,7 +1154,7 @@ IMPORTANT — file editing rules:
       <ChatArea
         conversation={fakeConversation}
         isGenerating={isGenerating}
-        streamingContent=""
+        streamingContent={liveText}
         streamingContentRef={streamingContentRef}
         allModels={store.allProviderModels}
         onSend={sendMessage}
@@ -700,7 +1174,97 @@ IMPORTANT — file editing rules:
         gitStatus={gitStatus}
         onOpenCommit={() => setShowCommitBox(true)}
         onOpenRepo={gitStatus?.remoteUrl ? handleOpenRepo : undefined}
+        plan={session.plan}
       />
+
+      {/* Workflows menu */}
+      {workflows.length > 0 && (
+        <div className="absolute top-14 right-3 z-20">
+          <button
+            className="btn-secondary text-xs py-1.5 px-3 gap-1.5 shadow-lg"
+            onClick={() => setShowWorkflowsMenu(v => !v)}
+          >
+            <ListChecks size={13} /> Workflows ({workflows.length})
+          </button>
+          {showWorkflowsMenu && (
+            <div className="mt-2 w-72 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm shadow-xl overflow-hidden">
+              {workflows.map(wf => {
+                const isExpanded = expandedWorkflowIds.includes(wf.id);
+                return (
+                  <div key={wf.id} className="flex flex-col border-b border-[rgb(var(--border))] last:border-b-0">
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <button
+                        className="flex-1 text-left truncate"
+                        onClick={() => toggleExpand(wf.id)}
+                        aria-expanded={isExpanded}
+                        title={wf.description || wf.commands.join(' && ')}
+                      >
+                        <p className="text-[13px] font-medium truncate">{wf.name}</p>
+                        <p className="text-[11px] text-[rgb(var(--muted))] truncate font-mono">
+                          {wf.description || wf.commands.join(' && ')}
+                        </p>
+                      </button>
+                      {runningWorkflowId === wf.id ? (
+                        <Loader2 size={13} className="animate-spin text-[rgb(var(--muted))] shrink-0" />
+                      ) : (
+                        <>
+                          <button className="btn-icon w-6 h-6 shrink-0" title="Run" onClick={() => handleRunWorkflow(wf)}>
+                            <Play size={12} />
+                          </button>
+                          <button className="btn-icon w-6 h-6 shrink-0" title="Delete" onClick={() => handleDeleteWorkflow(wf.id)}>
+                            <Trash2 size={12} />
+                          </button>
+                          <button className="btn-icon w-6 h-6 shrink-0" title="Expand" onClick={() => toggleExpand(wf.id)}>
+                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {isExpanded && (
+                      <div className="px-3 pb-2 pt-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Copy size={12} />
+                          <span className="text-xs text-[rgb(var(--muted))]">Commands</span>
+                          <button className="btn-icon w-6 h-6 ml-auto" onClick={() => { navigator.clipboard?.writeText(wf.commands.join(' && ')).catch(()=>{}); }} title="Copy commands">
+                            <Copy size={12} />
+                          </button>
+                        </div>
+                        <pre className="text-xs font-mono bg-black/5 rounded p-2">{wf.commands.map((c,i)=>`${i+1}. ${c}`).join('\n')}</pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Workflow run results */}
+      <Modal
+        open={!!workflowResult}
+        onClose={() => setWorkflowResult(null)}
+        panelClassName="glass-panel-strong rounded-3xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+      >
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-[rgb(var(--border))] shrink-0">
+          <ListChecks size={14} className="text-[rgb(var(--muted))] shrink-0" />
+          <h3 className="text-sm font-medium truncate flex-1">{workflowResult?.name}</h3>
+          <button className="btn-icon w-7 h-7" onClick={() => setWorkflowResult(null)}><X size={15} /></button>
+        </div>
+        <div className="overflow-auto p-4 flex-1 min-h-0 space-y-3">
+          {workflowResult?.steps.map((s, i) => (
+            <div key={i}>
+              <div className="flex items-center gap-2 mb-1">
+                {s.code === 0 ? <Check size={13} className="text-green-500 shrink-0" /> : <X size={13} className="text-red-500 shrink-0" />}
+                <code className="text-[12px] font-mono truncate">{s.command}</code>
+              </div>
+              <pre className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all bg-black/5 dark:bg-white/5 rounded-lg p-2">
+                {s.output || '(no output)'}
+              </pre>
+            </div>
+          ))}
+        </div>
+      </Modal>
 
       {/* Commit box */}
       {showCommitBox && !pendingApproval && (
@@ -774,6 +1338,64 @@ IMPORTANT — file editing rules:
         </div>
       )}
 
+      {/* No git repo detected — offer to create one on GitHub */}
+      {gitStatus === null && isTauri && !pendingApproval && !showCommitBox && (
+        <div className="absolute inset-x-0 bottom-0 px-4 pb-4 z-20">
+          {showCreateRepoBox ? (
+            <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm p-4 space-y-3 shadow-xl animate-slide-in-up">
+              <div className="flex items-center gap-2">
+                <Github size={15} className="text-[rgb(var(--accent))] shrink-0" />
+                <p className="text-[13px] font-medium text-[rgb(var(--text))]">Create a GitHub repository</p>
+              </div>
+              <input
+                autoFocus
+                className="input text-sm w-full font-mono"
+                placeholder="repo-name"
+                value={newRepoName}
+                onChange={e => setNewRepoName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !creatingRepo) handleCreateGitHubRepo();
+                  if (e.key === 'Escape') setShowCreateRepoBox(false);
+                }}
+              />
+              <div className="flex items-center gap-3 text-[12px]">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={newRepoPrivate} onChange={() => setNewRepoPrivate(true)} />
+                  Private
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={!newRepoPrivate} onChange={() => setNewRepoPrivate(false)} />
+                  Public
+                </label>
+              </div>
+              {createRepoError && (
+                <p className="text-xs text-red-500 dark:text-red-400">{createRepoError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  className="btn-primary flex-1 justify-center gap-1.5 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!newRepoName.trim() || creatingRepo}
+                  onClick={handleCreateGitHubRepo}
+                >
+                  {creatingRepo ? 'Creating & pushing…' : (<><Check size={13} /> Create & Push</>)}
+                </button>
+                <button className="btn-secondary flex-1 justify-center gap-1.5 py-1.5" onClick={() => setShowCreateRepoBox(false)}>
+                  <X size={13} /> Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm px-4 py-3 flex items-center gap-3 shadow-xl animate-slide-in-up">
+              <Github size={15} className="text-[rgb(var(--muted))] shrink-0" />
+              <p className="text-[13px] text-[rgb(var(--muted))] flex-1">No git repository detected in this workspace.</p>
+              <button className="btn-primary text-xs py-1.5 px-3 gap-1.5" onClick={openCreateRepoBox}>
+                <Github size={12} /> Create GitHub Repo
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Terminal approval overlay */}
       {pendingApproval && (
         <div className="absolute inset-x-0 bottom-0 px-4 pb-4 z-20">
@@ -800,6 +1422,18 @@ IMPORTANT — file editing rules:
                 <X size={13} /> Deny
               </button>
             </div>
+            <div className="flex gap-2">
+              <button className="btn-secondary flex-1 justify-center gap-1.5 py-1 text-[11px]"
+                title="Always run this exact command without asking again, even in future sessions"
+                onClick={() => { addAlwaysAllowedCommand(pendingApproval.command); pendingApproval.resolve(true); setPendingApproval(null); }}>
+                Always Allow "{pendingApproval.command.length > 20 ? pendingApproval.command.slice(0, 20) + '…' : pendingApproval.command}"
+              </button>
+              <button className="btn-secondary flex-1 justify-center gap-1.5 py-1 text-[11px]"
+                title="Allow every command without asking, for the rest of this session"
+                onClick={() => { allowAllSessionRef.current = true; pendingApproval.resolve(true); setPendingApproval(null); }}>
+                Allow All This Session
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -815,22 +1449,17 @@ IMPORTANT — file editing rules:
           <h3 className="text-sm font-mono font-medium truncate flex-1">{diffView?.path}</h3>
           <button className="btn-icon w-7 h-7" onClick={() => setDiffView(null)}><X size={15} /></button>
         </div>
-        <div className="overflow-auto p-4 flex-1 min-h-0">
+        <div className="overflow-auto flex-1 min-h-0">
           {diffView?.loading ? (
             <div className="flex items-center gap-2 text-[rgb(var(--muted))] text-sm py-8 justify-center">
               <Loader2 size={15} className="animate-spin" /> Loading diff…
             </div>
+          ) : diffView?.error ? (
+            <p className="text-sm text-[rgb(var(--muted))] p-4">{diffView.error}</p>
+          ) : diffView?.lines.length ? (
+            <DiffLines lines={diffView.lines} path={diffView.path} isDark={document.documentElement.classList.contains('dark')} />
           ) : (
-            <pre className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap break-all">
-              {(diffView?.content || '').split('\n').map((line, i) => {
-                let cls = 'text-[rgb(var(--text))]';
-                if (line.startsWith('+++') || line.startsWith('---')) cls = 'text-[rgb(var(--muted))]';
-                else if (line.startsWith('+')) cls = 'text-green-600 dark:text-green-400 bg-green-500/10';
-                else if (line.startsWith('-')) cls = 'text-red-600 dark:text-red-400 bg-red-500/10';
-                else if (line.startsWith('@@')) cls = 'text-[rgb(var(--accent))]';
-                return <div key={i} className={cls}>{line || ' '}</div>;
-              })}
-            </pre>
+            <p className="text-sm text-[rgb(var(--muted))] p-4">No changes.</p>
           )}
         </div>
       </Modal>

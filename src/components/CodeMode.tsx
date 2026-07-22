@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { AlertTriangle, Check, X, Code2, FolderOpen, GitCommit, FileText, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, X, Code2, FolderOpen, GitCommit, FileText, Loader2, Sparkles } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import type { CodeSession } from '../utils/codeSessionDB';
 import type { Message } from '../types';
 import { useAppStore } from '../hooks/useAppStore';
 import { universalFetch } from '../utils/tauriFetch';
 import { isTauri, openUrl } from '../utils/tauri';
-import { resolveFormat } from './ProvidersPanel';
+import { resolveFormat, getByPath } from './ProvidersPanel';
 import ChatArea from './ChatArea';
 import Modal from './Modal';
 
@@ -99,8 +99,10 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [showCommitBox, setShowCommitBox] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
+  const [commitDescription, setCommitDescription] = useState('');
   const [committing, setCommitting] = useState(false);
   const [diffView, setDiffView] = useState<{ path: string; content: string; loading: boolean } | null>(null);
+  const [generatingMsg, setGeneratingMsg] = useState(false);
   const streamingContentRef = useRef('');
   const abortRef = useRef<AbortController | null>(null);
 
@@ -189,9 +191,13 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
     setCommitting(true);
     try {
       await executeShellCommand('git add -A', session.workspace);
-      // Single-quote the message so the shell treats it as a literal string — no $()/`` expansion.
-      const safeMsg = commitMessage.trim().replace(/'/g, `'\\''`);
-      const commitRes = await executeShellCommand(`git commit -m '${safeMsg}'`, session.workspace);
+      // Single-quote each message part so the shell treats it as a literal string — no $()/`` expansion.
+      // Separate -m flags for summary and description matches `git commit`'s own convention
+      // for a short subject line followed by a body paragraph.
+      const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+      const msgArgs = [`-m ${quote(commitMessage.trim())}`];
+      if (commitDescription.trim()) msgArgs.push(`-m ${quote(commitDescription.trim())}`);
+      const commitRes = await executeShellCommand(`git commit ${msgArgs.join(' ')}`, session.workspace);
       if (commitRes.code !== 0) {
         alert(`Commit failed: ${commitRes.stderr || commitRes.stdout}`);
         return;
@@ -208,6 +214,7 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
 
       setShowCommitBox(false);
       setCommitMessage('');
+      setCommitDescription('');
       await checkGitStatus(session.workspace);
     } catch (e: any) {
       alert(`Commit failed: ${e?.message || e}`);
@@ -218,6 +225,64 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
 
   const handleOpenRepo = () => {
     if (gitStatus?.remoteUrl) openUrl(gitStatus.remoteUrl);
+  };
+
+  const generateCommitMessage = async () => {
+    if (!session || generatingMsg) return;
+    const { provider, model } = store.getProviderAndModel(session.modelId || store.settings.defaultProviderModelId);
+    if (!provider) { alert('No provider configured. Please add a provider in Settings.'); return; }
+
+    setGeneratingMsg(true);
+    try {
+      // Stage everything first so the diff reflects exactly what "Commit & Push" will commit.
+      await executeShellCommand('git add -A', session.workspace);
+      const diffRes = await executeShellCommand('git diff --cached', session.workspace);
+      let diffText = diffRes.stdout.trim();
+      if (!diffText) { alert('No changes to describe.'); return; }
+      const MAX_DIFF_CHARS = 12000;
+      if (diffText.length > MAX_DIFF_CHARS) diffText = diffText.slice(0, MAX_DIFF_CHARS) + '\n… (diff truncated)';
+
+      const fmt = resolveFormat(store.settings.apiFormats || [], provider.apiFormatId);
+      const base = provider.baseUrl.replace(/\/$/, '');
+      const chatPath = fmt.chatPath || '/chat/completions';
+      const url = provider.directUrl ? provider.baseUrl
+        : provider.baseUrl.includes(chatPath) ? provider.baseUrl
+        : `${base}${chatPath}`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (provider.apiKey) headers[fmt.authHeader] = `${fmt.authPrefix}${provider.apiKey}`;
+      try { Object.assign(headers, JSON.parse(fmt.extraHeaders)); } catch { /* ignore */ }
+
+      const messages = [{
+        role: 'user',
+        content: `Analyze this git diff and write a commit message for it. Reply in EXACTLY this format and nothing else:
+SUMMARY: <one line, imperative mood (e.g. "Fix", "Add", "Remove"), under 72 characters, no trailing period, no quotes>
+BODY: <a short 1-4 sentence description of what changed and why, plain text, no markdown. Leave empty after "BODY:" if the summary alone is clear enough.>
+
+Diff:
+${diffText}`,
+      }];
+
+      const response = await universalFetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model: model?.id, messages, stream: false }),
+      });
+
+      if (!response.ok) { alert('Failed to generate commit message.'); return; }
+      const data = await response.json();
+      const text = fmt.responseTextPath ? getByPath(data, fmt.responseTextPath) : data.choices?.[0]?.message?.content;
+      const raw = (text || '').trim();
+      const summaryMatch = raw.match(/SUMMARY:\s*(.+)/i);
+      const bodyMatch = raw.match(/BODY:\s*([\s\S]*)/i);
+      const summary = (summaryMatch?.[1] || raw.split('\n')[0]).trim().replace(/^["'`]+|["'`]+$/g, '');
+      const body = (bodyMatch?.[1] || '').trim();
+      if (summary) setCommitMessage(summary);
+      setCommitDescription(body);
+    } catch (e: any) {
+      alert(`Failed to generate commit message: ${e?.message || e}`);
+    } finally {
+      setGeneratingMsg(false);
+    }
   };
 
   const openFileDiff = async (file: GitFileChange) => {
@@ -664,16 +729,34 @@ IMPORTANT — file editing rules:
                 ))}
               </div>
             )}
-            <input
-              autoFocus
-              className="input text-sm w-full"
-              placeholder="Describe your changes..."
-              value={commitMessage}
-              onChange={e => setCommitMessage(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !committing) handleCommit();
-                if (e.key === 'Escape') setShowCommitBox(false);
-              }}
+            <div className="relative">
+              <input
+                autoFocus
+                className="input text-sm w-full pr-9"
+                placeholder="Describe your changes..."
+                value={commitMessage}
+                onChange={e => setCommitMessage(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !committing) handleCommit();
+                  if (e.key === 'Escape') setShowCommitBox(false);
+                }}
+              />
+              <button
+                onClick={generateCommitMessage}
+                disabled={generatingMsg}
+                title="Auto-generate commit message and description from the diff"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 btn-icon w-6 h-6 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {generatingMsg ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              </button>
+            </div>
+            <textarea
+              className="input text-sm w-full resize-none"
+              rows={3}
+              placeholder="Description (optional)..."
+              value={commitDescription}
+              onChange={e => setCommitDescription(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') setShowCommitBox(false); }}
             />
             <div className="flex gap-2">
               <button

@@ -267,7 +267,8 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
     if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
     const data = await res.json();
     const b64 = data.data?.[0]?.b64_json;
-    if (!b64) throw new Error('No image data in response');
+    const url = data.data?.[0]?.url;
+    if (!b64 && !url) throw new Error('No image data in response');
     const userPrompt = originalPromptRef.current ?? undefined;
     originalPromptRef.current = null;
     return {
@@ -275,7 +276,7 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
       prompt,
       userPrompt: userPrompt !== prompt ? userPrompt : undefined,
       revisedPrompt: data.data?.[0]?.revised_prompt,
-      b64: `data:image/png;base64,${b64}`,
+      b64: b64 ? `data:image/png;base64,${b64}` : url,
       createdAt: Date.now(),
       model: imageGenModelId,
     };
@@ -317,14 +318,15 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
       if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
       const data = await res.json();
       const b64 = data.data?.[0]?.b64_json;
-      if (!b64) throw new Error('No image data in response');
+      const url = data.data?.[0]?.url;
+      if (!b64 && !url) throw new Error('No image data in response');
       const userPrompt = originalPromptRef.current ?? undefined;
       originalPromptRef.current = null;
       const img: GeneratedImage = {
         id: crypto.randomUUID(),
         prompt: prompt.trim(),
         userPrompt: userPrompt !== prompt.trim() ? userPrompt : undefined,
-        b64: `data:image/png;base64,${b64}`,
+        b64: b64 ? `data:image/png;base64,${b64}` : url,
         createdAt: Date.now(),
         model: imageGenModelId,
         rootId: selected.rootId || selected.id,
@@ -521,6 +523,48 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
             <AspectRatioPicker value={aspectRatio} onChange={setAspectRatio} baseSize={baseSize} onBaseSizeChange={setBaseSize} />
           </div>
 
+          {(generating || images.length > 0) && (
+            <div className="w-full mb-5">
+              {generating ? (
+                <div className="w-full aspect-video max-h-56 rounded-2xl overflow-hidden relative mx-auto">
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 25%, #ec4899 50%, #f59e0b 75%, #10b981 100%)',
+                      backgroundSize: '400% 400%',
+                      animation: 'gradientShift 3s ease infinite',
+                    }}
+                  />
+                  <div className="absolute inset-0 backdrop-blur-sm bg-black/20" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {[0, 1, 2].map(i => (
+                        <div
+                          key={i}
+                          className="w-2 h-2 rounded-full bg-white"
+                          style={{ animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-white text-[12px] font-medium">Generating…</p>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onClick={() => setSelected(images[0])}
+                  className="group w-full max-h-56 rounded-2xl overflow-hidden relative mx-auto cursor-pointer bg-black/5 dark:bg-white/5"
+                >
+                  <img src={images[0].b64} alt={images[0].prompt} className="w-full max-h-56 object-contain mx-auto" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-end">
+                    <div className="opacity-0 group-hover:opacity-100 transition-all w-full p-2.5">
+                      <p className="text-white text-[11px] line-clamp-2">{images[0].prompt}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {error && (
             <div className="mb-2 w-full text-red-500 text-[12px] bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-xl flex items-start gap-2">
               <span className="flex-1">{error}</span>
@@ -531,7 +575,7 @@ export default function ImageMode({ settings, allModels, onTogglePanel, onOpenPr
             <ChatInput {...sharedInputProps} onSend={handleGenerate} />
           </div>
           {(images.length > 0 || generating) && (
-            <p className="text-[11px] text-[rgb(var(--muted))] mt-2 animate-bounce">↓ scroll to see images</p>
+            <p className="text-[11px] text-[rgb(var(--muted))] mt-2 animate-bounce">↓ scroll to see all images</p>
           )}
         </div>
 

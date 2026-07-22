@@ -1,13 +1,14 @@
-import { useState, useRef, useCallback } from 'react';
-import { AlertTriangle, Check, X, Code2, FolderOpen } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { AlertTriangle, Check, X, Code2, FolderOpen, GitCommit, FileText, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import type { CodeSession } from '../utils/codeSessionDB';
 import type { Message } from '../types';
 import { useAppStore } from '../hooks/useAppStore';
 import { universalFetch } from '../utils/tauriFetch';
-import { isTauri } from '../utils/tauri';
+import { isTauri, openUrl } from '../utils/tauri';
 import { resolveFormat } from './ProvidersPanel';
 import ChatArea from './ChatArea';
+import Modal from './Modal';
 
 // Tauri plugins — lazy-loaded, desktop only
 let tauriFs: any = null;
@@ -22,11 +23,17 @@ async function getDialog() {
   return tauriDialog;
 }
 
+// macOS GUI apps (launched from Finder/Dock, not a terminal) inherit a minimal PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin) that omits Homebrew and other common install locations.
+// Without this, `git`, `node`, `npm`, etc. installed via Homebrew silently fail as
+// "command not found" and callers just see an empty/failed result with no clear cause.
+const PATH_FIX = 'export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$HOME/.local/bin:$HOME/bin:$PATH";';
+
 async function executeShellCommand(command: string, cwd: string) {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<{ stdout: string; stderr: string; code: number }>('plugin:shell|execute', {
     program: 'sh',
-    args: ['-c', `cd "${cwd}" && ${command}`],
+    args: ['-c', `${PATH_FIX} cd "${cwd}" && ${command}`],
     options: {},
   });
 }
@@ -48,6 +55,35 @@ interface PendingApproval {
   resolve: (approved: boolean) => void;
 }
 
+interface GitFileChange {
+  path: string;
+  status: string;      // porcelain status code, e.g. 'M', 'A', 'D', '??', 'R'
+  additions: number;
+  deletions: number;
+  untracked: boolean;
+}
+
+interface GitStatus {
+  branch: string;
+  filesChanged: number;
+  additions: number;
+  deletions: number;
+  files: GitFileChange[];
+  remoteUrl: string | null;
+}
+
+// Normalize a git remote URL (SSH or HTTPS) into a browsable https:// web URL.
+function remoteToWebUrl(remote: string): string | null {
+  const trimmed = remote.trim();
+  if (!trimmed) return null;
+  const sshShorthand = trimmed.match(/^git@([^:]+):(.+?)(\.git)?$/);
+  if (sshShorthand) return `https://${sshShorthand[1]}/${sshShorthand[2].replace(/\.git$/, '')}`;
+  const sshUrl = trimmed.match(/^ssh:\/\/git@([^/]+)\/(.+?)(\.git)?$/);
+  if (sshUrl) return `https://${sshUrl[1]}/${sshUrl[2].replace(/\.git$/, '')}`;
+  if (/^https?:\/\//.test(trimmed)) return trimmed.replace(/\.git$/, '');
+  return null;
+}
+
 interface CodeModeProps {
   session: CodeSession | null;
   onUpdate: (session: CodeSession) => void;
@@ -60,8 +96,145 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const store = useAppStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  const [showCommitBox, setShowCommitBox] = useState(false);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [committing, setCommitting] = useState(false);
+  const [diffView, setDiffView] = useState<{ path: string; content: string; loading: boolean } | null>(null);
   const streamingContentRef = useRef('');
   const abortRef = useRef<AbortController | null>(null);
+
+  const checkGitStatus = useCallback(async (workspace: string) => {
+    if (!isTauri) { setGitStatus(null); return; }
+    try {
+      const check = await executeShellCommand('git rev-parse --is-inside-work-tree', workspace);
+      if (check.code !== 0 || check.stdout.trim() !== 'true') {
+        if (check.stderr && !/not a git repository/i.test(check.stderr)) {
+          console.warn('[git status] git rev-parse failed:', check.stderr || check.stdout);
+        }
+        setGitStatus(null);
+        return;
+      }
+
+      const branchRes = await executeShellCommand('git rev-parse --abbrev-ref HEAD', workspace);
+      const branch = branchRes.stdout.trim() || 'HEAD';
+
+      const remoteRes = await executeShellCommand('git remote get-url origin', workspace);
+      const remoteUrl = remoteRes.code === 0 ? remoteToWebUrl(remoteRes.stdout) : null;
+
+      const statusRes = await executeShellCommand('git status --porcelain', workspace);
+      const statusLines = statusRes.stdout.split('\n').filter(Boolean);
+
+      const files: GitFileChange[] = [];
+      if (statusLines.length > 0) {
+        const parseNumstat = (output: string): Map<string, { add: number; del: number }> => {
+          const map = new Map<string, { add: number; del: number }>();
+          for (const line of output.split('\n')) {
+            if (!line.trim()) continue;
+            const [a, d, ...rest] = line.split('\t');
+            const path = rest.join('\t');
+            if (!path) continue;
+            map.set(path, { add: a === '-' ? 0 : parseInt(a, 10) || 0, del: d === '-' ? 0 : parseInt(d, 10) || 0 });
+          }
+          return map;
+        };
+
+        const [unstagedRes, stagedRes] = await Promise.all([
+          executeShellCommand('git diff --numstat', workspace),
+          executeShellCommand('git diff --cached --numstat', workspace),
+        ]);
+        const unstagedMap = parseNumstat(unstagedRes.stdout);
+        const stagedMap = parseNumstat(stagedRes.stdout);
+
+        for (const line of statusLines.slice(0, 100)) {
+          const statusCode = line.slice(0, 2).trim();
+          const rawPath = line.slice(3).trim();
+          const path = rawPath.includes(' -> ') ? rawPath.split(' -> ')[1] : rawPath;
+          const untracked = statusCode === '??';
+
+          if (untracked) {
+            const wc = await executeShellCommand(`wc -l < "${path}" 2>/dev/null || echo 0`, workspace);
+            files.push({ path, status: statusCode, additions: parseInt(wc.stdout.trim(), 10) || 0, deletions: 0, untracked: true });
+          } else {
+            const u = unstagedMap.get(path);
+            const s = stagedMap.get(path);
+            files.push({
+              path,
+              status: statusCode,
+              additions: (u?.add || 0) + (s?.add || 0),
+              deletions: (u?.del || 0) + (s?.del || 0),
+              untracked: false,
+            });
+          }
+        }
+      }
+
+      const additions = files.reduce((sum, f) => sum + f.additions, 0);
+      const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
+
+      setGitStatus({ branch, filesChanged: files.length, additions, deletions, files, remoteUrl });
+    } catch (e) {
+      console.warn('[git status] check failed:', e);
+      setGitStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session?.workspace) checkGitStatus(session.workspace);
+    else setGitStatus(null);
+  }, [session?.workspace, checkGitStatus]);
+
+  const handleCommit = async () => {
+    if (!session || !commitMessage.trim() || committing) return;
+    setCommitting(true);
+    try {
+      await executeShellCommand('git add -A', session.workspace);
+      // Single-quote the message so the shell treats it as a literal string — no $()/`` expansion.
+      const safeMsg = commitMessage.trim().replace(/'/g, `'\\''`);
+      const commitRes = await executeShellCommand(`git commit -m '${safeMsg}'`, session.workspace);
+      if (commitRes.code !== 0) {
+        alert(`Commit failed: ${commitRes.stderr || commitRes.stdout}`);
+        return;
+      }
+
+      // Push — fall back to setting the upstream if this branch has never been pushed before.
+      let pushRes = await executeShellCommand('git push', session.workspace);
+      if (pushRes.code !== 0 && /set-upstream|no upstream branch|has no upstream/i.test(pushRes.stderr)) {
+        pushRes = await executeShellCommand('git push -u origin HEAD', session.workspace);
+      }
+      if (pushRes.code !== 0) {
+        alert(`Committed, but push failed: ${pushRes.stderr || pushRes.stdout}`);
+      }
+
+      setShowCommitBox(false);
+      setCommitMessage('');
+      await checkGitStatus(session.workspace);
+    } catch (e: any) {
+      alert(`Commit failed: ${e?.message || e}`);
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const handleOpenRepo = () => {
+    if (gitStatus?.remoteUrl) openUrl(gitStatus.remoteUrl);
+  };
+
+  const openFileDiff = async (file: GitFileChange) => {
+    if (!session) return;
+    setDiffView({ path: file.path, content: '', loading: true });
+    try {
+      // `git diff` doesn't cover untracked files — diff against /dev/null to show the
+      // whole file as additions instead.
+      const cmd = file.untracked
+        ? `git diff --no-index -- /dev/null "${file.path}" 2>/dev/null; true`
+        : `git diff HEAD -- "${file.path}"`;
+      const res = await executeShellCommand(cmd, session.workspace);
+      setDiffView({ path: file.path, content: res.stdout || '(no textual diff — binary file?)', loading: false });
+    } catch (e: any) {
+      setDiffView({ path: file.path, content: `Error loading diff: ${e?.message || e}`, loading: false });
+    }
+  };
 
   const resolvePath = (workspace: string, relPath: string) => {
     const clean = relPath.replace(/^\/+/, '');
@@ -343,8 +516,9 @@ IMPORTANT — file editing rules:
     } finally {
       setIsGenerating(false);
       abortRef.current = null;
+      checkGitStatus(startingSession.workspace);
     }
-  }, [isGenerating, store, onUpdate]);
+  }, [isGenerating, store, onUpdate, checkGitStatus]);
 
   const sendMessage = useCallback((content: string, images: string[]) => {
     if (!session || !content.trim() || isGenerating) return;
@@ -458,7 +632,64 @@ IMPORTANT — file editing rules:
         isCode
         codeWorkspace={session.workspace}
         onChangeWorkspace={pickWorkspace}
+        gitStatus={gitStatus}
+        onOpenCommit={() => setShowCommitBox(true)}
+        onOpenRepo={gitStatus?.remoteUrl ? handleOpenRepo : undefined}
       />
+
+      {/* Commit box */}
+      {showCommitBox && !pendingApproval && (
+        <div className="absolute inset-x-0 bottom-0 px-4 pb-4 z-20">
+          <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm p-4 space-y-3 shadow-xl animate-slide-in-up">
+            <div className="flex items-center gap-2">
+              <GitCommit size={15} className="text-[rgb(var(--accent))] shrink-0" />
+              <p className="text-[13px] font-medium text-[rgb(var(--text))]">
+                Commit {gitStatus?.filesChanged ?? 0} file{gitStatus?.filesChanged === 1 ? '' : 's'}
+              </p>
+            </div>
+            {!!gitStatus?.files.length && (
+              <div className="max-h-36 overflow-y-auto space-y-0.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] p-1.5">
+                {gitStatus.files.map(f => (
+                  <button
+                    key={f.path}
+                    onClick={() => openFileDiff(f)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors"
+                    title="View diff"
+                  >
+                    <FileText size={12} className="text-[rgb(var(--muted))] shrink-0" />
+                    <span className="text-[12px] font-mono truncate flex-1">{f.path}</span>
+                    {f.additions > 0 && <span className="text-[11px] font-mono text-green-500 shrink-0">+{f.additions}</span>}
+                    {f.deletions > 0 && <span className="text-[11px] font-mono text-red-500 shrink-0">-{f.deletions}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            <input
+              autoFocus
+              className="input text-sm w-full"
+              placeholder="Describe your changes..."
+              value={commitMessage}
+              onChange={e => setCommitMessage(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !committing) handleCommit();
+                if (e.key === 'Escape') setShowCommitBox(false);
+              }}
+            />
+            <div className="flex gap-2">
+              <button
+                className="btn-primary flex-1 justify-center gap-1.5 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!commitMessage.trim() || committing}
+                onClick={handleCommit}
+              >
+                {committing ? 'Committing & pushing…' : (<><Check size={13} /> Commit & Push</>)}
+              </button>
+              <button className="btn-secondary flex-1 justify-center gap-1.5 py-1.5" onClick={() => setShowCommitBox(false)}>
+                <X size={13} /> Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Terminal approval overlay */}
       {pendingApproval && (
@@ -489,6 +720,37 @@ IMPORTANT — file editing rules:
           </div>
         </div>
       )}
+
+      {/* File diff viewer */}
+      <Modal
+        open={!!diffView}
+        onClose={() => setDiffView(null)}
+        panelClassName="glass-panel-strong rounded-3xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+      >
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-[rgb(var(--border))] shrink-0">
+          <FileText size={14} className="text-[rgb(var(--muted))] shrink-0" />
+          <h3 className="text-sm font-mono font-medium truncate flex-1">{diffView?.path}</h3>
+          <button className="btn-icon w-7 h-7" onClick={() => setDiffView(null)}><X size={15} /></button>
+        </div>
+        <div className="overflow-auto p-4 flex-1 min-h-0">
+          {diffView?.loading ? (
+            <div className="flex items-center gap-2 text-[rgb(var(--muted))] text-sm py-8 justify-center">
+              <Loader2 size={15} className="animate-spin" /> Loading diff…
+            </div>
+          ) : (
+            <pre className="font-mono text-[12px] leading-relaxed whitespace-pre-wrap break-all">
+              {(diffView?.content || '').split('\n').map((line, i) => {
+                let cls = 'text-[rgb(var(--text))]';
+                if (line.startsWith('+++') || line.startsWith('---')) cls = 'text-[rgb(var(--muted))]';
+                else if (line.startsWith('+')) cls = 'text-green-600 dark:text-green-400 bg-green-500/10';
+                else if (line.startsWith('-')) cls = 'text-red-600 dark:text-red-400 bg-red-500/10';
+                else if (line.startsWith('@@')) cls = 'text-[rgb(var(--accent))]';
+                return <div key={i} className={cls}>{line || ' '}</div>;
+              })}
+            </pre>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -28,9 +28,14 @@
     "fs:allow-mkdir",
     "fs:allow-remove",
     "fs:allow-rename",
-    "shell:allow-execute",
     "shell:allow-spawn",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "sh", "cmd": "sh", "args": true }
+      ]
+    },
     {
       "identifier": "fs:scope",
       "allow": [{ "path": "/**" }, { "path": "*" }]

@@ -9,6 +9,7 @@ import type { CodeSession } from '../utils/codeSessionDB';
 import { imageDB, type GeneratedImage } from '../utils/imageDB';
 import { tauriUtils } from '../utils/tauri';
 import { extensionUIRegistry } from '../extensions/extensionUIRegistry';
+import Modal from './Modal';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -121,7 +122,8 @@ export default function Sidebar({
   const [todayOpen, setTodayOpen] = useState(true);
   const [olderOpen, setOlderOpen] = useState(true);
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string } | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; url: string; name?: string; body?: string } | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [sidebarImages, setSidebarImages] = useState<GeneratedImage[]>([]);
 
   const currentSha = import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA as string | undefined;
@@ -184,7 +186,9 @@ export default function Sidebar({
                 setUpdateAvailable(true);
                 setUpdateInfo({
                   version: latestVersion,
-                  url: latestRelease.html_url
+                  url: latestRelease.html_url,
+                  name: latestRelease.name || undefined,
+                  body: latestRelease.body || undefined,
                 });
               }
             }
@@ -396,7 +400,7 @@ export default function Sidebar({
               className="rail-btn text-green-500 hover:text-green-400"
               title={tauriUtils.isTauri && updateInfo ? `Update available (${updateInfo.version})` : 'Update available'}
               onClick={() => {
-                if (updateInfo?.url && tauriUtils.isTauri) tauriUtils.openUrl(updateInfo.url);
+                if (updateInfo && tauriUtils.isTauri) setShowUpdateModal(true);
                 else window.location.reload();
               }}
             >
@@ -588,6 +592,40 @@ export default function Sidebar({
       )}
         </aside>
       </div>
+
+      {/* Update available — changelog + manual-download link, no auto-update */}
+      <Modal
+        open={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        panelClassName="glass-panel-strong rounded-3xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col"
+      >
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-[rgb(var(--border))] shrink-0">
+          <Download size={16} className="text-green-500 shrink-0" />
+          <h3 className="text-sm font-semibold truncate flex-1">
+            Update available{updateInfo?.version ? ` — ${updateInfo.version}` : ''}
+          </h3>
+          <button className="btn-icon w-7 h-7" onClick={() => setShowUpdateModal(false)}><X size={15} /></button>
+        </div>
+        <div className="overflow-y-auto p-5 flex-1 min-h-0 space-y-3">
+          {updateInfo?.name && (
+            <p className="text-sm font-medium text-[rgb(var(--text))]">{updateInfo.name}</p>
+          )}
+          <pre className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words font-sans text-[rgb(var(--text))] bg-black/[0.03] dark:bg-white/[0.04] rounded-xl p-3">
+            {updateInfo?.body?.trim() || 'No changelog provided for this release.'}
+          </pre>
+        </div>
+        <div className="flex gap-2 px-5 py-4 border-t border-[rgb(var(--border))] shrink-0">
+          <button
+            className="btn-primary flex-1 justify-center gap-1.5 py-1.5"
+            onClick={() => { if (updateInfo?.url) tauriUtils.openUrl(updateInfo.url); setShowUpdateModal(false); }}
+          >
+            <Download size={13} /> Update
+          </button>
+          <button className="btn-secondary flex-1 justify-center gap-1.5 py-1.5" onClick={() => setShowUpdateModal(false)}>
+            Later
+          </button>
+        </div>
+      </Modal>
     </>
   );
 }

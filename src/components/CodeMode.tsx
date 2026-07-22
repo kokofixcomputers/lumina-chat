@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { AlertTriangle, Check, X, Code2, FolderOpen, FolderPlus, GitCommit, FileText, Loader2, Sparkles, Github, ListChecks, Play, Trash2, Copy, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, Check, X, Code2, FolderOpen, FolderPlus, GitCommit, FileText, Loader2, Sparkles, Github, ListChecks, Play, Trash2, RotateCcw, Copy, Eye, ChevronDown, ChevronUp, Bell } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import type { CodeSession, PlanItem } from '../utils/codeSessionDB';
 import type { Message } from '../types';
@@ -7,6 +7,7 @@ import { useAppStore } from '../hooks/useAppStore';
 import { universalFetch } from '../utils/tauriFetch';
 import { isTauri, openUrl } from '../utils/tauri';
 import { authorizeGitHub } from '../integrations/githubOAuth';
+import { notify, isNotificationPermissionGranted, requestNotificationPermission, wasNotificationBannerDismissed, dismissNotificationBanner } from '../utils/notify';
 import { resolveFormat, getByPath } from './ProvidersPanel';
 import ChatArea from './ChatArea';
 import Modal from './Modal';
@@ -212,6 +213,9 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   // undefined = not checked yet, null = checked and confirmed no repo, GitStatus = repo found
   const [gitStatus, setGitStatus] = useState<GitStatus | null | undefined>(undefined);
   const [showCommitBox, setShowCommitBox] = useState(false);
+  // Paths excluded from this commit — untracked from the commit box, not from disk/git;
+  // the file's actual changes stay untouched, it's just left unstaged this round.
+  const [excludedFromCommit, setExcludedFromCommit] = useState<string[]>([]);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitDescription, setCommitDescription] = useState('');
   const [committing, setCommitting] = useState(false);
@@ -225,6 +229,31 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [showWorkflowsMenu, setShowWorkflowsMenu] = useState(false);
   const [showWorkspacesMenu, setShowWorkspacesMenu] = useState(false);
+  const [showNotifBanner, setShowNotifBanner] = useState(false);
+  const [requestingNotifPerm, setRequestingNotifPerm] = useState(false);
+
+  // Ask once, the first time Code Mode is used, whether to enable desktop notifications
+  // (command-approval / task-finished alerts) — not every time a session is opened.
+  useEffect(() => {
+    if (!isTauri || wasNotificationBannerDismissed()) return;
+    isNotificationPermissionGranted().then(granted => { if (!granted) setShowNotifBanner(true); });
+  }, []);
+
+  const handleAllowNotifications = async () => {
+    setRequestingNotifPerm(true);
+    try {
+      await requestNotificationPermission();
+    } finally {
+      setRequestingNotifPerm(false);
+      dismissNotificationBanner();
+      setShowNotifBanner(false);
+    }
+  };
+
+  const handleDismissNotifBanner = () => {
+    dismissNotificationBanner();
+    setShowNotifBanner(false);
+  };
   const [runningWorkflowId, setRunningWorkflowId] = useState<string | null>(null);
   const [expandedWorkflowIds, setExpandedWorkflowIds] = useState<string[]>([]);
   const toggleExpand = (id: string) => { setExpandedWorkflowIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); };
@@ -342,10 +371,18 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
     if (!session || !commitMessage.trim() || committing) return;
     setCommitting(true);
     try {
-      // Stage exactly the files shown in the commit box — never `git add -A`, which would also
-      // re-stage any already-tracked-but-gitignored file (e.g. a stray .env) that checkGitStatus
-      // deliberately filtered out of view.
-      const stagePaths = (gitStatus?.files || []).map(f => quote(f.path)).join(' ');
+      // Stage exactly the files shown in the commit box (minus any the user excluded) — never
+      // `git add -A`, which would also re-stage any already-tracked-but-gitignored file (e.g. a
+      // stray .env) that checkGitStatus deliberately filtered out of view.
+      const excludedPaths = (gitStatus?.files || [])
+        .filter(f => excludedFromCommit.includes(f.path))
+        .map(f => quote(f.path)).join(' ');
+      // Unstage excluded files in case an earlier attempt in this same commit box already
+      // staged them — this only touches the index, never the file's actual on-disk content.
+      if (excludedPaths) await executeShellCommand(`git reset HEAD -- ${excludedPaths}`, session.workspace);
+      const stagePaths = (gitStatus?.files || [])
+        .filter(f => !excludedFromCommit.includes(f.path))
+        .map(f => quote(f.path)).join(' ');
       if (stagePaths) await executeShellCommand(`git add -- ${stagePaths}`, session.workspace);
       // Separate -m flags for summary and description matches `git commit`'s own convention
       // for a short subject line followed by a body paragraph.
@@ -494,8 +531,15 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
     setGeneratingMsg(true);
     try {
       // Stage exactly what "Commit & Push" will commit (never gitignored-but-tracked files —
-      // see checkGitStatus — so their contents never get sent to the LLM provider either).
-      const stagePaths = (gitStatus?.files || []).map(f => quote(f.path)).join(' ');
+      // see checkGitStatus — nor anything the user excluded from this commit, so excluded
+      // files' contents never get sent to the LLM provider either).
+      const excludedPaths = (gitStatus?.files || [])
+        .filter(f => excludedFromCommit.includes(f.path))
+        .map(f => quote(f.path)).join(' ');
+      if (excludedPaths) await executeShellCommand(`git reset HEAD -- ${excludedPaths}`, session.workspace);
+      const stagePaths = (gitStatus?.files || [])
+        .filter(f => !excludedFromCommit.includes(f.path))
+        .map(f => quote(f.path)).join(' ');
       if (stagePaths) await executeShellCommand(`git add -- ${stagePaths}`, session.workspace);
       const diffRes = await executeShellCommand('git diff --cached', session.workspace);
       let diffText = diffRes.stdout.trim();
@@ -570,6 +614,10 @@ ${diffText}`,
     if (!session) return;
     deleteWorkflowById(session.workspace, id);
     setWorkflows(getWorkflows(session.workspace));
+  };
+
+  const toggleExcludeFromCommit = (path: string) => {
+    setExcludedFromCommit(prev => prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path]);
   };
 
   const openFileDiff = async (file: GitFileChange) => {
@@ -1012,6 +1060,7 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
           // Execute each tool call, ask approval for shell commands
           const requestApproval = (cmd: string, dir: string): Promise<boolean> => {
             if (allowAllSessionRef.current || getAlwaysAllowedCommands().has(cmd)) return Promise.resolve(true);
+            notify('Approval needed', cmd);
             return new Promise(resolve => setPendingApproval({ command: cmd, workingDir: dir, resolve }));
           };
 
@@ -1068,6 +1117,7 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
         onUpdate({ ...currentSession, messages: [...currentSession.messages, errMsg], updatedAt: Date.now() });
       }
     } finally {
+      notify(controller.signal.aborted ? 'Generation stopped' : 'Finished', currentSession.title || 'Code session task complete');
       setIsGenerating(false);
       streamingContentRef.current = '';
       setLiveText('');
@@ -1183,6 +1233,27 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">
+      {/* One-time desktop notification permission ask, in normal flow (pushes content down,
+          never overlaps it) — like a browser's own permission/download bar. */}
+      {showNotifBanner && (
+        <div className="glass-inset flex items-center gap-2 px-4 py-2.5 shrink-0 relative z-10 rounded-none border-x-0 border-t-0 animate-slide-in-up">
+          <Bell size={14} className="text-[rgb(var(--accent))] shrink-0" />
+          <p className="text-[12.5px] text-[rgb(var(--text))] flex-1">
+            Enable desktop notifications for when a command needs approval or a task finishes?
+          </p>
+          <button
+            className="btn-primary text-xs py-1.5 px-3 gap-1.5 disabled:opacity-50"
+            disabled={requestingNotifPerm}
+            onClick={handleAllowNotifications}
+          >
+            {requestingNotifPerm ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+            Allow
+          </button>
+          <button className="btn-secondary text-xs py-1.5 px-3" onClick={handleDismissNotifBanner}>
+            Not now
+          </button>
+        </div>
+      )}
       <ChatArea
         conversation={fakeConversation}
         isGenerating={isGenerating}
@@ -1204,7 +1275,7 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
         codeWorkspace={session.workspace}
         onChangeWorkspace={pickWorkspace}
         gitStatus={gitStatus}
-        onOpenCommit={() => setShowCommitBox(true)}
+        onOpenCommit={() => { setExcludedFromCommit([]); setShowCommitBox(true); }}
         onOpenRepo={gitStatus?.remoteUrl ? handleOpenRepo : undefined}
         plan={session.plan}
       />
@@ -1339,24 +1410,41 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
             <div className="flex items-center gap-2">
               <GitCommit size={15} className="text-[rgb(var(--accent))] shrink-0" />
               <p className="text-[13px] font-medium text-[rgb(var(--text))]">
-                Commit {gitStatus?.filesChanged ?? 0} file{gitStatus?.filesChanged === 1 ? '' : 's'}
+                Commit {(gitStatus?.filesChanged ?? 0) - excludedFromCommit.length} file{(gitStatus?.filesChanged ?? 0) - excludedFromCommit.length === 1 ? '' : 's'}
+                {excludedFromCommit.length > 0 && (
+                  <span className="text-[rgb(var(--muted))] font-normal"> ({excludedFromCommit.length} excluded)</span>
+                )}
               </p>
             </div>
             {!!gitStatus?.files.length && (
               <div className="max-h-36 overflow-y-auto space-y-0.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] p-1.5">
-                {gitStatus.files.map(f => (
-                  <button
-                    key={f.path}
-                    onClick={() => openFileDiff(f)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors"
-                    title="View diff"
-                  >
-                    <FileText size={12} className="text-[rgb(var(--muted))] shrink-0" />
-                    <span className="text-[12px] font-mono truncate flex-1">{f.path}</span>
-                    {f.additions > 0 && <span className="text-[11px] font-mono text-green-500 shrink-0">+{f.additions}</span>}
-                    {f.deletions > 0 && <span className="text-[11px] font-mono text-red-500 shrink-0">-{f.deletions}</span>}
-                  </button>
-                ))}
+                {gitStatus.files.map(f => {
+                  const excluded = excludedFromCommit.includes(f.path);
+                  return (
+                    <div
+                      key={f.path}
+                      className={`w-full flex items-center gap-1 rounded-lg transition-colors ${excluded ? 'opacity-50' : 'hover:bg-black/[0.05] dark:hover:bg-white/[0.06]'}`}
+                    >
+                      <button
+                        onClick={() => openFileDiff(f)}
+                        className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-left"
+                        title="View diff"
+                      >
+                        <FileText size={12} className="text-[rgb(var(--muted))] shrink-0" />
+                        <span className={`text-[12px] font-mono truncate flex-1 ${excluded ? 'line-through' : ''}`}>{f.path}</span>
+                        {f.additions > 0 && <span className="text-[11px] font-mono text-green-500 shrink-0">+{f.additions}</span>}
+                        {f.deletions > 0 && <span className="text-[11px] font-mono text-red-500 shrink-0">-{f.deletions}</span>}
+                      </button>
+                      <button
+                        onClick={() => toggleExcludeFromCommit(f.path)}
+                        className="btn-icon w-6 h-6 shrink-0 mr-1"
+                        title={excluded ? 'Restore to commit' : 'Untrack from this commit (keeps changes on disk)'}
+                      >
+                        {excluded ? <RotateCcw size={12} /> : <Trash2 size={12} />}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <div className="relative">
@@ -1391,7 +1479,7 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
             <div className="flex gap-2">
               <button
                 className="btn-primary flex-1 justify-center gap-1.5 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!commitMessage.trim() || committing}
+                disabled={!commitMessage.trim() || committing || (gitStatus?.filesChanged ?? 0) - excludedFromCommit.length <= 0}
                 onClick={handleCommit}
               >
                 {committing ? 'Committing & pushing…' : (<><Check size={13} /> Commit & Push</>)}
@@ -1404,11 +1492,19 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
         </div>
       )}
 
-      {/* No git repo detected — offer to create one on GitHub */}
-      {gitStatus === null && isTauri && !pendingApproval && !showCommitBox && (
-        <div className="absolute inset-x-0 bottom-0 px-4 pb-4 z-20">
-          {showCreateRepoBox ? (
-            <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm p-4 space-y-3 shadow-xl animate-slide-in-up">
+      {/* No git repo detected — offer to create one on GitHub, as a corner button + dropdown
+          (not a bottom bar) so it never covers the chat input. */}
+      {gitStatus === null && isTauri && (
+        <div className={`absolute ${workflows.length > 0 ? 'top-24' : 'top-14'} right-3 z-20`}>
+          <button
+            className="btn-secondary text-xs py-1.5 px-3 gap-1.5 shadow-lg"
+            onClick={() => (showCreateRepoBox ? setShowCreateRepoBox(false) : openCreateRepoBox())}
+            title="No git repository detected in this workspace"
+          >
+            <Github size={13} /> Create GitHub Repo
+          </button>
+          {showCreateRepoBox && (
+            <div className="mt-2 w-72 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm p-4 space-y-3 shadow-xl animate-slide-in-up">
               <div className="flex items-center gap-2">
                 <Github size={15} className="text-[rgb(var(--accent))] shrink-0" />
                 <p className="text-[13px] font-medium text-[rgb(var(--text))]">Create a GitHub repository</p>
@@ -1449,14 +1545,6 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
                   <X size={13} /> Cancel
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm px-4 py-3 flex items-center gap-3 shadow-xl animate-slide-in-up">
-              <Github size={15} className="text-[rgb(var(--muted))] shrink-0" />
-              <p className="text-[13px] text-[rgb(var(--muted))] flex-1">No git repository detected in this workspace.</p>
-              <button className="btn-primary text-xs py-1.5 px-3 gap-1.5" onClick={openCreateRepoBox}>
-                <Github size={12} /> Create GitHub Repo
-              </button>
             </div>
           )}
         </div>

@@ -30,6 +30,7 @@
     "fs:allow-rename",
     "shell:allow-spawn",
     "shell:allow-open",
+    "notification:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [

@@ -20,6 +20,7 @@ Extensions let you add custom AI tools, UI elements, DOM behaviour patches, and 
    - [Rich Modal](#45-rich-modal)
    - [Toolbar Buttons](#46-toolbar-buttons)
    - [Sidebar Sections & Buttons](#47-sidebar-sections--buttons)
+   - [Settings Panel](#48-settings-panel)
 5. [DOM API (`api.dom`)](#5-dom-api-apidom)
    - [Event Listeners](#51-event-listeners)
    - [Style Injection](#52-style-injection)
@@ -35,6 +36,7 @@ Extensions let you add custom AI tools, UI elements, DOM behaviour patches, and 
 9. [Sandbox & Limitations](#9-sandbox--limitations)
 10. [Marketplace](#10-marketplace)
 11. [Full Examples](#11-full-examples)
+    - [11.4 Settings Panel Showcase](#114-settings-panel-showcase)
 
 ---
 
@@ -421,6 +423,63 @@ api.ui.addButton({
 
 ---
 
+### 4.8 Settings Panel
+
+Register a schema-driven mini settings panel for your extension. When registered, a gear icon appears next to your extension in **Settings → Extensions**. Clicking it replaces the Extensions page with a dedicated settings view (with a back arrow to return) — not a modal — where the user edits your fields directly.
+
+```js
+api.ui.registerSettings(fields, options?)
+```
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `fields` | `Field[]` | Array of field definitions (see below) |
+| `options.title` | `string` | Optional heading shown above the fields |
+
+**Field shape:**
+
+```js
+{
+  key: string,                                            // storage key — read via api.storage.get(key)
+  label: string,                                           // field label
+  type: 'slider' | 'toggle' | 'checkbox' | 'text' | 'color',
+  default?: string | number | boolean,                     // used until the user sets a value
+  description?: string,                                    // helper text shown under the field
+  min?: number, max?: number, step?: number,                // slider only
+  placeholder?: string,                                     // text only
+}
+```
+
+| Type | Renders as | Value type |
+|------|-----------|------------|
+| `slider` | Range input with a live value pill | `number` |
+| `toggle` | Pill switch (matches the app's own toggle style) | `boolean` |
+| `checkbox` | Native checkbox | `boolean` |
+| `text` | Single-line text input | `string` |
+| `color` | Color picker, with the label rendered live in the chosen color | `string` (hex) |
+
+Values are stored through the **same** per-extension key-value store as `api.storage` (§7) — whatever the user sets in the panel is immediately visible to your running extension via `api.storage.get(key)`, and vice versa. There is no separate settings storage to keep in sync.
+
+```js
+api.ui.registerSettings([
+  { key: 'userName', label: 'Your name', type: 'text', default: 'Friend', placeholder: 'Enter your name' },
+  { key: 'repeatCount', label: 'Greeting repeats', type: 'slider', default: 1, min: 1, max: 5, step: 1 },
+  { key: 'shout', label: 'SHOUT (uppercase)', type: 'checkbox', default: false },
+  { key: 'enableEmoji', label: 'Add a sparkle emoji', type: 'toggle', default: true },
+  { key: 'accentColor', label: 'Accent color', type: 'color', default: '#8b5cf6' },
+], { title: 'Greeting Settings' });
+
+// Later, anywhere in your extension (a tool, a button handler, a timer, …):
+const name  = api.storage.get('userName') ?? 'Friend';
+const color = api.storage.get('accentColor') ?? '#8b5cf6';
+```
+
+Registering settings does not require DOM access, so `registerSettings` is available in **both sandboxed and unsandboxed** extensions. Re-registering with the same extension replaces the previous schema — call it once at the top level of your extension code, not inside a loop or handler.
+
+The Settings → Extensions page ships a **"Settings Demo"** quick-create button that generates a full working example of this API (see [§11.4](#114-settings-panel-showcase)).
+
+---
+
 ## 5. DOM API (`api.dom`)
 
 `api.dom` gives extensions full access to the live DOM. **All side-effects registered through `api.dom` are automatically cleaned up when the extension is disabled or unloaded** — you never need to manually remove listeners or styles.
@@ -618,6 +677,8 @@ api.app.on('tick', ({ time }) => {
 `api.storage` is a simple key-value store scoped to your extension. Data is persisted in `localStorage` and automatically included in cloud sync (S3, WebDAV, or Lumina Sync) if the user has it enabled. Every extension has its own namespace — extensions cannot read each other's data.
 
 Available in both **sandboxed** and **unsandboxed** modes.
+
+> **Tip:** If you just want the user to configure a few values (a name, a threshold, a color, a toggle…), consider [`api.ui.registerSettings`](#48-settings-panel) (§4.8) instead of hand-rolling a prompt/button flow — it reads and writes through this same store, but gives the user a proper settings panel with a gear icon in Settings → Extensions.
 
 ### Methods
 
@@ -1019,3 +1080,59 @@ api.dom.addStyle(`
 `);
 // Style is automatically removed when the extension is disabled.
 ```
+
+### 11.4 Settings Panel Showcase
+
+Demonstrates every field type supported by `api.ui.registerSettings` (§4.8): text, slider, checkbox, toggle, and color. This is the exact extension generated by the **"Settings Demo"** button in Settings → Extensions.
+
+```js
+api.registerExtension({
+  id: 'demo.settings-showcase',
+  name: 'Settings Showcase',
+  version: '1.0.0',
+  description: 'Demonstrates the extension settings panel API',
+  author: 'You',
+  tools: [],
+});
+
+api.ui.registerSettings([
+  { key: 'userName', label: 'Your name', type: 'text', default: 'Friend', placeholder: 'Enter your name', description: 'Used in the greeting below.' },
+  { key: 'repeatCount', label: 'Greeting repeats', type: 'slider', default: 1, min: 1, max: 5, step: 1, description: 'How many times to repeat the greeting.' },
+  { key: 'shout', label: 'SHOUT (uppercase)', type: 'checkbox', default: false },
+  { key: 'enableEmoji', label: 'Add a sparkle emoji', type: 'toggle', default: true },
+  { key: 'accentColor', label: 'Accent color', type: 'color', default: '#8b5cf6', description: 'Colors the greeting text below.' },
+], { title: 'Greeting Settings' });
+
+api.ui.addSidebarSection({
+  title: 'Settings Showcase',
+  items: [
+    {
+      id: 'say-hello',
+      label: 'Say hello',
+      icon: '👋',
+      onClick: () => {
+        const name   = api.storage.get('userName') ?? 'Friend';
+        const repeat = api.storage.get('repeatCount') ?? 1;
+        const shout  = api.storage.get('shout') ?? false;
+        const emoji  = api.storage.get('enableEmoji') ?? true;
+        const color  = api.storage.get('accentColor') ?? '#8b5cf6';
+
+        let greeting = `Hello, ${name}!${emoji ? ' ✨' : ''}`;
+        if (shout) greeting = greeting.toUpperCase();
+
+        const lines = Array.from({ length: repeat }, () =>
+          `<div style="color: ${color}; font-weight: 600;">${greeting}</div>`
+        ).join('');
+
+        api.ui.openModal({
+          title: 'Greeting',
+          body: lines,
+          buttons: [{ label: 'Nice!', primary: true, onClick: () => {} }],
+        });
+      },
+    },
+  ],
+});
+```
+
+Open Settings → Extensions and click the gear icon next to **Settings Showcase** to see the panel this generates, then click **Say hello** in the sidebar to see the stored values applied.

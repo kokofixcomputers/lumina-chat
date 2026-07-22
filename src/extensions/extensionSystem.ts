@@ -1,6 +1,6 @@
 import type { AppSettings } from '../types';
 import { extensionUIRegistry } from './extensionUIRegistry';
-import type { ToastType, AlertType, ButtonLocation } from './extensionUIRegistry';
+import type { ToastType, AlertType, ButtonLocation, ExtSettingsField } from './extensionUIRegistry';
 import { extensionPatchRegistry } from './extensionPatchRegistry';
 
 const EXT_STORES_KEY = 'lumina_ext_stores';
@@ -23,6 +23,18 @@ export function getExtensionStores(): Record<string, Record<string, unknown>> {
 /** Restore all extension KV stores from a cloud snapshot — used by the cloud sync layer. */
 export function setExtensionStores(stores: Record<string, Record<string, unknown>>) {
   localStorage.setItem(EXT_STORES_KEY, JSON.stringify(stores));
+}
+
+/** Read a single extension setting value from the host UI (e.g. the Settings → Extensions gear-icon panel). */
+export function getExtensionSettingValue(extensionId: string, key: string): unknown {
+  return readAllStores()[extensionId]?.[key];
+}
+
+/** Write a single extension setting value from the host UI. Visible to the extension via `api.storage.get(key)`. */
+export function setExtensionSettingValue(extensionId: string, key: string, value: unknown) {
+  const all = readAllStores();
+  all[extensionId] = { ...(all[extensionId] ?? {}), [key]: value };
+  writeAllStores(all);
 }
 
 function makeExtensionStorage(extensionId: string): ExtensionStorageAPI {
@@ -101,6 +113,13 @@ export interface ExtensionUIAPI {
     title?: string;
     items: Array<{ id: string; label: string; icon?: string; onClick: () => void }>;
   }) => () => void;
+  /**
+   * Register a schema-driven mini settings panel for this extension. Shown via a gear icon
+   * next to the extension in Settings → Extensions. Values are read/written through
+   * `api.storage` under the same keys, so `api.storage.get(field.key)` reflects whatever the
+   * user last set in the panel.
+   */
+  registerSettings: (fields: ExtSettingsField[], opts?: { title?: string }) => void;
 }
 
 export interface ExtensionDOMAPI {
@@ -236,6 +255,7 @@ class ExtensionManager {
         ...opts,
         extensionId: eid,
       }),
+      registerSettings: (fields, opts) => extensionUIRegistry.registerSettings(eid, fields, opts?.title),
     };
 
     const dom: ExtensionDOMAPI = {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns } from 'lucide-react';
+import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns, GitBranch, GitCommit, ExternalLink, ListChecks, CheckSquare, Square } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import PreviewSidebar from './PreviewSidebar';
@@ -142,7 +142,11 @@ interface ChatAreaProps {
   isCode?: boolean;
   codeWorkspace?: string;
   onChangeWorkspace?: () => void;
+  gitStatus?: { branch: string; filesChanged: number; additions: number; deletions: number } | null;
+  onOpenCommit?: () => void;
+  onOpenRepo?: () => void;
   onParallelSend?: (content: string, images: string[], modelIds: string[]) => void;
+  plan?: { text: string; completed: boolean }[];
 }
 
 const QUICK_ACTIONS = [
@@ -191,12 +195,17 @@ export default function ChatArea({
   isCode = false,
   codeWorkspace,
   onChangeWorkspace,
+  gitStatus,
+  onOpenCommit,
+  onOpenRepo,
   onParallelSend,
+  plan,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const prevConvIdRef = useRef<string | null>(null);
+  const [planCollapsed, setPlanCollapsed] = useState(false);
   const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null);
 
   const handleTabDragOver = (e: React.DragEvent) => {
@@ -343,6 +352,29 @@ export default function ChatArea({
               Change
             </button>
           )}
+          {gitStatus && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] text-[rgb(var(--muted))] font-mono flex items-center gap-1" title={`Branch: ${gitStatus.branch}`}>
+                <GitBranch size={11} />
+                {gitStatus.branch}
+              </span>
+              {onOpenRepo && (
+                <button className="btn-icon w-6 h-6" onClick={onOpenRepo} title="Open repo in browser">
+                  <ExternalLink size={12} />
+                </button>
+              )}
+              {gitStatus.filesChanged > 0 && (
+                <>
+                  <span className="text-[11px] font-mono text-green-500">+{gitStatus.additions}</span>
+                  <span className="text-[11px] font-mono text-red-500">-{gitStatus.deletions}</span>
+                  <button className="btn-secondary text-[11px] py-1 px-2.5 gap-1" onClick={onOpenCommit}>
+                    <GitCommit size={11} />
+                    Commit & Push
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <button className="btn-icon" onClick={onTogglePanel}><Settings size={15} /></button>
         </div>
       )}
@@ -434,6 +466,36 @@ export default function ChatArea({
         </div>
       )}
       </div>
+
+      {/* Plan checklist — collapsible, sits just above the input */}
+      {isCode && !!plan?.length && (
+        <div className="px-4 pt-2 shrink-0">
+          <div className="glass-inset rounded-2xl border border-[rgb(var(--border))] overflow-hidden">
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-left"
+              onClick={() => setPlanCollapsed(v => !v)}
+            >
+              <ListChecks size={13} className="text-[rgb(var(--muted))] shrink-0" />
+              <span className="text-[12px] font-medium text-[rgb(var(--text))] flex-1">
+                Plan — {plan.filter(p => p.completed).length}/{plan.length} done
+              </span>
+              <ChevronDown size={13} className={`text-[rgb(var(--muted))] shrink-0 transition-transform ${planCollapsed ? '-rotate-90' : ''}`} />
+            </button>
+            {!planCollapsed && (
+              <div className="px-3 pb-2.5 space-y-1 max-h-40 overflow-y-auto">
+                {plan.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[12.5px]">
+                    {item.completed
+                      ? <CheckSquare size={13} className="text-green-500 mt-0.5 shrink-0" />
+                      : <Square size={13} className="text-[rgb(var(--muted))] mt-0.5 shrink-0" />}
+                    <span className={item.completed ? 'line-through text-[rgb(var(--muted))]' : 'text-[rgb(var(--text))]'}>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Input */}
       <ChatInput

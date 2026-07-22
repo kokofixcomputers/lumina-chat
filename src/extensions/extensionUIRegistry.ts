@@ -73,6 +73,27 @@ export interface ExtModal {
   onClose?: () => void;
 }
 
+// ── Extension-defined settings panels ─────────────────────────────────────
+export type ExtSettingsFieldType = 'slider' | 'toggle' | 'checkbox' | 'text' | 'color';
+
+export interface ExtSettingsField {
+  key: string;
+  label: string;
+  type: ExtSettingsFieldType;
+  default?: string | number | boolean;
+  description?: string;
+  min?: number;    // slider only
+  max?: number;    // slider only
+  step?: number;   // slider only
+  placeholder?: string; // text only
+}
+
+export interface ExtSettingsSchema {
+  extensionId: string;
+  title?: string;
+  fields: ExtSettingsField[];
+}
+
 function uid() { return Math.random().toString(36).slice(2); }
 function emit() { window.dispatchEvent(new CustomEvent('ext-ui-update')); }
 
@@ -84,6 +105,7 @@ class ExtensionUIRegistry {
   confirms: ExtConfirm[] = [];
   prompts: ExtPrompt[] = [];
   modals: ExtModal[] = [];
+  settingsSchemas: Map<string, ExtSettingsSchema> = new Map(); // keyed by extensionId
 
   // ── Buttons ──────────────────────────────────────────────────────────────
 
@@ -216,11 +238,28 @@ class ExtensionUIRegistry {
     return close;
   }
 
+  // ── Settings panels ──────────────────────────────────────────────────────
+
+  registerSettings(extensionId: string, fields: ExtSettingsField[], title?: string) {
+    this.settingsSchemas.set(extensionId, { extensionId, title, fields });
+    emit();
+  }
+
+  getSettingsSchema(extensionId: string): ExtSettingsSchema | undefined {
+    return this.settingsSchemas.get(extensionId);
+  }
+
+  removeSettingsSchemaByExtension(extensionId: string) {
+    this.settingsSchemas.delete(extensionId);
+    emit();
+  }
+
   // ── Cleanup ──────────────────────────────────────────────────────────────
 
   removeAllByExtension(extensionId: string) {
     this.removeButtonsByExtension(extensionId);
     this.removeSidebarSectionsByExtension(extensionId);
+    this.removeSettingsSchemaByExtension(extensionId);
   }
 }
 

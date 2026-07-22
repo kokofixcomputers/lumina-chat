@@ -4,12 +4,21 @@ const DB_NAME = 'LuminaCodeDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'code_sessions';
 
+export interface PlanItem {
+  text: string;
+  completed: boolean;
+}
+
 export interface CodeSession {
   id: string;
   title: string;
   workspace: string;
   messages: Message[];
   modelId?: string;
+  plan?: PlanItem[];
+  // Absolute paths of other project folders the AI can read from/write to alongside the
+  // primary `workspace` — e.g. a reference project to port code out of, or into.
+  additionalWorkspaces?: string[];
   createdAt: number;
   updatedAt: number;
 }

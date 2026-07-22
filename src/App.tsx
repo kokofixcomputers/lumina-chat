@@ -26,6 +26,7 @@ import MarketplacePage from './components/MarketplacePage';
 import InstallationPage from './components/InstallationPage';
 import OAuthOneDriveCallback from './pages/OAuthOneDriveCallback';
 import OAuth1minRelayV4Callback from './pages/OAuth1minRelayV4Callback';
+import OAuthGithubCallback from './pages/OAuthGithubCallback';
 import { useAppStore } from './hooks/useAppStore';
 import { getSyncStatus, subscribeSyncStatus, type SyncStatus } from './utils/syncStatus';
 import { fileSyncManager } from './utils/fileSyncManager';
@@ -1736,6 +1737,7 @@ export default function App() {
         <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/oauth/onedrive/callback" element={<OAuthOneDriveCallback />} />
         <Route path="/oauth/1minrelay/callback" element={<OAuth1minRelayV4Callback />} />
+        <Route path="/oauth/github/callback" element={<OAuthGithubCallback />} />
         <Route path="*" element={
           <div className="flex h-screen overflow-hidden bg-[rgb(var(--bg))] relative isolate">
             <div className="ambient-bg" aria-hidden="true" />

@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Edit2, Download, Upload, Power, PowerOff, Code, AlertCircle, CheckCircle, XCircle, Store, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Edit2, Download, Upload, Power, PowerOff, Code, AlertCircle, CheckCircle, XCircle, Store, ShieldCheck, ShieldAlert, Settings2, Sparkles, ArrowLeft } from 'lucide-react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import { extensionStorage, StoredExtension, ExtensionType } from '../../extensions/extensionStorage';
 import { extensionLoader } from '../../extensions/extensionLoader';
 import { extensionManager } from '../../extensions/extensionSystem';
 import { extensionLogRegistry, LogEntry } from '../../extensions/extensionLogRegistry';
+import { extensionUIRegistry } from '../../extensions/extensionUIRegistry';
+import ExtensionSettingsPanel from './ExtensionSettingsPanel';
 import type { AppSettings } from '../../types';
 
 interface ExtensionsTabProps {
@@ -30,10 +32,20 @@ export default function ExtensionsTab({ settings, onUpdateSettings }: Extensions
   });
   const [editType, setEditType] = useState<ExtensionType>('sandboxed');
   const [isLoading, setIsLoading] = useState(false);
+  const [settingsPanelExt, setSettingsPanelExt] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadExtensions();
+  }, []);
+
+  // Extensions register their settings schema asynchronously (on load), so re-render
+  // when the UI registry changes to pick up the gear icon appearing.
+  const [, extUITick] = useState(0);
+  useEffect(() => {
+    const h = () => extUITick(n => n + 1);
+    window.addEventListener('ext-ui-update', h);
+    return () => window.removeEventListener('ext-ui-update', h);
   }, []);
 
   useEffect(() => {
@@ -160,6 +172,60 @@ api.registerExtension({
 // api.app.on('myevent', (detail) => console.log(detail));
 `;
 
+  const settingsDemoTemplate = `// Settings Showcase — demonstrates api.ui.registerSettings()
+// Adds a gear icon next to this extension in Settings → Extensions with a
+// mini settings panel (slider, toggle, checkbox, text, color fields).
+// Values are read back at runtime via api.storage.get(key).
+
+api.registerExtension({
+  id: 'demo.settings-showcase',
+  name: 'Settings Showcase',
+  version: '1.0.0',
+  description: 'Demonstrates the extension settings panel API',
+  author: 'You',
+  tools: []
+});
+
+api.ui.registerSettings([
+  { key: 'userName', label: 'Your name', type: 'text', default: 'Friend', placeholder: 'Enter your name', description: 'Used in the greeting below.' },
+  { key: 'repeatCount', label: 'Greeting repeats', type: 'slider', default: 1, min: 1, max: 5, step: 1, description: 'How many times to repeat the greeting.' },
+  { key: 'shout', label: 'SHOUT (uppercase)', type: 'checkbox', default: false },
+  { key: 'enableEmoji', label: 'Add a sparkle emoji', type: 'toggle', default: true },
+  { key: 'accentColor', label: 'Accent color', type: 'color', default: '#8b5cf6', description: 'Colors the greeting text below.' }
+], { title: 'Greeting Settings' });
+
+api.ui.addSidebarSection({
+  title: 'Settings Showcase',
+  items: [
+    {
+      id: 'say-hello',
+      label: 'Say hello',
+      icon: '👋',
+      onClick: () => {
+        const name = api.storage.get('userName') ?? 'Friend';
+        const repeat = api.storage.get('repeatCount') ?? 1;
+        const shout = api.storage.get('shout') ?? false;
+        const emoji = api.storage.get('enableEmoji') ?? true;
+        const color = api.storage.get('accentColor') ?? '#8b5cf6';
+
+        let greeting = \`Hello, \${name}!\${emoji ? ' ✨' : ''}\`;
+        if (shout) greeting = greeting.toUpperCase();
+
+        const lines = Array.from({ length: repeat }, () =>
+          \`<div style="color: \${color}; font-weight: 600;">\${greeting}</div>\`
+        ).join('');
+
+        api.ui.openModal({
+          title: 'Greeting',
+          body: lines,
+          buttons: [{ label: 'Nice!', primary: true, onClick: () => {} }]
+        });
+      }
+    }
+  ]
+});
+`;
+
   const handleCreateExtension = () => {
     setIsEditing(true);
     setEditType('sandboxed');
@@ -167,6 +233,21 @@ api.registerExtension({
       id: ''
     });
     setEditCode(sandboxedTemplate);
+  };
+
+  const handleCreateSampleExtension = () => {
+    setIsEditing(true);
+    setEditType('sandboxed');
+    setEditForm({ id: 'demo.settings-showcase' });
+    setEditCode(settingsDemoTemplate);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setSelectedExtension(null);
+    setEditCode('');
+    setEditType('sandboxed');
+    setEditForm({ id: '' });
   };
 
   const handleSaveExtension = async () => {
@@ -335,45 +416,30 @@ api.registerExtension({
     }
   };
 
+  const view: 'list' | 'edit' | 'settings' = settingsPanelExt ? 'settings' : isEditing ? 'edit' : 'list';
+
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-4xl mx-auto w-full">
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">Extensions</h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => navigate('/marketplace')}
-              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
-            >
-              <Store size={12} />
-              Marketplace
-            </button>
-            <button
-              onClick={handleImportExtensions}
-              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
-            >
-              <Upload size={12} />
-              Import
-            </button>
-            <button
-              onClick={handleExportExtensions}
-              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
-            >
-              <Download size={12} />
-              Export
-            </button>
-            <button
-              onClick={handleCreateExtension}
-              className="btn-primary text-xs py-1.5 px-3 gap-1.5"
-            >
-              <Plus size={12} />
-              New Extension
-            </button>
-          </div>
-        </div>
+      {view === 'settings' && settingsPanelExt && (
+        <section>
+          <button onClick={() => setSettingsPanelExt(null)} className="btn-ghost gap-1.5 mb-4 -ml-2.5">
+            <ArrowLeft size={14} />
+            Back to Extensions
+          </button>
+          <h3 className="text-sm font-semibold mb-4">
+            {extensions[settingsPanelExt]?.name || 'Extension'} Settings
+          </h3>
+          <ExtensionSettingsPanel extensionId={settingsPanelExt} />
+        </section>
+      )}
 
-        {isEditing && (
-          <div ref={editFormRef} className="border border-[rgb(var(--border))] rounded-lg p-4 mb-4">
+      {view === 'edit' && (
+        <section>
+          <button onClick={handleCancelEdit} className="btn-ghost gap-1.5 mb-4 -ml-2.5">
+            <ArrowLeft size={14} />
+            Back to Extensions
+          </button>
+          <div ref={editFormRef}>
             <h4 className="text-sm font-medium mb-3">
               {editForm.id ? 'Edit Extension' : 'Create Extension'}
             </h4>
@@ -456,20 +522,59 @@ api.registerExtension({
                 Save Extension
               </button>
               <button
-                onClick={() => {
-                  setIsEditing(false);
-                  setSelectedExtension(null);
-                  setEditCode('');
-                  setEditType('sandboxed');
-                  setEditForm({ id: '' });
-                }}
+                onClick={handleCancelEdit}
                 className="btn-secondary text-sm py-2 px-4"
               >
                 Cancel
               </button>
             </div>
           </div>
-        )}
+        </section>
+      )}
+
+      {view === 'list' && (
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">Extensions</h3>
+          <div className="flex gap-2">
+            <button
+              onClick={() => navigate('/marketplace')}
+              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
+            >
+              <Store size={12} />
+              Marketplace
+            </button>
+            <button
+              onClick={handleImportExtensions}
+              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
+            >
+              <Upload size={12} />
+              Import
+            </button>
+            <button
+              onClick={handleExportExtensions}
+              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
+            >
+              <Download size={12} />
+              Export
+            </button>
+            <button
+              onClick={handleCreateSampleExtension}
+              className="btn-secondary text-xs py-1.5 px-3 gap-1.5"
+              title="Create a sample extension that demonstrates the settings panel API"
+            >
+              <Sparkles size={12} />
+              Settings Demo
+            </button>
+            <button
+              onClick={handleCreateExtension}
+              className="btn-primary text-xs py-1.5 px-3 gap-1.5"
+            >
+              <Plus size={12} />
+              New Extension
+            </button>
+          </div>
+        </div>
 
         <div className="space-y-3">
           {Object.values(extensions).map(extension => {
@@ -479,7 +584,7 @@ api.registerExtension({
             return (
               <div
                 key={extension.id}
-                className={`border border-[rgb(var(--border))] rounded-lg p-4 ${
+                className={`glass-inset p-4 ${
                   selectedExtension === extension.id ? 'ring-2 ring-[rgb(var(--accent))]' : ''
                 }`}
               >
@@ -546,6 +651,15 @@ api.registerExtension({
                     >
                       {extension.enabled ? <Power size={12} /> : <PowerOff size={12} />}
                     </button>
+                    {!!extensionUIRegistry.getSettingsSchema(extension.id)?.fields.length && (
+                      <button
+                        onClick={() => setSettingsPanelExt(extension.id)}
+                        className="btn-icon w-6 h-6"
+                        title="Extension settings"
+                      >
+                        <Settings2 size={12} />
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setSelectedExtension(extension.id);
@@ -596,6 +710,7 @@ api.registerExtension({
           )}
         </div>
       </section>
+      )}
     </div>
   );
 }

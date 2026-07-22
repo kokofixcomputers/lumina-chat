@@ -28,12 +28,24 @@
     "fs:allow-mkdir",
     "fs:allow-remove",
     "fs:allow-rename",
-    "shell:allow-execute",
     "shell:allow-spawn",
     "shell:allow-open",
     {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "sh", "cmd": "sh", "args": true },
+        { "name": "powershell", "cmd": "powershell", "args": true }
+      ]
+    },
+    {
       "identifier": "fs:scope",
-      "allow": [{ "path": "/**" }, { "path": "*" }]
+      "allow": [
+        { "path": "/**" },
+        { "path": "*" },
+        { "path": "/**/.*" },
+        { "path": "/**/.*/**" },
+        { "path": ".*" }
+      ]
     },
     "core:webview:allow-create-webview-window",
     "http:default",

@@ -13,7 +13,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            rust_target: aarch64-apple-darwin
+            rust_target: tenki-macos-26-mini
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
 

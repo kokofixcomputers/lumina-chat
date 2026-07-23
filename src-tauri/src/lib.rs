@@ -252,6 +252,64 @@ async fn anthropic_stream_request(
     Ok(())
 }
 
+// Some OAuth providers (e.g. Pollinations) reject custom URI-scheme redirect_uris outright —
+// they require https://, or http:// specifically for a loopback host (127.0.0.1/localhost),
+// since a custom scheme can be registered by any app on the system. This starts a one-shot
+// local HTTP server on a fixed port (17540, falling back to 5317 — both must be registered as
+// redirect URIs on the app key), accepts exactly one request (the OAuth redirect), extracts its
+// path+query, and emits it back to the frontend as an event — the frontend builds the
+// redirect_uri from the returned port, opens the system browser, and awaits the emitted event
+// instead of a custom-scheme deep link.
+const OAUTH_LOOPBACK_PORTS: [u16; 2] = [17540, 5317];
+
+#[tauri::command]
+async fn start_oauth_loopback(app: tauri::AppHandle, event_name: String) -> Result<u16, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use tauri::Emitter;
+
+    let mut bound: Option<(TcpListener, u16)> = None;
+    for port in OAUTH_LOOPBACK_PORTS {
+        if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) {
+            bound = Some((listener, port));
+            break;
+        }
+    }
+    let (listener, port) = bound.ok_or_else(|| {
+        format!(
+            "Neither port {} nor {} is available for the OAuth callback server",
+            OAUTH_LOOPBACK_PORTS[0], OAUTH_LOOPBACK_PORTS[1]
+        )
+    })?;
+
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]);
+            let path_and_query = request
+                .lines()
+                .next()
+                .and_then(|l| l.split_whitespace().nth(1))
+                .unwrap_or("")
+                .to_string();
+
+            let body = "<html><body style=\"font-family: sans-serif; text-align: center; padding-top: 4rem;\">You can close this window and return to the app.</body></html>";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+
+            let _ = app.emit(&event_name, path_and_query);
+        }
+    });
+
+    Ok(port)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -275,6 +333,7 @@ pub fn run() {
             anthropic_oauth_token,
             anthropic_request,
             anthropic_stream_request,
+            start_oauth_loopback,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

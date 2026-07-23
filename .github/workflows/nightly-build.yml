@@ -4,10 +4,9 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
-
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: tenki-standard-small-2c-4g
     strategy:
       fail-fast: false
       matrix:

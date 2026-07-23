@@ -129,6 +129,7 @@ interface ChatAreaProps {
   homeMode?: 'chat' | 'image' | 'code';
   homeAttachments?: string[];
   prettifyModelNames?: boolean;
+  disambiguateModelNames?: boolean;
   workflows?: Array<{ id: string; slug: string; prompt: string }>;
   useResponsesApi?: boolean;
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
@@ -191,6 +192,7 @@ export default function ChatArea({
   homeMode = 'chat',
   homeAttachments = [],
   prettifyModelNames = true,
+  disambiguateModelNames = false,
   workflows = [],
   useResponsesApi = false,
   reasoningEffort = 'off',
@@ -323,6 +325,7 @@ export default function ChatArea({
               attachments={homeAttachments}
               onAttachmentsChange={onAttachmentsChange}
               prettifyModelNames={prettifyModelNames}
+              disambiguateModelNames={disambiguateModelNames}
               workflows={workflows}
               useResponsesApi={useResponsesApi}
               reasoningEffort={reasoningEffort}
@@ -657,6 +660,7 @@ export default function ChatArea({
         attachments={isCode ? [] : (conversation.attachments || [])}
         onAttachmentsChange={isCode ? undefined : onAttachmentsChange}
         prettifyModelNames={prettifyModelNames}
+        disambiguateModelNames={disambiguateModelNames}
         workflows={isCode ? [] : workflows}
         useResponsesApi={isCode ? false : useResponsesApi}
         reasoningEffort={reasoningEffort}

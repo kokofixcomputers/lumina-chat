@@ -36,6 +36,7 @@ interface SplitViewChatProps {
   homeMode?: 'chat' | 'image' | 'code';
   homeAttachments?: string[];
   prettifyModelNames?: boolean;
+  disambiguateModelNames?: boolean;
   workflows?: Array<{ id: string; slug: string; prompt: string }>;
   useResponsesApi?: boolean;
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
@@ -74,6 +75,7 @@ export default function SplitViewChat({
   homeMode,
   homeAttachments,
   prettifyModelNames,
+  disambiguateModelNames,
   workflows,
   useResponsesApi,
   reasoningEffort,
@@ -164,6 +166,7 @@ export default function SplitViewChat({
             homeMode={homeMode}
             homeAttachments={homeAttachments}
             prettifyModelNames={prettifyModelNames}
+            disambiguateModelNames={disambiguateModelNames}
             workflows={workflows}
             useResponsesApi={useResponsesApi}
             reasoningEffort={reasoningEffort}
@@ -215,6 +218,7 @@ export default function SplitViewChat({
             homeMode={homeMode}
             homeAttachments={homeAttachments}
             prettifyModelNames={prettifyModelNames}
+            disambiguateModelNames={disambiguateModelNames}
             workflows={workflows}
             useResponsesApi={useResponsesApi}
             reasoningEffort={reasoningEffort}

@@ -150,6 +150,7 @@ export interface AppSettings {
   defaultProviderModelId: string; // "providerId/modelId"
   modelSettings: ModelSettings;
   prettifyModelNames?: boolean;
+  disambiguateModelNames?: boolean;
   maxHistory?: number;
   generateTitle?: boolean;
   generateFollowUps?: boolean;

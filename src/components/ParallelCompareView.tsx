@@ -45,6 +45,7 @@ interface ParallelCompareViewProps {
   onStopGeneration?: () => void;
   onOpenProviders?: () => void;
   prettifyModelNames?: boolean;
+  disambiguateModelNames?: boolean;
   workflows?: Array<{ id: string; slug: string; prompt: string }>;
   onTranscribeAudio?: (blob: Blob, mimeType: string) => Promise<string>;
   parallelModelIds: string[];
@@ -183,6 +184,7 @@ export default function ParallelCompareView({
   onStopGeneration,
   onOpenProviders,
   prettifyModelNames,
+  disambiguateModelNames,
   workflows,
   onTranscribeAudio,
   parallelModelIds,
@@ -233,6 +235,7 @@ export default function ParallelCompareView({
           onModelChange={() => {}}
           onOpenProviders={onOpenProviders}
           prettifyModelNames={prettifyModelNames}
+          disambiguateModelNames={disambiguateModelNames}
           workflows={workflows}
           onTranscribeAudio={onTranscribeAudio}
           parallelModelIds={parallelModelIds}

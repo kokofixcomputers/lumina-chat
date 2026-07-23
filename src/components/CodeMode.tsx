@@ -1596,6 +1596,7 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
         onDeleteMessage={handleDeleteMessage}
         onContinue={handleContinue}
         prettifyModelNames={store.settings.prettifyModelNames}
+        disambiguateModelNames={store.settings.disambiguateModelNames}
         isCode
         codeWorkspace={session.workspace}
         onChangeWorkspace={pickWorkspace}

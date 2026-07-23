@@ -1891,6 +1891,7 @@ export default function App() {
                       onStopGeneration={store.stopGeneration}
                       onOpenProviders={openProviders}
                       prettifyModelNames={store.settings.prettifyModelNames}
+                      disambiguateModelNames={store.settings.disambiguateModelNames}
                       workflows={store.settings.workflows || []}
                       onTranscribeAudio={(blob, mimeType) => store.transcribeAudio(blob, mimeType)}
                       parallelModelIds={parallelModelIds}
@@ -1922,6 +1923,7 @@ export default function App() {
                       homeMode={homeMode}
                       homeAttachments={homeAttachments}
                       prettifyModelNames={store.settings.prettifyModelNames}
+                      disambiguateModelNames={store.settings.disambiguateModelNames}
                       workflows={store.settings.workflows || []}
                       useResponsesApi={store.settings.modelSettings.useResponsesApi}
                       reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}
@@ -1966,6 +1968,7 @@ export default function App() {
                       homeMode={homeMode}
                       homeAttachments={homeAttachments}
                       prettifyModelNames={store.settings.prettifyModelNames}
+                      disambiguateModelNames={store.settings.disambiguateModelNames}
                       workflows={store.settings.workflows || []}
                       useResponsesApi={store.settings.modelSettings.useResponsesApi}
                       reasoningEffort={store.settings.modelSettings.reasoningEffort || 'off'}

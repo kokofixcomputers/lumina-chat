@@ -237,6 +237,33 @@ export function getModelInfo(modelId: string): ModelInfo {
 }
 
 /**
+ * Prefixes a model's display name with its provider (e.g. "OpenAI - gpt-5-nano") only when
+ * another *different* provider in `allModels` exposes a model with that exact same display
+ * name — otherwise returns the plain name unchanged. Meant for UI spots that show a single
+ * model with no other provider context nearby (the selected-model button, parallel-compare
+ * chips); dropdown lists that already group models under a per-provider header don't need this.
+ */
+export function disambiguateModelName(
+  displayName: string,
+  providerId: string,
+  providerName: string,
+  allModels: { fullId: string; providerId: string }[],
+  prettify: boolean,
+): string {
+  const otherProviders = new Set(
+    allModels
+      .filter(m => {
+        if (m.providerId === providerId) return false;
+        const otherId = m.fullId.slice(m.fullId.indexOf('/') + 1);
+        const otherName = prettify ? getModelInfo(otherId).displayName : otherId;
+        return otherName === displayName;
+      })
+      .map(m => m.providerId)
+  );
+  return otherProviders.size > 0 ? `${providerName} - ${displayName}` : displayName;
+}
+
+/**
  * Async. Guaranteed to resolve the icon even on the very first call,
  * without needing warmModelIconCache() first.
  */

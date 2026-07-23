@@ -75,6 +75,18 @@ export default function GeneralTab({ settings, onUpdateModelSettings, onUpdateSe
         </div>
         <div className="form-group">
           <div className="flex items-center justify-between">
+            <label className="form-label mb-0">Disambiguate model names by provider</label>
+            <button
+              onClick={() => onUpdateSettings({ disambiguateModelNames: !settings.disambiguateModelNames })}
+              className={`toggle ${settings.disambiguateModelNames ? 'bg-[rgb(var(--accent))]' : 'bg-black/20 dark:bg-white/20'}`}
+            >
+              <span className={`toggle-thumb ${settings.disambiguateModelNames ? 'translate-x-5' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          <p className="form-help">When two providers offer a model with the same name, show it as "Provider - model" instead of just the model name</p>
+        </div>
+        <div className="form-group">
+          <div className="flex items-center justify-between">
             <label className="form-label mb-0">Generate Title</label>
             <button
               onClick={() => onUpdateSettings({ generateTitle: !settings.generateTitle })}

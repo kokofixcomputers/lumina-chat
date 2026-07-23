@@ -8,7 +8,7 @@ import {
   Share2, GitFork, Quote, Wand2, Layers
 } from 'lucide-react';
 import { checkIsTauri } from '../utils/tauri';
-import { getModelInfo } from '../utils/models';
+import { getModelInfo, disambiguateModelName } from '../utils/models';
 import { 
   calculateConversationTokens, 
   getContextUsagePercentage, 
@@ -45,6 +45,7 @@ interface ChatInputProps {
   attachments?: string[];
   onAttachmentsChange?: (attachments: string[])=> void;
   prettifyModelNames?: boolean;
+  disambiguateModelNames?: boolean;
   workflows?: Array<{ id: string; slug: string; prompt: string }>;
   useResponsesApi?: boolean;
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high';
@@ -184,6 +185,7 @@ export default function ChatInput({
   attachments = [],
   onAttachmentsChange,
   prettifyModelNames = true,
+  disambiguateModelNames = false,
   workflows = [],
   useResponsesApi = false,
   reasoningEffort = 'off',
@@ -340,7 +342,15 @@ export default function ChatInput({
   const canAttachImages = currentModel?.supportsImages ?? false;
   const modelId = currentModel ? currentModel.fullId.slice(currentModel.fullId.indexOf('/') + 1) : '';
   const modelInfo = getModelInfo(modelId);
-  const displayModelName = prettifyModelNames ? modelInfo.displayName : modelId;
+  const displayModelName = currentModel && disambiguateModelNames
+    ? disambiguateModelName(
+        prettifyModelNames ? modelInfo.displayName : modelId,
+        currentModel.providerId,
+        currentModel.providerName,
+        allModels,
+        prettifyModelNames,
+      )
+    : (prettifyModelNames ? modelInfo.displayName : modelId);
   const ModelIcon = typeof modelInfo.icon === 'string' ? null : modelInfo.icon;
 
   // Group filtered models by provider
@@ -1112,7 +1122,7 @@ export default function ChatInput({
           <button
             ref={modelBtnRef}
             onClick={openModelPicker}
-            className={`${overflowItems.includes('model') || parallelMode ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 max-w-[8rem]`}
+            className={`${overflowItems.includes('model') || parallelMode ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 ${disambiguateModelNames ? 'max-w-[14rem]' : 'max-w-[8rem]'}`}
           >
             {typeof modelInfo.icon === 'string' ? (
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[rgb(var(--border))]">
@@ -1141,7 +1151,16 @@ export default function ChatInput({
               {parallelModelIds.map(mid => {
                 const shortId = mid.slice(mid.indexOf('/') + 1);
                 const mInfo = getModelInfo(shortId);
-                const mName = prettifyModelNames ? mInfo.displayName : shortId;
+                const mModel = allModels.find(m => m.fullId === mid);
+                const mName = mModel && disambiguateModelNames
+                  ? disambiguateModelName(
+                      prettifyModelNames ? mInfo.displayName : shortId,
+                      mModel.providerId,
+                      mModel.providerName,
+                      allModels,
+                      prettifyModelNames,
+                    )
+                  : (prettifyModelNames ? mInfo.displayName : shortId);
                 const MIcon = typeof mInfo.icon === 'string' ? null : mInfo.icon;
                 return (
                   <div key={mid} className="flex items-center gap-1 bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] rounded-md px-1.5 py-0.5 text-[11px] font-medium">
@@ -1150,7 +1169,7 @@ export default function ChatInput({
                     ) : MIcon ? (
                       <MIcon size={10} />
                     ) : null}
-                    <span className="truncate max-w-[6rem]">{mName}</span>
+                    <span className={`truncate ${disambiguateModelNames ? 'max-w-[12rem]' : 'max-w-[6rem]'}`}>{mName}</span>
                     <button
                       onClick={() => setParallelModelIds(parallelModelIds.filter(id => id !== mid))}
                       className="ml-0.5 hover:text-red-500 transition-colors"

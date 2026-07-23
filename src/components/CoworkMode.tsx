@@ -552,6 +552,7 @@ export default function CoworkMode({ session, onUpdate, onNewSession, onOpenProv
         onDeleteMessage={handleDeleteMessage}
         onContinue={handleContinue}
         prettifyModelNames={store.settings.prettifyModelNames}
+        disambiguateModelNames={store.settings.disambiguateModelNames}
         isCode
       />
     </div>

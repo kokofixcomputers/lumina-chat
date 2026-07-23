@@ -12,8 +12,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            rust_target: tenki-macos-26-mini
+          - os: tenki-standard-small-2c-4g
+            rust_target: aarch64-apple-darwin
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
 

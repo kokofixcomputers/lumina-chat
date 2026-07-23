@@ -906,6 +906,11 @@ ${diffText}`,
   };
 
   const resolvePath = (workspace: string, relPath: string) => {
+    // The model sometimes passes back a full absolute path it saw earlier (e.g. echoing a
+    // `pwd` result) instead of a workspace-relative one — re-prepending the workspace root onto
+    // that produced nonsense like "/workspace/workspace" (and a "No such file or directory" cd
+    // failure). If it's already inside this workspace, use it as-is.
+    if (relPath.startsWith(workspace)) return relPath;
     const clean = relPath.replace(/^\/+/, '');
     const joined = clean ? `${workspace}/${clean}` : workspace;
     const normalized = joined.replace(/\/\.\.\//g, '/').replace(/\/\.\.$/, '');
@@ -1057,7 +1062,7 @@ ${diffText}`,
 
       const systemPrompt = `You are an expert software engineer. The user's workspace is at: ${startingSession.workspace}
 
-All paths are relative to the workspace root. Run shell commands only when needed.${workspacesNote}
+All paths (including execute_command's working_dir) are relative to the workspace root — e.g. use "src/components", not "${startingSession.workspace}/src/components" or an absolute path you saw earlier from a command's output (like the result of pwd). Passing an absolute path there gets it joined onto the workspace root a second time and fails with something like "No such file or directory". Use "." for the workspace root itself, never the workspace's absolute path. Run shell commands only when needed.${workspacesNote}
 
 Do not ask the user in chat whether you should run a command, or wait for them to say yes/no — just call execute_command directly. The application itself already shows the user an Allow/Deny approval popup for every command before it actually runs, so asking for confirmation yourself is redundant and just slows things down.
 

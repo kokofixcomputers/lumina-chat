@@ -310,6 +310,52 @@ async fn start_oauth_loopback(app: tauri::AppHandle, event_name: String) -> Resu
     Ok(port)
 }
 
+// tauri-plugin-notification 2.3.3's desktop backend never registers register_action_types /
+// actionPerformed (only src/mobile.rs does — see notes in src/utils/notify.ts on the frontend),
+// so notification action buttons don't work through it on macOS/Windows/Linux at all. On macOS
+// specifically, mac-notification-sys wraps the legacy (but still functional) NSUserNotification
+// API directly, which does support a main action button + close button and blocks until the
+// user picks one, telling us exactly which.
+//
+// Returns Ok(true) if the buttoned notification was actually shown (macOS only), Ok(false) on
+// any other platform so the frontend knows to fall back to a plain notification instead.
+#[tauri::command]
+async fn send_approval_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    event_name: String,
+) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Emitter;
+        std::thread::spawn(move || {
+            use mac_notification_sys::{MainButton, Notification, NotificationResponse};
+            let result = Notification::new()
+                .title(&title)
+                .message(&body)
+                .main_button(MainButton::SingleAction("Allow"))
+                .close_button("Deny")
+                .send();
+
+            let action = match result {
+                Ok(NotificationResponse::ActionButton(_)) => "allow",
+                Ok(NotificationResponse::CloseButton(_)) => "deny",
+                // Clicked the notification body itself, dismissed, ignored, or errored — none
+                // of these are an explicit choice, so don't treat them as either allow or deny.
+                _ => "none",
+            };
+            let _ = app.emit(&event_name, action);
+        });
+        Ok(true)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, title, body, event_name);
+        Ok(false)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -334,6 +380,7 @@ pub fn run() {
             anthropic_request,
             anthropic_stream_request,
             start_oauth_loopback,
+            send_approval_notification,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -343,6 +390,18 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // mac-notification-sys auto-detects the app's bundle identifier if never told one
+            // explicitly, by asking Launch Services to resolve the literal string "use_default"
+            // — in unsigned/dev builds that lookup fails, and macOS surfaces it to the user as
+            // an "Open With" application-chooser dialog (very confusing — looks like an app
+            // picker, not a notification problem). Setting it explicitly up front avoids that
+            // path entirely.
+            #[cfg(target_os = "macos")]
+            {
+                let _ = mac_notification_sys::set_application("cc.kokodev.luminachat");
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

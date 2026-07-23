@@ -35,3 +35,9 @@ base64 = "0.22"
 screenshots = "0.8"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-util = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# tauri-plugin-notification's desktop backend doesn't implement action-button notifications
+# (only its mobile backend does) — this wraps the legacy NSUserNotification API directly, which
+# does support a main action button + close button and can tell us which one was clicked.
+mac-notification-sys = "0.6"

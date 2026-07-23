@@ -7,7 +7,7 @@ import { useAppStore } from '../hooks/useAppStore';
 import { universalFetch } from '../utils/tauriFetch';
 import { isTauri, openUrl } from '../utils/tauri';
 import { authorizeGitHub } from '../integrations/githubOAuth';
-import { notify, isNotificationPermissionGranted, requestNotificationPermission, wasNotificationBannerDismissed, dismissNotificationBanner } from '../utils/notify';
+import { notify, isNotificationPermissionGranted, requestNotificationPermission, wasNotificationBannerDismissed, dismissNotificationBanner, notifyApprovalRequest, cancelApprovalWait } from '../utils/notify';
 import { resolveFormat, getByPath } from './ProvidersPanel';
 import ChatArea from './ChatArea';
 import Modal from './Modal';
@@ -1316,11 +1316,37 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
           currentSession = { ...currentSession, messages: [...currentSession.messages, assistantMsg], updatedAt: Date.now() };
           onUpdate(currentSession);
 
-          // Execute each tool call, ask approval for shell commands
+          // Execute each tool call, ask approval for shell commands. If the app isn't focused,
+          // this also fires a native notification with Allow/Deny buttons — whichever path the
+          // user acts on (in-app popup or the notification itself) wins; the other is cleaned up.
           const requestApproval = (cmd: string, dir: string): Promise<boolean> => {
             if (allowAllSessionRef.current || getAlwaysAllowedCommands().has(cmd)) return Promise.resolve(true);
-            notify('Approval needed', cmd);
-            return new Promise(resolve => setPendingApproval({ command: cmd, workingDir: dir, resolve }));
+
+            return new Promise<boolean>((resolve) => {
+              let settled = false;
+              const settle = (approved: boolean) => {
+                if (settled) return;
+                settled = true;
+                setPendingApproval(null);
+                resolve(approved);
+              };
+
+              setPendingApproval({ command: cmd, workingDir: dir, resolve: settle });
+
+              notifyApprovalRequest('Approval needed', cmd).then(notif => {
+                if (!notif) {
+                  // Action buttons aren't available right now (unsupported/unfocused/etc.) —
+                  // still send a plain notification so the user at least knows to come look.
+                  notify('Approval needed', cmd);
+                  return;
+                }
+                if (settled) { cancelApprovalWait(notif.id); return; }
+                notif.wait.then(action => {
+                  cancelApprovalWait(notif.id);
+                  settle(action === 'allow');
+                });
+              });
+            });
           };
 
           for (const tc of toolCallRequests!) {

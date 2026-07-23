@@ -4,13 +4,12 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: tenki-standard-small-2c-4g
     strategy:
       fail-fast: false
       matrix:

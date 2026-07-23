@@ -110,22 +110,27 @@ export default function App() {
   };
 
   // Initialize extensions and OAuth handlers on app startup
+  const isVersionsOrDownloadPage = /^\/(versions|download)(\/|$)/.test(location.pathname);
   useEffect(() => {
-    // Clean timestamps from extensions to prevent sync conflicts
-    import('./extensions/extensionStorage').then(({ extensionStorage }) => {
-      extensionStorage.cleanTimestamps();
-    }).catch(error => {
-      console.error('Failed to clean extension timestamps:', error);
-    });
-    
-    if (shouldSkipExtensions()) {
-      console.warn('[Extensions] Skipped on this load (crash recovery).');
-    } else {
-      extensionLoader.initializeExtensions().catch(error => {
-        console.error('Failed to initialize extensions:', error);
+    // Versions/Download are informational pages — skip loading arbitrary third-party
+    // extension code there, but OAuth handling below still applies everywhere.
+    if (!isVersionsOrDownloadPage) {
+      // Clean timestamps from extensions to prevent sync conflicts
+      import('./extensions/extensionStorage').then(({ extensionStorage }) => {
+        extensionStorage.cleanTimestamps();
+      }).catch(error => {
+        console.error('Failed to clean extension timestamps:', error);
       });
+
+      if (shouldSkipExtensions()) {
+        console.warn('[Extensions] Skipped on this load (crash recovery).');
+      } else {
+        extensionLoader.initializeExtensions().catch(error => {
+          console.error('Failed to initialize extensions:', error);
+        });
+      }
     }
-    
+
     // Check if we're in a popup window (OAuth callback)
     if (window.opener) {
       import('./utils/oauthCallback').then(({ initOAuthCallback }) => {

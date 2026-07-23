@@ -1,6 +1,6 @@
 export { SyncBackend } from './sync-backend.js';
 
-import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
+import { createHash, randomBytes, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto';
 
 // Simple sync WebSocket handler using KV storage
 async function handleSyncWebSocket(request, env) {
@@ -254,6 +254,38 @@ function remainingTtlSeconds(expiresAtIso) {
 const MAX_PASSWORD_ATTEMPTS = 5;
 const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// Password-protected shares are encrypted at rest with AES-256-GCM, keyed by a password-derived
+// (scrypt) key — not just password-checked. The backend only ever stores ciphertext; nothing
+// readable exists in KV without the password. GCM's built-in auth tag doubles as the "is this
+// the right password" check: decryption throws if the derived key is wrong, no separate
+// password-hash comparison needed.
+function encryptWithPassword(plaintext, password) {
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  const key = scryptSync(password, salt, 32);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return {
+    ciphertext: encrypted.toString('base64'),
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    authTag: authTag.toString('base64'),
+  };
+}
+
+// Throws if `password` is wrong (or the data was tampered with) — callers should catch this.
+function decryptWithPassword(enc, password) {
+  const salt = Buffer.from(enc.salt, 'base64');
+  const iv = Buffer.from(enc.iv, 'base64');
+  const authTag = Buffer.from(enc.authTag, 'base64');
+  const key = scryptSync(password, salt, 32);
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(enc.ciphertext, 'base64')), decipher.final()]);
+  return decrypted.toString('utf8');
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -322,15 +354,6 @@ export default {
           const expiryDate = new Date();
           expiryDate.setDate(expiryDate.getDate() + expiryDays);
 
-          // Password protection — same salted-sha256 pattern as user auth above. The plaintext
-          // password is never stored, only the salted hash.
-          let passwordHash = null;
-          let passwordSalt = null;
-          if (password) {
-            passwordSalt = randomBytes(16).toString('hex');
-            passwordHash = hashWithSalt(password, passwordSalt);
-          }
-
           // Delete token — a separate secret (not the share code) required to delete/force-expire
           // this share, so anyone who merely knows/guesses the public code can't nuke it. Only
           // the hash is stored; the plaintext token is returned once, to the creator, in the
@@ -339,14 +362,25 @@ export default {
           const deleteTokenSalt = randomBytes(16).toString('hex');
           const deleteTokenHash = hashWithSalt(deleteToken, deleteTokenSalt);
 
+          // If a password is set, the conversation is encrypted at rest (AES-256-GCM, key
+          // derived from the password via scrypt) — we never store the plaintext conversation
+          // in that case, only ciphertext. Without a password it's stored as plain JSON, same
+          // as before.
+          const encrypted = !!password;
+          const conversationJson = JSON.stringify(conversation);
+          const enc = encrypted ? encryptWithPassword(conversationJson, password) : null;
+
           // Store shared conversation
           const shareData = {
-            conversation,
             createdAt: new Date().toISOString(),
             expiresAt: expiryDate.toISOString(),
             expiryDays,
-            passwordHash,
-            passwordSalt,
+            encrypted,
+            conversation: encrypted ? undefined : conversation,
+            ciphertext: encrypted ? enc.ciphertext : undefined,
+            salt: encrypted ? enc.salt : undefined,
+            iv: encrypted ? enc.iv : undefined,
+            authTag: encrypted ? enc.authTag : undefined,
             deleteTokenHash,
             deleteTokenSalt,
             maxViews: typeof maxViews === 'number' && maxViews > 0 ? maxViews : null,
@@ -364,7 +398,7 @@ export default {
             code,
             expiresAt: expiryDate.toISOString(),
             deleteToken,
-            hasPassword: !!passwordHash,
+            hasPassword: encrypted,
             maxViews: shareData.maxViews,
           }), {
             headers: { 'Content-Type': 'application/json' }
@@ -423,15 +457,22 @@ export default {
             }));
           }
 
-          if (data.passwordHash) {
+          // The conversation itself — decrypted below if the share is password-protected.
+          let conversation = data.conversation;
+
+          if (data.encrypted) {
             if (!password) {
               return addCorsHeaders(new Response(JSON.stringify({ error: 'Password required', requiresPassword: true }), {
                 status: 401,
                 headers: { 'Content-Type': 'application/json' }
               }));
             }
-            const attemptHash = hashWithSalt(password, data.passwordSalt);
-            if (attemptHash !== data.passwordHash) {
+            // Decryption itself IS the password check — GCM's auth tag verification throws if
+            // the derived key (i.e. the password) is wrong, so there's no separate hash to leak
+            // or compare against.
+            try {
+              conversation = JSON.parse(decryptWithPassword(data, password));
+            } catch {
               data.failedAttempts = (data.failedAttempts || 0) + 1;
               if (data.failedAttempts >= MAX_PASSWORD_ATTEMPTS) {
                 data.lockedUntil = new Date(Date.now() + LOCKOUT_MS).toISOString();
@@ -476,7 +517,7 @@ export default {
 
           return addCorsHeaders(new Response(JSON.stringify({
             success: true,
-            conversation: data.conversation,
+            conversation,
             expiresAt: data.expiresAt,
             viewsRemaining: data.maxViews ? Math.max(0, data.maxViews - data.viewCount) : null,
           }), {

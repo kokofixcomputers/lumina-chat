@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, memo } from 'react';
-import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns, GitBranch, GitCommit, ExternalLink, ListChecks, CheckSquare, Square } from 'lucide-react';
+import { Settings, Bot, FolderOpen, ChevronDown, ChevronRight, BrainCircuit, Columns, GitBranch, GitCommit, ExternalLink, ListChecks, CheckSquare, Square, GitPullRequest, Loader2, Check, ListTodo, X } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import PreviewSidebar from './PreviewSidebar';
+import Modal from './Modal';
 import { TAB_DRAG_TYPE } from './TabBar';
 
 // Memoized bubble — only re-renders when its own message object changes
@@ -147,6 +148,13 @@ interface ChatAreaProps {
   onOpenRepo?: () => void;
   onParallelSend?: (content: string, images: string[], modelIds: string[]) => void;
   plan?: { text: string; completed: boolean }[];
+  onCreatePR?: () => void;
+  creatingPR?: boolean;
+  activeTasks?: { id: string; label: string }[];
+  branches?: string[];
+  onSwitchBranch?: (branch: string) => void;
+  onCreateBranch?: (name: string) => void;
+  switchingBranch?: boolean;
 }
 
 const QUICK_ACTIONS = [
@@ -200,7 +208,18 @@ export default function ChatArea({
   onOpenRepo,
   onParallelSend,
   plan,
+  onCreatePR,
+  creatingPR,
+  activeTasks,
+  branches,
+  onSwitchBranch,
+  onCreateBranch,
+  switchingBranch,
 }: ChatAreaProps) {
+  const [showCommitMenu, setShowCommitMenu] = useState(false);
+  const [showBranchMenu, setShowBranchMenu] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
+  const [showTasksModal, setShowTasksModal] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
@@ -354,10 +373,63 @@ export default function ChatArea({
           )}
           {gitStatus && (
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[11px] text-[rgb(var(--muted))] font-mono flex items-center gap-1" title={`Branch: ${gitStatus.branch}`}>
-                <GitBranch size={11} />
-                {gitStatus.branch}
-              </span>
+              <div className="relative">
+                <button
+                  className="text-[11px] text-[rgb(var(--muted))] font-mono flex items-center gap-1 hover:text-[rgb(var(--text))] transition-colors disabled:opacity-50"
+                  title={`Branch: ${gitStatus.branch} — click to switch`}
+                  disabled={!onSwitchBranch || switchingBranch}
+                  onClick={() => setShowBranchMenu(v => !v)}
+                >
+                  {switchingBranch ? <Loader2 size={11} className="animate-spin" /> : <GitBranch size={11} />}
+                  {gitStatus.branch}
+                  {onSwitchBranch && <ChevronDown size={10} className={`transition-transform ${showBranchMenu ? 'rotate-180' : ''}`} />}
+                </button>
+                {showBranchMenu && onSwitchBranch && (
+                  <div className="absolute top-full left-0 mt-1.5 w-56 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm shadow-xl overflow-hidden z-30">
+                    <div className="max-h-48 overflow-y-auto">
+                      {(branches || []).map(b => (
+                        <button
+                          key={b}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] font-mono truncate hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors"
+                          onClick={() => { onSwitchBranch(b); setShowBranchMenu(false); }}
+                        >
+                          {b === gitStatus.branch ? <Check size={12} className="text-[rgb(var(--accent))] shrink-0" /> : <span className="w-3 shrink-0" />}
+                          <span className="truncate">{b}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {onCreateBranch && (
+                      <div className="flex items-center gap-1.5 p-2 border-t border-[rgb(var(--border))]">
+                        <input
+                          autoFocus
+                          className="input text-[12px] py-1 px-2 flex-1 min-w-0"
+                          placeholder="new-branch-name"
+                          value={newBranchName}
+                          onChange={e => setNewBranchName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && newBranchName.trim()) {
+                              onCreateBranch(newBranchName.trim());
+                              setNewBranchName('');
+                              setShowBranchMenu(false);
+                            }
+                          }}
+                        />
+                        <button
+                          className="btn-primary text-[11px] py-1 px-2 shrink-0 disabled:opacity-50"
+                          disabled={!newBranchName.trim()}
+                          onClick={() => {
+                            onCreateBranch(newBranchName.trim());
+                            setNewBranchName('');
+                            setShowBranchMenu(false);
+                          }}
+                        >
+                          New
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               {onOpenRepo && (
                 <button className="btn-icon w-6 h-6" onClick={onOpenRepo} title="Open repo in browser">
                   <ExternalLink size={12} />
@@ -367,17 +439,87 @@ export default function ChatArea({
                 <>
                   <span className="text-[11px] font-mono text-green-500">+{gitStatus.additions}</span>
                   <span className="text-[11px] font-mono text-red-500">-{gitStatus.deletions}</span>
-                  <button className="btn-secondary text-[11px] py-1 px-2.5 gap-1" onClick={onOpenCommit}>
-                    <GitCommit size={11} />
-                    Commit & Push
-                  </button>
+                  {creatingPR ? (
+                    <div className="btn-secondary text-[11px] py-1 px-2.5 gap-1.5 opacity-80 cursor-default">
+                      <Loader2 size={11} className="animate-spin" />
+                      Creating PR…
+                    </div>
+                  ) : (
+                    <div className="relative flex">
+                      <button
+                        className="btn-secondary text-[11px] py-1 pl-2.5 pr-2 gap-1 rounded-r-none border-r border-[rgb(var(--border))]"
+                        onClick={onOpenCommit}
+                      >
+                        <GitCommit size={11} />
+                        Commit & Push
+                      </button>
+                      <button
+                        className="btn-secondary text-[11px] py-1 px-1.5 rounded-l-none"
+                        onClick={() => setShowCommitMenu(v => !v)}
+                        title="Other actions"
+                      >
+                        <ChevronDown size={11} className={`transition-transform ${showCommitMenu ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showCommitMenu && (
+                        <div className="absolute top-full right-0 mt-1.5 w-48 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/95 backdrop-blur-sm shadow-xl overflow-hidden z-30">
+                          <button
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors disabled:opacity-50"
+                            disabled={!onCreatePR}
+                            onClick={() => { onCreatePR?.(); setShowCommitMenu(false); }}
+                          >
+                            <GitPullRequest size={12} className="shrink-0" />
+                            Create PR
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
           )}
+          <button
+            className={`text-[11px] py-1 px-2.5 gap-1.5 rounded-lg flex items-center shrink-0 transition-colors ${
+              (activeTasks?.length ?? 0) > 0
+                ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-contrast))]'
+                : 'text-[rgb(var(--muted))] hover:text-[rgb(var(--text))]'
+            }`}
+            onClick={() => setShowTasksModal(true)}
+            title="Active tasks"
+          >
+            <ListTodo size={12} />
+            {activeTasks?.length ?? 0} task{(activeTasks?.length ?? 0) === 1 ? '' : 's'}
+          </button>
           <button className="btn-icon" onClick={onTogglePanel}><Settings size={15} /></button>
         </div>
       )}
+
+      {/* Active tasks modal */}
+      <Modal
+        open={showTasksModal}
+        onClose={() => setShowTasksModal(false)}
+        panelClassName="glass-panel-strong rounded-3xl shadow-2xl max-w-sm w-full max-h-[70vh] overflow-hidden flex flex-col"
+      >
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-[rgb(var(--border))] shrink-0">
+          <ListTodo size={15} className="text-[rgb(var(--accent))] shrink-0" />
+          <h3 className="text-sm font-semibold flex-1">
+            Active task{(activeTasks?.length ?? 0) === 1 ? '' : 's'} ({activeTasks?.length ?? 0})
+          </h3>
+          <button className="btn-icon w-7 h-7" onClick={() => setShowTasksModal(false)}><X size={15} /></button>
+        </div>
+        <div className="overflow-y-auto p-3 flex-1 min-h-0 space-y-1">
+          {(activeTasks?.length ?? 0) === 0 ? (
+            <p className="text-sm text-[rgb(var(--muted))] text-center py-8">Nothing running right now.</p>
+          ) : (
+            activeTasks!.map(t => (
+              <div key={t.id} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04]">
+                <Loader2 size={14} className="animate-spin text-[rgb(var(--accent))] shrink-0" />
+                <span className="text-[13px] text-[rgb(var(--text))] truncate">{t.label}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
 
       {/* Messages */}
       <div

@@ -676,37 +676,46 @@ export default function App() {
     }
   };
 
-  const handleShare = async (options: { includeAttachments: boolean; expiryDays: number }) => {
+  const handleShare = async (options: { includeAttachments: boolean; expiryDays: number; password?: string; maxViews?: number }) => {
     const conversation = store.activeConversation;
     if (!conversation) return;
-    
+
     try {
       const conversationToShare = {
         ...conversation,
-        messages: options.includeAttachments 
-          ? conversation.messages 
+        messages: options.includeAttachments
+          ? conversation.messages
           : conversation.messages.map(msg => ({
               ...msg,
               images: undefined // Remove attachments if not included
             }))
       };
-      
-      const response = await fetch('https://my-ai-chat.kokofixcomputers.workers.dev/share', {
+
+      const response = await fetch('https://shareservice.magnified.cc/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversation: conversationToShare,
-          expiryDays: options.expiryDays
+          expiryDays: options.expiryDays,
+          password: options.password || undefined,
+          maxViews: options.maxViews || undefined,
         })
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         // Store share info in conversation metadata
-        const updatedConversations = store.conversations.map(conv => 
-          conv.id === conversation.id 
-            ? { ...conv, shareInfo: { code: result.code, expiresAt: result.expiresAt, createdAt: new Date().toISOString() } }
+        const updatedConversations = store.conversations.map(conv =>
+          conv.id === conversation.id
+            ? { ...conv, shareInfo: {
+                code: result.code,
+                expiresAt: result.expiresAt,
+                createdAt: new Date().toISOString(),
+                deleteToken: result.deleteToken,
+                hasPassword: !!result.hasPassword,
+                maxViews: result.maxViews ?? null,
+              } }
             : conv
         );
         store.setConversations(updatedConversations);

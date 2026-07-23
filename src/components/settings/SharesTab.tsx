@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trash2, ExternalLink, Copy, Check, Calendar, Shield, AlertCircle } from 'lucide-react';
+import { Trash2, ExternalLink, Copy, Check, Calendar, Shield, AlertCircle, Lock, Hash, AlertTriangle } from 'lucide-react';
 import type { Conversation, AppSettings } from '../../types';
 
 interface SharesTabProps {
@@ -12,14 +12,31 @@ export default function SharesTab({ conversations }: SharesTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
   const shares = conversations.filter(c => c.shareInfo);
+  const activeCount = shares.filter(c => new Date(c.shareInfo!.expiresAt) >= new Date()).length;
+
+  const requestDelete = (code: string) => {
+    if (confirmingDelete === code) {
+      handleDeleteShare(code, shares.find(c => c.shareInfo?.code === code)!.id);
+      setConfirmingDelete(null);
+      return;
+    }
+    setConfirmingDelete(code);
+    setTimeout(() => setConfirmingDelete(prev => (prev === code ? null : prev)), 4000);
+  };
 
   const handleDeleteShare = async (code: string, conversationId: string) => {
     setDeleting(code);
     setError(null);
     try {
-      const response = await fetch(`https://my-ai-chat.kokofixcomputers.workers.dev/share?code=${code}`, {
+      const conv = conversations.find(c => c.id === conversationId);
+      const token = conv?.shareInfo?.deleteToken;
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+      // Force-deletes/expires the share on the backend immediately, regardless of how much
+      // time is left on it — the backend does an unconditional KV delete, not a soft-expire.
+      const response = await fetch(`https://shareservice.magnified.cc/share?code=${code}${tokenParam}`, {
         method: 'DELETE',
       });
       const result = await response.json();
@@ -82,7 +99,7 @@ export default function SharesTab({ conversations }: SharesTabProps) {
     const now = new Date();
     const expiry = new Date(expiresAt);
     const isExpired = expiry < now;
-    
+
     return {
       isExpired,
       timeLeft: isExpired ? 'Expired' : `Expires ${formatDate(expiresAt)}`
@@ -92,7 +109,14 @@ export default function SharesTab({ conversations }: SharesTabProps) {
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-6 max-w-4xl">
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))] mb-4">Shared Conversations</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[rgb(var(--muted))]">Shared Conversations</h3>
+          {shares.length > 0 && (
+            <span className="text-xs text-[rgb(var(--muted))]">
+              {activeCount} active · {shares.length - activeCount} expired
+            </span>
+          )}
+        </div>
 
         {error && (
           <div className="border border-[rgb(var(--danger)/0.4)] bg-[rgb(var(--danger)/0.08)] rounded-xl p-4 mb-4">
@@ -116,6 +140,7 @@ export default function SharesTab({ conversations }: SharesTabProps) {
             {shares.map(conversation => {
               const shareInfo = conversation.shareInfo!;
               const { isExpired, timeLeft } = getExpirationStatus(shareInfo.expiresAt);
+              const confirming = confirmingDelete === shareInfo.code;
 
               return (
                 <div
@@ -127,7 +152,7 @@ export default function SharesTab({ conversations }: SharesTabProps) {
                       <h4 className="font-medium text-[rgb(var(--text))] truncate mb-1">
                         {conversation.title || 'Untitled Conversation'}
                       </h4>
-                      <div className="flex items-center gap-4 text-xs text-[rgb(var(--muted))]">
+                      <div className="flex items-center gap-4 text-xs text-[rgb(var(--muted))] flex-wrap">
                         <div className="flex items-center gap-1">
                           <Calendar size={12} />
                           <span>Shared {formatDate(shareInfo.createdAt)}</span>
@@ -136,17 +161,35 @@ export default function SharesTab({ conversations }: SharesTabProps) {
                           <Shield size={12} />
                           <span>{timeLeft}</span>
                         </div>
+                        {shareInfo.hasPassword && (
+                          <div className="flex items-center gap-1 text-[rgb(var(--accent))]">
+                            <Lock size={12} />
+                            <span>Password protected</span>
+                          </div>
+                        )}
+                        {!!shareInfo.maxViews && (
+                          <div className="flex items-center gap-1 text-[rgb(var(--accent))]">
+                            <Hash size={12} />
+                            <span>Limited to {shareInfo.maxViews} view{shareInfo.maxViews === 1 ? '' : 's'}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    
+
                     <button
-                      onClick={() => handleDeleteShare(shareInfo.code, conversation.id)}
+                      onClick={() => requestDelete(shareInfo.code)}
                       disabled={deleting === shareInfo.code}
-                      className="btn-icon hover:text-[rgb(var(--danger))] disabled:opacity-50"
-                      title="Delete share"
+                      className={`text-xs py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 shrink-0 transition-colors disabled:opacity-50 ${
+                        confirming
+                          ? 'bg-[rgb(var(--danger))] text-white'
+                          : 'btn-icon hover:text-[rgb(var(--danger))]'
+                      }`}
+                      title={confirming ? 'Click again to confirm' : 'Force delete / expire now'}
                     >
                       {deleting === shareInfo.code ? (
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      ) : confirming ? (
+                        <><AlertTriangle size={14} /> Confirm?</>
                       ) : (
                         <Trash2 size={16} />
                       )}
@@ -171,7 +214,7 @@ export default function SharesTab({ conversations }: SharesTabProps) {
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-medium text-[rgb(var(--muted))]">Share URL:</span>
                       <code className="flex-1 px-2 py-1 bg-[rgb(var(--bg))] rounded text-xs font-mono text-[rgb(var(--text))] border border-[rgb(var(--border))] truncate">
-                        https://lumina-chat-rho.vercel.app?view={shareInfo.code}
+                        {window.location.origin}?view={shareInfo.code}
                       </code>
                       <button
                         onClick={() => handleCopyUrl(shareInfo.code)}

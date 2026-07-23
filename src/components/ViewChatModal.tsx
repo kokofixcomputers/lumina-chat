@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Link, Download, Calendar, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Link, Download, Calendar, AlertCircle, Loader2, Lock, Eye } from 'lucide-react';
 import type { Conversation } from '../types';
 import Modal from './Modal';
 
@@ -11,28 +11,31 @@ interface ViewChatModalProps {
 
 export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: ViewChatModalProps) {
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [shareInfo, setShareInfo] = useState<{ expiresAt: string } | null>(null);
+  const [shareInfo, setShareInfo] = useState<{ expiresAt: string; viewsRemaining: number | null } | null>(null);
 
   // Handle URL parameter for direct viewing
   useEffect(() => {
     if (isOpen) {
       const urlParams = new URLSearchParams(window.location.search);
       const viewCode = urlParams.get('view');
-      
+
       if (viewCode && !code) {
         setCode(viewCode);
-        handleLoadChat();
+        handleLoadChat(viewCode);
         // Clean up URL
         window.history.replaceState({}, '', window.location.pathname);
       }
     }
   }, [isOpen, code]);
 
-  const handleLoadChat = async () => {
-    if (!code.trim()) {
+  const handleLoadChat = async (codeOverride?: string, passwordOverride?: string) => {
+    const codeToUse = (codeOverride ?? code).trim();
+    if (!codeToUse) {
       setError('Please enter a share code');
       return;
     }
@@ -41,12 +44,18 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
     setError(null);
 
     try {
-      const response = await fetch(`https://my-ai-chat.kokofixcomputers.workers.dev/share?code=${code.trim()}`);
+      const passwordToUse = passwordOverride ?? password;
+      const passwordParam = passwordToUse ? `&password=${encodeURIComponent(passwordToUse)}` : '';
+      const response = await fetch(`https://shareservice.magnified.cc/share?code=${codeToUse}${passwordParam}`);
       const data = await response.json();
 
       if (data.success) {
         setConversation(data.conversation);
-        setShareInfo({ expiresAt: data.expiresAt });
+        setShareInfo({ expiresAt: data.expiresAt, viewsRemaining: data.viewsRemaining ?? null });
+        setNeedsPassword(false);
+      } else if (data.requiresPassword) {
+        setNeedsPassword(true);
+        setError(passwordToUse ? (data.error || 'Incorrect password') : null);
       } else {
         setError(data.error || 'Failed to load shared conversation');
       }
@@ -123,7 +132,7 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
                       maxLength={6}
                     />
                     <button
-                      onClick={handleLoadChat}
+                      onClick={() => handleLoadChat()}
                       disabled={isLoading || code.length !== 6}
                       className="btn-primary px-4"
                     >
@@ -135,6 +144,35 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
                     </button>
                   </div>
                 </div>
+
+                {needsPassword && (
+                  <div>
+                    <label className="flex items-center gap-1.5 text-sm font-medium text-[rgb(var(--text))] mb-2">
+                      <Lock size={13} /> Password
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        autoFocus
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleLoadChat(); }}
+                        placeholder="Enter password"
+                        className="flex-1 px-3 py-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg))] text-[rgb(var(--text))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))]/50"
+                      />
+                      <button
+                        onClick={() => handleLoadChat()}
+                        disabled={isLoading || !password}
+                        className="btn-primary px-4"
+                      >
+                        Unlock
+                      </button>
+                    </div>
+                    <p className="text-xs text-[rgb(var(--muted))] mt-2">
+                      This shared conversation is password protected.
+                    </p>
+                  </div>
+                )}
 
                 {error && (
                   <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
@@ -184,6 +222,12 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
                       <span>Expires: {new Date(shareInfo.expiresAt).toLocaleString()}</span>
                     </div>
                   )}
+                  {shareInfo?.viewsRemaining !== null && shareInfo?.viewsRemaining !== undefined && (
+                    <div className="flex items-center gap-2 text-sm text-[rgb(var(--muted))]">
+                      <Eye size={12} />
+                      <span>{shareInfo.viewsRemaining} view{shareInfo.viewsRemaining === 1 ? '' : 's'} remaining</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Conversation Title */}
@@ -230,6 +274,9 @@ export default function ViewChatModal({ isOpen, onClose, onLoadConversation }: V
                     setConversation(null);
                     setShareInfo(null);
                     setCode('');
+                    setPassword('');
+                    setNeedsPassword(false);
+                    setError(null);
                   }}
                   className="btn-secondary"
                 >

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Share2, Link, Eye, EyeOff, Trash2, Upload, Copy, Check, ExternalLink } from 'lucide-react';
+import { X, Share2, Link, Eye, EyeOff, Trash2, Upload, Copy, Check, ExternalLink, Lock, Hash } from 'lucide-react';
 import type { Conversation } from '../types';
 import { openDeepLink } from '../utils/deepLink';
 
@@ -13,11 +13,17 @@ interface SharePanelProps {
 interface ShareOptions {
   includeAttachments: boolean;
   expiryDays: number;
+  password?: string;
+  maxViews?: number;
 }
 
 export default function SharePanel({ conversation, onShare, onUnshare, onClose }: SharePanelProps) {
   const [includeAttachments, setIncludeAttachments] = useState(true);
   const [expiryDays, setExpiryDays] = useState(7);
+  const [usePassword, setUsePassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [useMaxViews, setUseMaxViews] = useState(false);
+  const [maxViews, setMaxViews] = useState(10);
   const [isSharing, setIsSharing] = useState(false);
   const [isUnsharing, setIsUnsharing] = useState(false);
   const [shareResult, setShareResult] = useState<{ code: string; expiresAt: string } | null>(null);
@@ -40,7 +46,12 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
     
     setIsSharing(true);
     try {
-      await onShare({ includeAttachments, expiryDays });
+      await onShare({
+        includeAttachments,
+        expiryDays,
+        password: usePassword && password.trim() ? password.trim() : undefined,
+        maxViews: useMaxViews && maxViews > 0 ? maxViews : undefined,
+      });
       // The parent component will handle the actual sharing and update state
       if (conversation.shareInfo) {
         setShareResult({
@@ -88,7 +99,9 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
     
     setIsUnsharing(true);
     try {
-      const response = await fetch(`https://my-ai-chat.kokofixcomputers.workers.dev/share?code=${shareResult.code}`, {
+      const token = conversation?.shareInfo?.deleteToken;
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+      const response = await fetch(`https://shareservice.magnified.cc/share?code=${shareResult.code}${tokenParam}`, {
         method: 'DELETE'
       });
       
@@ -205,6 +218,62 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
                 </div>
               </div>
 
+              {/* Password Protection */}
+              <div className="bg-[rgb(var(--panel))] rounded-xl p-4 border border-[rgb(var(--border))]">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={usePassword}
+                    onChange={(e) => setUsePassword(e.target.checked)}
+                    className="w-4 h-4 rounded border-[rgb(var(--border))] bg-[rgb(var(--bg))] text-[rgb(var(--accent))] focus:ring-2 focus:ring-[rgb(var(--accent))]"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Lock size={16} />
+                    <span className="text-[rgb(var(--text))]">Require a password</span>
+                  </div>
+                </label>
+                {usePassword && (
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter a password"
+                    className="w-full mt-3 px-3 py-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg))] text-[rgb(var(--text))] text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))]/50"
+                  />
+                )}
+                <p className="text-xs text-[rgb(var(--muted))] mt-2 ml-7">
+                  Viewers must enter this password before the conversation loads
+                </p>
+              </div>
+
+              {/* Max Views */}
+              <div className="bg-[rgb(var(--panel))] rounded-xl p-4 border border-[rgb(var(--border))]">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useMaxViews}
+                    onChange={(e) => setUseMaxViews(e.target.checked)}
+                    className="w-4 h-4 rounded border-[rgb(var(--border))] bg-[rgb(var(--bg))] text-[rgb(var(--accent))] focus:ring-2 focus:ring-[rgb(var(--accent))]"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Hash size={16} />
+                    <span className="text-[rgb(var(--text))]">Limit number of views</span>
+                  </div>
+                </label>
+                {useMaxViews && (
+                  <input
+                    type="number"
+                    min={1}
+                    value={maxViews}
+                    onChange={(e) => setMaxViews(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-24 mt-3 px-3 py-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--bg))] text-[rgb(var(--text))] text-sm focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))]/50"
+                  />
+                )}
+                <p className="text-xs text-[rgb(var(--muted))] mt-2 ml-7">
+                  The share is deleted automatically once it's been viewed this many times
+                </p>
+              </div>
+
               {/* Share Button */}
               <button
                 onClick={handleShare}
@@ -249,6 +318,20 @@ export default function SharePanel({ conversation, onShare, onUnshare, onClose }
                 <p className="text-xs text-[rgb(var(--muted))] mt-2">
                   Expires: {new Date(shareResult.expiresAt).toLocaleString()}
                 </p>
+                {(conversation.shareInfo?.hasPassword || conversation.shareInfo?.maxViews) && (
+                  <div className="flex items-center gap-3 mt-2">
+                    {conversation.shareInfo?.hasPassword && (
+                      <span className="flex items-center gap-1 text-xs text-[rgb(var(--accent))]">
+                        <Lock size={11} /> Password protected
+                      </span>
+                    )}
+                    {!!conversation.shareInfo?.maxViews && (
+                      <span className="flex items-center gap-1 text-xs text-[rgb(var(--accent))]">
+                        <Hash size={11} /> Limited to {conversation.shareInfo.maxViews} view{conversation.shareInfo.maxViews === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="bg-[rgb(var(--panel))] rounded-xl p-4 border border-[rgb(var(--border))]">

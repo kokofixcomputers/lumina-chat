@@ -8,7 +8,7 @@ export interface ShareData {
 }
 
 export async function loadSharedConversation(code: string): Promise<ShareData> {
-  const response = await fetch(`https://my-ai-chat.kokofixcomputers.workers.dev/share?code=${code.trim()}`);
+  const response = await fetch(`https://shareservice.magnified.cc/share?code=${code.trim()}`);
   const data = await response.json();
 
   if (!data.success) {

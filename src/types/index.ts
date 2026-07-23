@@ -59,6 +59,9 @@ export interface Conversation {
     code: string;
     expiresAt: string;
     createdAt: string;
+    deleteToken?: string;
+    hasPassword?: boolean;
+    maxViews?: number | null;
   };
 }
 

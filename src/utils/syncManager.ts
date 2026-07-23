@@ -130,7 +130,7 @@ export class SyncManager {
 
   private _getWebSocketUrl(): string {
     // Hardcode the Workers.dev URL for sync WebSocket
-    return 'wss://my-ai-chat.kokofixcomputers.workers.dev/sync-ws';
+    return 'wss://shareservice.magnified.cc/sync-ws';
   }
 
   private _authenticate() {

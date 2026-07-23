@@ -212,6 +212,9 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   // undefined = not checked yet, null = checked and confirmed no repo, GitStatus = repo found
   const [gitStatus, setGitStatus] = useState<GitStatus | null | undefined>(undefined);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [conflictedFiles, setConflictedFiles] = useState<string[]>([]);
+  const [switchingBranch, setSwitchingBranch] = useState(false);
   const [showCommitBox, setShowCommitBox] = useState(false);
   // Paths excluded from this commit — untracked from the commit box, not from disk/git;
   // the file's actual changes stay untouched, it's just left unstaged this round.
@@ -225,6 +228,7 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   const [newRepoName, setNewRepoName] = useState('');
   const [newRepoPrivate, setNewRepoPrivate] = useState(true);
   const [creatingRepo, setCreatingRepo] = useState(false);
+  const [creatingPR, setCreatingPR] = useState(false);
   const [createRepoError, setCreateRepoError] = useState('');
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [showWorkflowsMenu, setShowWorkflowsMenu] = useState(false);
@@ -270,7 +274,7 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
   }, [session?.workspace]);
 
   const checkGitStatus = useCallback(async (workspace: string) => {
-    if (!isTauri) { setGitStatus(null); return; }
+    if (!isTauri) { setGitStatus(null); setBranches([]); setConflictedFiles([]); return; }
     try {
       const check = await executeShellCommand('git rev-parse --is-inside-work-tree', workspace);
       if (check.code !== 0 || check.stdout.trim() !== 'true') {
@@ -278,11 +282,21 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
           console.warn('[git status] git rev-parse failed:', check.stderr || check.stdout);
         }
         setGitStatus(null);
+        setBranches([]);
+        setConflictedFiles([]);
         return;
       }
 
       const branchRes = await executeShellCommand('git rev-parse --abbrev-ref HEAD', workspace);
       const branch = branchRes.stdout.trim() || 'HEAD';
+
+      const branchListRes = await executeShellCommand("git branch --format='%(refname:short)'", workspace);
+      setBranches(branchListRes.stdout.split('\n').map(b => b.trim()).filter(Boolean));
+
+      // Files with unresolved merge conflicts (git tracks this precisely — more reliable than
+      // grepping for conflict-marker text, which could coincidentally appear in normal content).
+      const conflictRes = await executeShellCommand('git diff --name-only --diff-filter=U', workspace);
+      setConflictedFiles(conflictRes.stdout.split('\n').map(f => f.trim()).filter(Boolean));
 
       const remoteRes = await executeShellCommand('git remote get-url origin', workspace);
       const remoteUrl = remoteRes.code === 0 ? remoteToWebUrl(remoteRes.stdout) : null;
@@ -440,6 +454,51 @@ export default function CodeMode({ session, onUpdate, onNewSession, onOpenProvid
     if (gitStatus?.remoteUrl) openUrl(gitStatus.remoteUrl);
   };
 
+  const handleSwitchBranch = async (branch: string) => {
+    if (!session || switchingBranch || branch === gitStatus?.branch) return;
+    setSwitchingBranch(true);
+    try {
+      const res = await executeShellCommand(`git checkout "${branch}"`, session.workspace);
+      if (res.code !== 0) {
+        alert(`Couldn't switch to "${branch}": ${res.stderr || res.stdout}`);
+        return;
+      }
+      await checkGitStatus(session.workspace);
+    } finally {
+      setSwitchingBranch(false);
+    }
+  };
+
+  const handleCreateBranch = async (name: string) => {
+    if (!session || switchingBranch) return;
+    setSwitchingBranch(true);
+    try {
+      const res = await executeShellCommand(`git checkout -b "${name}"`, session.workspace);
+      if (res.code !== 0) {
+        alert(`Couldn't create branch "${name}": ${res.stderr || res.stdout}`);
+        return;
+      }
+      await checkGitStatus(session.workspace);
+    } finally {
+      setSwitchingBranch(false);
+    }
+  };
+
+  const handleResolveConflicts = () => {
+    if (!session || conflictedFiles.length === 0 || isGenerating) return;
+    const fileList = conflictedFiles.map(f => `- ${f}`).join('\n');
+    sendMessage(
+      `There are unresolved git merge conflicts in the following file(s):\n${fileList}\n\n` +
+      `Read each file, resolve the <<<<<<< / ======= / >>>>>>> conflict markers by merging both sides sensibly ` +
+      `(keep whichever changes make sense together, or combine them if they're not truly conflicting), remove the ` +
+      `conflict markers, then save the resolved file with edit_file or write_file. ` +
+      `IMPORTANT: editing the file does NOT mark the conflict as resolved in git — after saving each file, run ` +
+      `\`git add -- <path>\` on it via execute_command, otherwise git still reports it as unmerged even though the ` +
+      `markers are gone. Do this (edit, then git add) for every listed file.`,
+      []
+    );
+  };
+
   const openCreateRepoBox = () => {
     if (!session) return;
     const base = session.workspace.replace(/\/+$/, '').split('/').pop() || 'my-repo';
@@ -590,6 +649,161 @@ ${diffText}`,
     }
   };
 
+  // "Create PR" — an alternative to Commit & Push: AI picks a branch name + PR title/body from
+  // the diff, commits to a new branch, pushes it, opens a PR into main via the GitHub API (PAT
+  // or OAuth, whichever is configured), then switches the local checkout back to main so
+  // further work doesn't keep landing on the PR branch.
+  const handleCreatePR = async () => {
+    if (!session || creatingPR || !gitStatus) return;
+    const { provider, model } = store.getProviderAndModel(session.modelId || store.settings.defaultProviderModelId);
+    if (!provider) { alert('No provider configured. Please add a provider in Settings.'); return; }
+
+    setCreatingPR(true);
+    try {
+      const excludedPaths = (gitStatus.files || [])
+        .filter(f => excludedFromCommit.includes(f.path))
+        .map(f => quote(f.path)).join(' ');
+      if (excludedPaths) await executeShellCommand(`git reset HEAD -- ${excludedPaths}`, session.workspace);
+      const stagePaths = (gitStatus.files || [])
+        .filter(f => !excludedFromCommit.includes(f.path))
+        .map(f => quote(f.path)).join(' ');
+      if (stagePaths) await executeShellCommand(`git add -- ${stagePaths}`, session.workspace);
+
+      const diffRes = await executeShellCommand('git diff --cached', session.workspace);
+      let diffText = diffRes.stdout.trim();
+      if (!diffText) { alert('No changes to create a PR from.'); return; }
+      const MAX_DIFF_CHARS = 12000;
+      if (diffText.length > MAX_DIFF_CHARS) diffText = diffText.slice(0, MAX_DIFF_CHARS) + '\n… (diff truncated)';
+
+      const fmt = resolveFormat(store.settings.apiFormats || [], provider.apiFormatId);
+      const base = provider.baseUrl.replace(/\/$/, '');
+      const chatPath = fmt.chatPath || '/chat/completions';
+      const url = provider.directUrl ? provider.baseUrl
+        : provider.baseUrl.includes(chatPath) ? provider.baseUrl
+        : `${base}${chatPath}`;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (provider.apiKey) headers[fmt.authHeader] = `${fmt.authPrefix}${provider.apiKey}`;
+      try { Object.assign(headers, JSON.parse(fmt.extraHeaders)); } catch { /* ignore */ }
+
+      const messages = [{
+        role: 'user',
+        content: `Analyze this git diff and suggest a branch name and a pull request title/description for it. Reply in EXACTLY this format and nothing else:
+BRANCH: <short branch name, lowercase kebab-case, may include one "/" as a category prefix, e.g. "design/glass" or "fix/login-bug", no spaces or special characters>
+SUMMARY: <PR title, imperative mood, under 72 characters, no trailing period, no quotes>
+BODY: <a short 1-4 sentence description of what changed and why, plain text, no markdown>
+
+Diff:
+${diffText}`,
+      }];
+
+      const response = await universalFetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model: model?.id, messages, stream: false }),
+      });
+      if (!response.ok) throw new Error('Failed to generate branch name / PR message.');
+      const data = await response.json();
+      const text = fmt.responseTextPath ? getByPath(data, fmt.responseTextPath) : data.choices?.[0]?.message?.content;
+      const raw = (text || '').trim();
+      const branchMatch = raw.match(/BRANCH:\s*(\S+)/i);
+      const summaryMatch = raw.match(/SUMMARY:\s*(.+)/i);
+      const bodyMatch = raw.match(/BODY:\s*([\s\S]*)/i);
+      const branch = (branchMatch?.[1] || `update-${Date.now()}`).trim().toLowerCase().replace(/[^a-z0-9/_-]/g, '-');
+      const summary = (summaryMatch?.[1] || 'Update').trim().replace(/^["'`]+|["'`]+$/g, '');
+      const description = (bodyMatch?.[1] || '').trim();
+
+      // GitHub token — reuse the saved PAT/OAuth token, same as "Create GitHub Repo".
+      let token = store.settings.integrations?.github?.patToken;
+      let username = store.settings.integrations?.github?.username;
+      if (!token) {
+        const auth = await authorizeGitHub();
+        token = auth.token;
+        username = auth.username;
+        store.updateSettings({
+          integrations: { ...store.settings.integrations, github: { configured: true, patToken: token, username } },
+        });
+      }
+
+      const ownerRepoMatch = gitStatus.remoteUrl?.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/);
+      if (!ownerRepoMatch) throw new Error('Could not determine the GitHub owner/repo from the remote URL.');
+      const [, owner, repo] = ownerRepoMatch;
+
+      // Ask GitHub which branch is actually the default, rather than assuming "main" —
+      // some repos use "master" or something else entirely.
+      let defaultBranch = 'main';
+      try {
+        const repoInfoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+          headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' },
+        });
+        if (repoInfoRes.ok) {
+          const repoInfo = await repoInfoRes.json();
+          if (repoInfo?.default_branch) defaultBranch = repoInfo.default_branch;
+        }
+      } catch { /* fall back to "main" */ }
+
+      // If we're currently on the default branch, fast-forward it to match origin first —
+      // bases the PR on the latest main instead of a possibly-stale local copy. Fast-forward
+      // only: if local has diverged (or has changes that would conflict), this just fails
+      // harmlessly and we proceed with whatever local state already was, rather than risking
+      // an auto-merge.
+      if (gitStatus.branch === defaultBranch) {
+        const preFF = await executeShellCommand(`git pull --ff-only origin ${quote(defaultBranch)}`, session.workspace);
+        if (preFF.code !== 0) console.warn('[create-pr] could not fast-forward before branching:', preFF.stderr || preFF.stdout);
+      }
+
+      // Create and switch to the new branch — uncommitted changes carry over automatically.
+      const branchRes = await executeShellCommand(`git checkout -b ${quote(branch)}`, session.workspace);
+      if (branchRes.code !== 0) throw new Error(`Couldn't create branch "${branch}": ${branchRes.stderr || branchRes.stdout}`);
+
+      const msgArgs = [`-m ${quote(summary)}`];
+      if (description) msgArgs.push(`-m ${quote(description)}`);
+      msgArgs.push(`-m ${quote('Co-authored-by: Lumina Code by kokodev <lumina-code-by-kokodev@users.noreply.github.com>')}`);
+      const commitRes = await executeShellCommand(`git commit ${msgArgs.join(' ')}`, session.workspace);
+      if (commitRes.code !== 0) throw new Error(`Commit failed: ${commitRes.stderr || commitRes.stdout}`);
+
+      // Push, falling back to the saved token embedded in the remote URL on auth failure —
+      // same technique Commit & Push uses.
+      const pushOnce = () => executeShellCommand(`git push -u origin ${quote(branch)}`, session.workspace);
+      let pushRes = await pushOnce();
+      const isAuthFailure = /authentication failed|could not read username|could not read password|terminal prompts disabled|invalid username or (password|token)|permission denied \(publickey\)|fatal: unable to access/i.test(pushRes.stderr);
+      if (pushRes.code !== 0 && isAuthFailure && token) {
+        const remoteRes = await executeShellCommand('git remote get-url origin', session.workspace);
+        const remote = remoteRes.stdout.trim();
+        if (remoteRes.code === 0 && /^https:\/\/github\.com\//.test(remote)) {
+          const authedUrl = remote.replace('https://', `https://${token}@`);
+          await executeShellCommand(`git remote set-url origin "${authedUrl}"`, session.workspace);
+          pushRes = await pushOnce();
+        }
+      }
+      if (pushRes.code !== 0) throw new Error(`Push failed: ${pushRes.stderr || pushRes.stdout}`);
+
+      const prBody = `${description ? description + '\n\n' : ''}This PR was automatically created by Lumina Code`;
+      const prRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
+        method: 'POST',
+        headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: summary, body: prBody, head: branch, base: defaultBranch }),
+      });
+      const prData = await prRes.json();
+      if (!prRes.ok) throw new Error(prData?.message || `Failed to create PR (${prRes.status})`);
+
+      // Switch back to the default branch locally so further work doesn't keep landing on the
+      // PR branch. Also fast-forward it to match origin, so it doesn't silently fall behind
+      // (and eventually diverge) every time this runs — fast-forward only, never a real merge,
+      // so this can never introduce a conflict; if it's not fast-forwardable it's left alone.
+      const backRes = await executeShellCommand(`git checkout ${quote(defaultBranch)}`, session.workspace);
+      if (backRes.code === 0) {
+        const ffRes = await executeShellCommand(`git pull --ff-only origin ${quote(defaultBranch)}`, session.workspace);
+        if (ffRes.code !== 0) console.warn('[create-pr] could not fast-forward local branch after PR creation:', ffRes.stderr || ffRes.stdout);
+      }
+      await checkGitStatus(session.workspace);
+      if (prData.html_url) openUrl(prData.html_url);
+    } catch (e: any) {
+      alert(`Create PR failed: ${e?.message || e}`);
+    } finally {
+      setCreatingPR(false);
+    }
+  };
+
   const handleRunWorkflow = async (workflow: Workflow) => {
     if (!session || runningWorkflowId) return;
     setRunningWorkflowId(workflow.id);
@@ -638,15 +852,22 @@ ${diffText}`,
       if (!lines.includes(norm)) {
         const prefix = giText && !giText.endsWith('\n') ? '\n' : '';
         await fs.writeTextFile(gitignoreFull, giText + prefix + norm + '\n');
-        // Stage the updated .gitignore so this change is tracked
-        await executeShellCommand(`git add -- .gitignore ${SUPPRESS_STDERR}`, session.workspace);
+        // Stage the updated .gitignore so this change is tracked. No SUPPRESS_STDERR here —
+        // that appends "; true", which always reports success regardless of what actually
+        // happened, so a real failure would fail silently and leave the file still tracked.
+        const addRes = await executeShellCommand('git add -- .gitignore', session.workspace);
+        if (addRes.code !== 0) throw new Error(`git add .gitignore failed: ${addRes.stderr || addRes.stdout}`);
       }
 
-      // If the file was previously tracked, remove it from the index but keep it on disk.
-      // Using --cached ensures the file content isn't deleted from the working tree.
-      await executeShellCommand(`git rm --cached -- ${quote(path)} ${SUPPRESS_STDERR}`, session.workspace);
-      // Unstage as a fallback (in case it was staged rather than tracked), doesn't touch disk
-      await executeShellCommand(`git reset HEAD -- ${quote(path)} ${SUPPRESS_STDERR}`, session.workspace);
+      // Unstage first (harmless no-op if it wasn't staged), then remove from git's index —
+      // keeps the file on disk (--cached), just stops git from tracking it.
+      await executeShellCommand(`git reset HEAD -- ${quote(path)}`, session.workspace);
+      const rmRes = await executeShellCommand(`git rm --cached -r -- ${quote(path)}`, session.workspace);
+      // "did not match any files" just means it was never tracked (e.g. a brand-new file) —
+      // that's fine, the .gitignore entry alone already achieves the goal for it.
+      if (rmRes.code !== 0 && !/did not match any files/i.test(rmRes.stderr)) {
+        throw new Error(`git rm --cached failed: ${rmRes.stderr || rmRes.stdout}`);
+      }
 
       setExcludedFromCommit(prev => prev.includes(path) ? prev : [...prev, path]);
       await checkGitStatus(session.workspace);
@@ -839,6 +1060,8 @@ ${diffText}`,
 All paths are relative to the workspace root. Run shell commands only when needed.${workspacesNote}
 
 Do not ask the user in chat whether you should run a command, or wait for them to say yes/no — just call execute_command directly. The application itself already shows the user an Allow/Deny approval popup for every command before it actually runs, so asking for confirmation yourself is redundant and just slows things down.
+
+Do not write out a plan or description of what you're about to do and then stop there — some models fail to follow up with tool calls after producing a text response first. Instead, go straight to the tool calls needed to make the change. Only produce a text response once everything is actually done (or if you genuinely need to ask the user a clarifying question before you can proceed).
 
 ${shellNote}
 
@@ -1267,6 +1490,17 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
     );
   }
 
+  // Derived, not stored — reflects whichever async Code Mode operations are currently running.
+  const activeTasks: { id: string; label: string }[] = [
+    isGenerating && { id: 'ai', label: 'AI generating…' },
+    committing && { id: 'commit', label: 'Committing & pushing…' },
+    creatingPR && { id: 'pr', label: 'Creating PR…' },
+    creatingRepo && { id: 'repo', label: 'Creating GitHub repo…' },
+    generatingMsg && { id: 'genmsg', label: 'Generating commit message…' },
+    switchingBranch && { id: 'branch', label: 'Switching branch…' },
+    runningWorkflowId && { id: 'workflow', label: `Running workflow: ${workflows.find(w => w.id === runningWorkflowId)?.name || ''}` },
+  ].filter((t): t is { id: string; label: string } => !!t);
+
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">
       {/* One-time desktop notification permission ask, in normal flow (pushes content down,
@@ -1290,6 +1524,30 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
           </button>
         </div>
       )}
+
+      {/* Unresolved git merge conflicts — blocking, so a full-width banner rather than a
+          corner button, in normal flow so it never covers other content. */}
+      {conflictedFiles.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2.5 shrink-0 relative z-10 bg-amber-500/10 border-b border-amber-500/30 animate-slide-in-up">
+          <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+          <p className="text-[12.5px] text-[rgb(var(--text))] flex-1 truncate" title={conflictedFiles.join(', ')}>
+            {conflictedFiles.length} file{conflictedFiles.length === 1 ? '' : 's'} with unresolved merge conflicts: {conflictedFiles.join(', ')}
+          </p>
+          <button
+            className="btn-primary text-xs py-1.5 px-3 gap-1.5 shrink-0 disabled:opacity-50"
+            disabled={isGenerating}
+            onClick={handleResolveConflicts}
+          >
+            <Sparkles size={12} />
+            Resolve Conflicts
+          </button>
+        </div>
+      )}
+      {/* Everything below fills the remaining space after any banners above, and all the
+          absolute-positioned overlays (Workspaces/Workflows buttons, commit box, etc.) are
+          positioned relative to THIS wrapper — not the outer container — so they stay put
+          under ChatArea's own header regardless of how many banners are currently showing. */}
+      <div className="relative flex-1 flex flex-col min-h-0">
       <ChatArea
         conversation={fakeConversation}
         isGenerating={isGenerating}
@@ -1314,6 +1572,13 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
         onOpenCommit={() => { setExcludedFromCommit([]); setShowCommitBox(true); }}
         onOpenRepo={gitStatus?.remoteUrl ? handleOpenRepo : undefined}
         plan={session.plan}
+        onCreatePR={gitStatus?.remoteUrl ? handleCreatePR : undefined}
+        creatingPR={creatingPR}
+        activeTasks={activeTasks}
+        branches={branches}
+        onSwitchBranch={handleSwitchBranch}
+        onCreateBranch={handleCreateBranch}
+        switchingBranch={switchingBranch}
       />
 
       {/* Reference workspaces — lets the AI read from other projects alongside the primary one */}
@@ -1653,6 +1918,7 @@ Planning (encouraged, not required): judge by complexity, not file count. A repe
           )}
         </div>
       </Modal>
+      </div>
     </div>
   );
 }

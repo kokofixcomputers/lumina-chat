@@ -1122,7 +1122,7 @@ export default function ChatInput({
           <button
             ref={modelBtnRef}
             onClick={openModelPicker}
-            className={`${overflowItems.includes('model') || parallelMode ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 ${disambiguateModelNames ? 'max-w-[14rem]' : 'max-w-[8rem]'}`}
+            className={`${overflowItems.includes('model') || parallelMode ? 'hidden' : 'flex'} items-center gap-1.5 text-[12px] text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition-colors rounded-md px-2 py-0.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] min-w-0 ${disambiguateModelNames ? 'max-w-[26rem]' : 'max-w-[8rem]'}`}
           >
             {typeof modelInfo.icon === 'string' ? (
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-[rgb(var(--border))]">
@@ -1169,7 +1169,7 @@ export default function ChatInput({
                     ) : MIcon ? (
                       <MIcon size={10} />
                     ) : null}
-                    <span className={`truncate ${disambiguateModelNames ? 'max-w-[12rem]' : 'max-w-[6rem]'}`}>{mName}</span>
+                    <span className={`truncate ${disambiguateModelNames ? 'max-w-[20rem]' : 'max-w-[6rem]'}`}>{mName}</span>
                     <button
                       onClick={() => setParallelModelIds(parallelModelIds.filter(id => id !== mid))}
                       className="ml-0.5 hover:text-red-500 transition-colors"
